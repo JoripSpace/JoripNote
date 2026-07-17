@@ -111,7 +111,9 @@ test('home page and assets include security headers', async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
-  assert.match(await response.text(), /어코드/);
+  const homeBody = await response.text();
+  assert.match(homeBody, /어코드/);
+  assert.match(homeBody, /app\.js\?v=20260717-search/);
 
   const script = await worker.fetch(new Request('https://accord.example/app.js'), {});
   assert.equal(script.headers.get('content-type'), 'text/javascript; charset=utf-8');

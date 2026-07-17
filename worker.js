@@ -15,7 +15,7 @@ const HTML = String.raw`<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d1020">
   <title>어코드 — 함께 나누는 대화</title>
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css?v=20260717-search">
 </head>
 <body>
   <main class="shell">
@@ -131,7 +131,7 @@ const HTML = String.raw`<!doctype html>
       </section>
     </section>
   </main>
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=20260717-search" defer></script>
 </body>
 </html>`;
 
