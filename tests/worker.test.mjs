@@ -115,6 +115,7 @@ test('home page and assets include security headers', async () => {
 
   const script = await worker.fetch(new Request('https://accord.example/app.js'), {});
   assert.equal(script.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  assert.equal(script.headers.get('cache-control'), 'no-cache');
   const scriptBody = await script.text();
   assert.match(scriptBody, /_joripspace\/realtime/);
   assert.match(scriptBody, /params\.set\('search', search\)/);

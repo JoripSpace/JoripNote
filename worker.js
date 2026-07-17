@@ -705,10 +705,10 @@ async function route(request, env) {
     return securedResponse(new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } }), true);
   }
   if (request.method === 'GET' && path === '/app.css') {
-    return securedResponse(new Response(CSS, { headers: { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'public, max-age=3600' } }));
+    return securedResponse(new Response(CSS, { headers: { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'no-cache' } }));
   }
   if (request.method === 'GET' && path === '/app.js') {
-    return securedResponse(new Response(APP_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600' } }));
+    return securedResponse(new Response(APP_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' } }));
   }
   if (request.method === 'GET' && path === '/health') {
     return json({ ok: true, service: 'accord' });
