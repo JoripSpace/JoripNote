@@ -145,9 +145,10 @@ test('signup, login, chat identity, profile lookup and logout work end to end', 
   const cookie = sessionCookie(signupResponse);
   assert.match(cookie, /^accord_session=/);
 
-  const storedUser = DB.database.prepare('SELECT username, password_hash FROM users').get();
+  const storedUser = DB.database.prepare('SELECT username, password_hash, password_iterations FROM users').get();
   assert.equal(storedUser.username, 'accord_user');
   assert.notEqual(storedUser.password_hash, 'correct-password');
+  assert.equal(storedUser.password_iterations, 100000);
   const storedSession = DB.database.prepare('SELECT token_hash FROM sessions').get();
   assert.doesNotMatch(cookie, new RegExp(storedSession.token_hash));
 

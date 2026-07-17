@@ -1,6 +1,8 @@
 const SESSION_COOKIE = 'accord_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
-const PASSWORD_ITERATIONS = 210000;
+// Keep the KDF within the hosted Worker request budget. Unique salts and
+// aggressive auth rate limits provide the additional online-attack defense.
+const PASSWORD_ITERATIONS = 100000;
 const CAPTCHA_TTL_SECONDS = 60 * 5;
 const CAPTCHA_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
