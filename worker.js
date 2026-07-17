@@ -102,7 +102,8 @@ const HTML = String.raw`<!doctype html>
           <div class="header-actions">
             <label class="search-box">
               <span aria-hidden="true">⌕</span>
-              <input id="message-search" type="search" maxlength="60" placeholder="대화 검색" aria-label="대화 검색">
+              <input id="message-search" type="search" maxlength="60" placeholder="메시지 검색" aria-label="메시지 검색">
+              <kbd>Ctrl K</kbd>
             </label>
             <button id="search-button" class="secondary-button" type="button">검색</button>
           </div>
@@ -228,6 +229,7 @@ input::placeholder, textarea::placeholder { color: #696b7f; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .search-box { display: flex; align-items: center; gap: 8px; width: min(28vw, 270px); height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #151827; color: #797c91; }
 .search-box input { height: auto; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.search-box kbd { flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px; color: #707287; font-family: inherit; font-size: 8px; white-space: nowrap; }
 .secondary-button { height: 40px; padding: 0 15px; border: 1px solid var(--line); border-radius: 10px; background: #1b1e31; cursor: pointer; font-size: 12px; font-weight: 700; }
 .connection-banner { padding: 7px 24px; background: #1c2034; color: #aaaec3; font-size: 11px; text-align: center; }
 .connection-banner.online { background: rgba(105,214,162,.08); color: var(--success); }
@@ -251,6 +253,7 @@ input::placeholder, textarea::placeholder { color: #696b7f; }
 .message-meta time { color: #686b7e; font-size: 9px; }
 .message-bubble { display: inline-block; max-width: 100%; padding: 11px 14px; border: 1px solid var(--line); border-radius: 4px 14px 14px; background: #171a2a; color: #e3e1ed; font-size: 14px; line-height: 1.55; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message.mine .message-bubble { border-color: rgba(158,140,255,.18); border-radius: 14px 4px 14px 14px; background: #2b2750; }
+.message-bubble mark { padding: 1px 2px; border-radius: 3px; background: #d9cc63; color: #19170a; }
 .composer { margin: 0 clamp(22px, 4vw, 54px) 28px; padding: 12px 14px 10px; border: 1px solid var(--line); border-radius: 15px; background: #151827; box-shadow: 0 12px 40px rgba(0,0,0,.2); }
 .composer textarea { min-height: 28px; max-height: 130px; padding: 4px 0; resize: none; border: 0; background: transparent; box-shadow: none; line-height: 1.5; }
 .composer-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; }
@@ -273,6 +276,7 @@ input::placeholder, textarea::placeholder { color: #696b7f; }
   .chat-header { min-height: 74px; padding: 14px 18px; }
   .header-actions { gap: 5px; }
   .search-box { width: 140px; }
+  .search-box kbd { display: none; }
   .secondary-button { padding: 0 10px; }
   .message-list { padding: 24px 16px 18px; }
   .message { grid-template-columns: 34px minmax(0, 1fr); gap: 9px; }
@@ -294,7 +298,8 @@ const state = {
   realtimeId: null,
   messages: new Map(),
   profiles: new Map(),
-  searchMode: false
+  searchMode: false,
+  searchQuery: ''
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -532,6 +537,10 @@ function renderMessages(scroll) {
   messageList.querySelectorAll('.message').forEach((element) => element.remove());
   const messages = Array.from(state.messages.values()).sort((a, b) => String(a.sent_at).localeCompare(String(b.sent_at)));
   emptyState.hidden = messages.length > 0;
+  if (!messages.length) {
+    emptyState.querySelector('h3').textContent = state.searchMode ? '검색 결과가 없습니다' : '첫 대화를 시작해 보세요';
+    emptyState.querySelector('p').textContent = state.searchMode ? '다른 검색어로 다시 찾아보세요.' : '함께 있는 사람들에게 반갑게 인사해 보세요.';
+  }
   const fragment = document.createDocumentFragment();
   for (const message of messages) {
     const mine = message.user === state.realtimeId;
@@ -555,7 +564,7 @@ function renderMessages(scroll) {
     time.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
-    bubble.textContent = message.data.text;
+    appendHighlightedText(bubble, message.data.text, state.searchMode ? state.searchQuery : '');
     meta.append(name, time);
     content.append(meta, bubble);
     article.append(avatar, content);
@@ -563,6 +572,28 @@ function renderMessages(scroll) {
   }
   messageList.append(fragment);
   if (scroll) messageList.scrollTop = messageList.scrollHeight;
+}
+
+function appendHighlightedText(element, text, query) {
+  const value = String(text || '');
+  const keyword = String(query || '').trim();
+  if (!keyword) {
+    element.textContent = value;
+    return;
+  }
+  const lowerValue = value.toLocaleLowerCase('ko-KR');
+  const lowerKeyword = keyword.toLocaleLowerCase('ko-KR');
+  let cursor = 0;
+  let match = lowerValue.indexOf(lowerKeyword, cursor);
+  while (match >= 0) {
+    if (match > cursor) element.append(document.createTextNode(value.slice(cursor, match)));
+    const mark = document.createElement('mark');
+    mark.textContent = value.slice(match, match + keyword.length);
+    element.append(mark);
+    cursor = match + keyword.length;
+    match = lowerValue.indexOf(lowerKeyword, cursor);
+  }
+  if (cursor < value.length) element.append(document.createTextNode(value.slice(cursor)));
 }
 
 messageInput.addEventListener('input', () => {
@@ -591,19 +622,36 @@ $('#message-form').addEventListener('submit', (event) => {
 $('#search-button').addEventListener('click', runSearch);
 $('#message-search').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') { event.preventDefault(); runSearch(); }
+  if (event.key === 'Escape' && state.searchMode) { event.preventDefault(); closeSearch(); }
 });
-$('#search-summary button').addEventListener('click', async () => {
+$('#search-summary button').addEventListener('click', closeSearch);
+
+document.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && state.user) {
+    event.preventDefault();
+    $('#message-search').focus();
+    $('#message-search').select();
+  }
+  if (event.key === 'Escape' && state.searchMode && document.activeElement !== $('#message-search')) closeSearch();
+});
+
+async function closeSearch() {
   state.searchMode = false;
+  state.searchQuery = '';
   $('#message-search').value = '';
   $('#search-summary').hidden = true;
   await loadMessages();
   messageList.scrollTop = messageList.scrollHeight;
-});
+}
 
 async function runSearch() {
   const query = $('#message-search').value.trim();
   if (!query) return;
   state.searchMode = true;
+  state.searchQuery = query;
+  const button = $('#search-button');
+  button.disabled = true;
+  button.textContent = '검색 중…';
   try {
     await loadMessages(query);
     const summary = $('#search-summary');
@@ -611,6 +659,9 @@ async function runSearch() {
     summary.hidden = false;
   } catch (error) {
     setConnection('error', error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = '검색';
   }
 }
 
