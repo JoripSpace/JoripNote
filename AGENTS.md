@@ -1,3 +1,9 @@
+# User Deployment Preference
+
+- For project `qwerty`, the user explicitly requested automatic deployment after every completed code or configuration change.
+- Run relevant checks first, create a labeled checkpoint, and deploy that exact checkpoint when checks pass.
+- Do not deploy incomplete work or changes with failing checks. If the user explicitly says not to deploy a particular change, follow that instruction.
+
 <!-- joripspace:managed:start -->
 # JoripSpace Project Agent Guide
 
