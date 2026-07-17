@@ -1,0 +1,9 @@
+{
+  "onboarding_schema_version": 3,
+  "project_id": "qwerty",
+  "project_slug": "qwerty",
+  "default_url": "https://qwerty.joripspace.run",
+  "api_base_url": "https://api.joripspace.com",
+  "mcp_url": "https://api.joripspace.com/mcp",
+  "linked_account_id": "acct_308260a354aa4737aa7ef373"
+}
