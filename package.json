@@ -1,5 +1,10 @@
 {
+  "name": "accord-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
   "scripts": {
+    "test": "node --test",
     "joripspace:doctor": "node .joripspace/doctor.mjs",
     "joripspace:save": "node .joripspace/save.mjs",
     "joripspace:checkpoints": "node .joripspace/checkpoints.mjs",
