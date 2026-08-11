@@ -1,5 +1,6 @@
 {
-  "onboarding_schema_version": 3,
+  "onboarding_schema_version": 5,
+  "agent_guide_updated_at": "2026-08-02T12:00:00+09:00",
   "project_id": "qwerty",
   "project_slug": "qwerty",
   "default_url": "https://qwerty.joripspace.run",

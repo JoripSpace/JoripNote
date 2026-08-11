@@ -5,7 +5,7 @@ import process from 'node:process';
 
 const ROOT = process.cwd();
 const PROTECTED_PREFIXES = ['.git/', '.joripspace/', 'node_modules/'];
-const PROTECTED_FILES = new Set(['.env', '.env.local', '.env.joripspace', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
+const PROTECTED_FILES = new Set(['.env', '.env.local', '.env.joripspace', 'claude.md', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
 
 function readJson(filePath) {
   try {
@@ -46,10 +46,18 @@ function safeRelativePath(fileName) {
   if (!normalized || normalized.includes('..') || path.isAbsolute(normalized)) {
     throw new Error('배포본에 안전하지 않은 파일 경로가 있습니다: ' + fileName);
   }
-  if (PROTECTED_FILES.has(normalized) || PROTECTED_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    throw new Error('배포본에 프로젝트 설정 파일로 보이는 경로가 있어 중단했습니다: ' + normalized);
-  }
   return normalized;
+}
+
+function protectedRestorePath(fileName) {
+  const normalized = toPosix(String(fileName || '')).replace(/^\/+/, '');
+  const lower = normalized.toLowerCase();
+  const base = lower.split('/').at(-1) || '';
+  return PROTECTED_FILES.has(lower) ||
+    PROTECTED_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
+    base === 'agent-session.json' ||
+    base === 'connect-token.json' ||
+    base === 'tokens.json';
 }
 
 function loadConnection() {
@@ -90,7 +98,10 @@ function writeFiles(source, force) {
   const files = source.files && typeof source.files === 'object' && !Array.isArray(source.files) ? source.files : null;
   if (!files) throw new Error('배포본 파일 목록이 올바르지 않습니다.');
 
-  const planned = Object.entries(files).map(([name, content]) => [safeRelativePath(name), String(content)]);
+  const protectedFiles = Object.keys(files).filter(protectedRestorePath);
+  const planned = Object.entries(files)
+    .filter(([name]) => !protectedRestorePath(name))
+    .map(([name, content]) => [safeRelativePath(name), String(content)]);
   const conflicts = planned.filter(([relative, content]) => {
     const fullPath = path.join(ROOT, relative);
     return fs.existsSync(fullPath) && fs.readFileSync(fullPath, 'utf8') !== content;
@@ -122,6 +133,9 @@ function writeFiles(source, force) {
   console.log('프로젝트: ' + source.project_id);
   console.log('배포 버전: ' + source.version);
   console.log('파일 수: ' + planned.length);
+  if (protectedFiles.length > 0) {
+    console.log('연결 토큰과 온보딩 설정을 보호하기 위해 제외한 파일: ' + protectedFiles.length);
+  }
   if (conflicts.length > 0) console.log('교체 전 파일 백업: ' + path.relative(ROOT, backupRoot));
 }
 

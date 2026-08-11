@@ -1,10 +1,13 @@
 {
-  "name": "accord-chat",
-  "version": "0.1.0",
+  "name": "qwerty-collaborative-docs",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "typecheck": "node --check worker.js",
+    "lint": "node --check worker.js && node --check tests/worker.test.mjs",
     "test": "node --test",
+    "build": "node --check worker.js",
     "joripspace:doctor": "node .joripspace/doctor.mjs",
     "joripspace:save": "node .joripspace/save.mjs",
     "joripspace:checkpoints": "node .joripspace/checkpoints.mjs",

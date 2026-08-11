@@ -2,3 +2,10 @@
 .joripspace/agent-session.json
 .joripspace/local-backups/
 node_modules/
+.wrangler/
+.cache/
+coverage/
+dist/
+.env
+.env.*
+!.env.example

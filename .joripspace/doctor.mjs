@@ -64,8 +64,9 @@ const CAPABILITIES = {
     user_words: '요금제 제공량을 넘으면 추가 과금 없이 기능이 제한되고 차단 안내 페이지가 표시됩니다.',
     unlimited_metered_usage: 'OFF by default. Starter and higher plans can enable it so overage is not blocked and usage is still recorded.',
     unlimited_metered_budget: 'Optional. Empty means no budget cap. A numeric monthly budget caps overage and blocks when projected overage exceeds it.',
-    speed_boost: 'Starter and higher plans can enable speed boost. It has a 12,900원 monthly base fee, 10GB included accelerated traffic, and overage is calculated from bytes_in + bytes_out.',
-    speed_boost_ledger_items: ['speed_boost_base', 'speed_boost_traffic_overage'],
+    speed_boost:
+      'Starter 이상 프로젝트는 속도 부스트를 켤 수 있습니다. 개인 도메인은 프로젝트 기본 주소를 CNAME 대상으로 한 번만 연결하며, 이후 속도 부스트를 켜거나 끌 때 고객 DNS를 다시 변경하지 않습니다. 기존 직접 CNAME만 프로젝트 기본 주소로 한 번 변경합니다. 프로젝트별 Argo 데이터 사용량은 별도로 집계하거나 과금하지 않습니다.',
+    speed_boost_ledger_items: [],
     quota_error: 'quota_blocked',
     custom_domain_error: 'plan_required',
     free: {
@@ -75,6 +76,7 @@ const CAPABILITIES = {
       realtime_messages_per_month: 1000,
       realtime_concurrent_connections: 5,
       custom_domain: false
+      ,custom_domain_limit: 0
     },
     starter: {
       requests_per_month: 100000,
@@ -83,6 +85,7 @@ const CAPABILITIES = {
       realtime_messages_per_month: 100000,
       realtime_concurrent_connections: 50,
       custom_domain: true
+      ,custom_domain_limit: 1
     },
     pro: {
       requests_per_month: 300000,
@@ -91,6 +94,7 @@ const CAPABILITIES = {
       realtime_messages_per_month: 300000,
       realtime_concurrent_connections: 150,
       custom_domain: true
+      ,custom_domain_limit: 1
     },
     business: {
       requests_per_month: 1000000,
@@ -99,6 +103,7 @@ const CAPABILITIES = {
       realtime_messages_per_month: 1000000,
       realtime_concurrent_connections: 500,
       custom_domain: true
+      ,custom_domain_limit: 1
     }
   },
   project_domains: {
@@ -106,7 +111,11 @@ const CAPABILITIES = {
     default_domain_delete: false,
     free_error: 'plan_required',
     agent_path: 'Use web UI for non-technical users, or MCP list_domains/create_domain/verify_domain/delete_domain and CLI domain commands when agent tools are available.',
-    dns_record: 'CNAME'
+    dns_record: 'CNAME',
+    wildcard: false,
+    apex: false,
+    idn: 'punycode',
+    free_downgrade_requires_disconnect: true
   },
   recommended_stack_order: RECOMMENDED_STACK_ORDER,
   image_and_file_placement: IMAGE_AND_FILE_PLACEMENT
