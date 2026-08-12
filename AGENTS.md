@@ -7,7 +7,7 @@
 <!-- joripspace:managed:start -->
 # JoripSpace Project Agent Guide
 
-- JoripSpace guide updated at: 2026-08-12T12:03:15+09:00
+- JoripSpace guide updated at: 2026-08-12T16:21:00+09:00
 
 This file is for AI coding agents working on this JoripSpace project. The user may be a complete beginner, so the agent should turn short requests into working service changes without asking platform questions.
 
@@ -58,6 +58,17 @@ First questions to ask when details are missing:
 5. 결제, 이메일, 파일 업로드, 관리자 화면 중 필요한 것이 있나요?
 6. 누가 사용하나요? 예: 학생, 고객, 회원, 직원, 관리자.
 7. 원하는 분위기, 색상, 로고, 참고 사이트, 꼭 들어갈 문구가 있나요?
+
+## User Choice Presentation
+
+User choice presentation rules:
+- Whenever a user-facing reply shows two or more concrete alternatives that the user could select, present them as a readable Markdown table. Apply this even when the user only asks what is available, requests an inventory or comparison, or has not yet been asked to choose. This applies to restore points, rollback versions, templates, projects, and any other user-selectable candidates.
+- Use a short numbered first column and only decision-relevant columns. For restore or rollback choices include number, version or identifier, timestamp, label or status, and effect. For template choices include number, template name, suitable use, and included features.
+- Mark the recommended choice in the table and explain the recommendation briefly. End with one direct sentence stating exactly what the user should answer, such as "번호로 선택해 주세요."
+- Do not use a table for a single available action or a simple yes/no confirmation. Do not turn technical or platform decisions that the agent must make into user choices.
+- If the reply states only whether candidates exist or gives only a total count without listing individual candidates, prose is sufficient. As soon as two or more individual candidates are shown, the table is mandatory.
+- Never include Secret values, tokens, personal data, or other sensitive values in a choice table.
+- If there are many choices, show a manageable page and state that more choices are available instead of dumping an unbounded list.
 
 Choose platform internals yourself. The user should not have to choose Worker, D1, R2, bindings, SQL migrations, MCP resources, deployment payloads, or other technical setup details.
 When replying to the user, prefer "서버", "DB", "스토리지", and "실시간". Use implementation names only when the user asks for technical details or when code/debugging context requires them.
@@ -254,6 +265,7 @@ After MCP or CLI setup:
 - If the user has not described the service yet, immediately start with up to three short questions.
 - If the user asks what to do next, do not only provide examples. Start the onboarding questions when the project is already selected.
 - If the user says they do not know what to build, suggest 2-3 simple service examples and pick a practical default.
+- Whenever those examples or any other concrete alternatives require the user to choose, follow the shared user choice presentation rules and show them as a Markdown table.
 - End each user-facing reply with the next thing to click, check, or answer.
 - If MCP tools do not appear immediately in an app, tell the user to open a new chat or restart the app, then continue from the copied start prompt.
 
@@ -304,7 +316,7 @@ Secret and token rules:
 - Never put API keys, payment keys, SMS/email keys, database URLs, or tokens in source code, README files, browser JavaScript, screenshots, chat summaries, logs, error messages, or audit metadata.
 - Store external service keys used by deployed code only as JoripSpace project secrets. Only the selected project User Worker secret binding stores the value; the platform DB keeps project-scoped name, status, and lifecycle timestamps only.
 - Never copy project Secret values into source code, env.DB, env.STORAGE, deployment source, checkpoint files, saved copies, logs, error messages, or audit metadata.
-- Do not ask the user to paste provider Secret values into chat. Send them to the "외부 서비스 키" tab for the selected project to register, replace, or delete the value, then use list_secrets only to confirm name, status, and timestamps. Secret values never appear in list responses or agent reports.
+- Do not ask the user to paste provider Secret values into chat. Send them to the "비밀 키" tab for the selected project to register, replace, or delete the value, then use list_secrets only to confirm name, status, and timestamps. Secret values never appear in list responses or agent reports.
 - Local temporary values are allowed only in ignored files such as .env.joripspace or .joripspace/agent-session.json.
 - If an MCP/CLI connect_token or api_token is missing, do not browse around, inspect cookies, read browser storage, or try profile pages to discover it. Ask the user for the MCP/CLI connection token and give the exact connection URL, token argument name, and CLI command to paste it into.
 - Secret names must match [_A-Z][_A-Z0-9]* and be at most 128 characters. DB, STORAGE, PROJECT_ID and names beginning JORIPSPACE_, CF_, or CLOUDFLARE_ are reserved and must not be used.
@@ -319,7 +331,7 @@ Secret and token rules:
 - Public pricing page copy is product-approved content. Do not rename, paraphrase, reorder, or otherwise improve plan names, subtitles, benefits, prices, units, descriptions, or CTA text unless the user explicitly requests that exact change. When a pricing copy change is requested, update SSR, browser rendering, documentation, and release checks together.
 - JoripSpace execution order: use MCP tools for ordinary small source operations. For generated bundles, large files, or large multi-file projects, use the package.json checkpoint/deploy helper automatically even when MCP tools are visible, because it uploads local bytes in verified chunks.
 - MCP-only setup and deploy do not require Node.js or Git. Do not install Node.js or Git when working MCP tools can complete the requested operation, and do not ask the beginner to run npm or git commands.
-- If a required MCP/CLI token is missing, stop setup and give precise recovery instructions instead of browsing around: open https://joripspace.com/connect/ in a logged-in browser, approve the connection, copy the displayed MCP/CLI connection token, then provide it as connect_token or run `joripspace login --connect-token "복사한_연결_토큰"`.
+- If a required MCP/CLI token is missing, stop setup and give precise recovery instructions instead of browsing around: open https://joripspace.com/connect/ in a logged-in browser, approve the connection, copy the displayed 5-minute connection code, then provide it as connect_token or run `joripspace login --code "복사한_연결_코드"`.
 - Package helper scripts require Node.js 18 or newer, but their presence in package.json alone is not a reason to install Node.js. Use a helper when MCP is unavailable, for local checkpoint/restore/pull work, or when a generated bundle or large project must be uploaded from local bytes without inline tool transport.
 - If a package helper is the only available path and Node.js is missing, explain the reason in one sentence and ask permission before installing Node.js LTS. Never make Node.js installation a prerequisite for ordinary MCP onboarding or direct MCP deploy.
 - Run `npm run joripspace:doctor` when MCP is unavailable. Run `npm run joripspace:deploy -- --label "변경 내용"` when MCP is unavailable or when deploying a generated bundle, large file, or large multi-file project and Node.js is already available or the user approved its installation. Do not ask the user to choose or run the command.
@@ -370,6 +382,7 @@ Deployment verification gate:
 - Documentation-only changes create a checkpoint but do not require a server deployment.
 - Before restoring files, create a restore_safety checkpoint and a local backup under .joripspace/local-backups. Preview additions, overwrites, deletions, and protected paths first; never overwrite conflicts without approval.
 - Treat local file restore and production rollback as separate confirmed actions. 이전 상태로 돌아가 means explain and confirm both independently.
+- Whenever two or more restore points or rollback versions are shown, including in response to an availability or inventory question such as "복원 가능한 것들이 있나?", show them as a Markdown table with number, version or identifier, timestamp, label or status, and effect. Do not wait until the user explicitly asks to choose one.
 - Never include secrets, .env files, token/session files, private keys, .git, node_modules, or .wrangler in checkpoints.
 - Prefer MCP checkpoint tools. If MCP is unavailable, use joripspace:save, joripspace:checkpoints, joripspace:restore, and joripspace:deploy-checkpoint helpers.
 
