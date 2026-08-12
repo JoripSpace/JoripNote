@@ -7,7 +7,7 @@
 <!-- joripspace:managed:start -->
 # JoripSpace Project Agent Guide
 
-- JoripSpace guide updated at: 2026-08-11T19:50:00+09:00
+- JoripSpace guide updated at: 2026-08-12T12:03:15+09:00
 
 This file is for AI coding agents working on this JoripSpace project. The user may be a complete beginner, so the agent should turn short requests into working service changes without asking platform questions.
 
@@ -76,7 +76,8 @@ Codex MCP onboarding flow:
 - Do not restart the connection flow for a deployment timeout. Restart connection only for connection_required, invalid_token, or another explicit authentication error.
 - Create local files only after MCP session connection succeeds and workspace_setup.files or local_file_operations are returned.
 - Before writing files, verify the current working folder. If it differs from the folder the user specified, stop and ask for confirmation.
-- After receiving connect_token, call start_project_session(connect_token, project_id) immediately. If workspace_setup.files are returned, write them. When Git is installed, initialize the current project folder if needed and run git status --short; otherwise continue without Git.
+- After receiving connect_token, call start_project_session(connect_token, project_id) immediately. Follow source_sync before writing workspace_setup.files when the session reports github_repository_sync_required; otherwise write returned workspace files normally. When Git is installed, initialize the current project folder if needed and run git status --short; otherwise continue without Git.
+- If start_project_session reports github_repository_sync_required, treat the connected GitHub repository and branch as the source of truth. Using the current user GitHub credentials, clone into an empty current folder or safely fetch and fast-forward the matching clean repository, then write the connection workspace files. Never restore a JoripSpace deployment artifact over a GitHub-connected source workspace, never force-push or hard-reset, and stop with the concrete Git/auth conflict when safe synchronization is impossible.
 - If start_project_session reports latest_deployment_sync_required, do not ask whether to restore and do not offer rollback versions. Write the connection workspace files first, call get_deployment_source with deployment_restore.latest_artifact.deployment_id, back up conflicting local files, and apply the returned local_file_operations before asking questions or editing the project.
 - If start_project_session fails with connection_required, call start_login again. If it fails with invalid_token, ask for a fresh token. If it returns needs_project_choice, ask the user to choose one project and call start_project_session again. If project_not_found, ask the user to confirm the project ID.
 - After workspace setup, ask onboarding questions one at a time: service name, what the service does, three required features, whether login is needed, whether payment/email/file upload/admin is needed, then choose or recommend the deployment target yourself.
@@ -231,6 +232,7 @@ Current deployment route: GitHub Actions.
 - Expected workflow: .github/workflows/joripspace-qwerty.yml
 - A normal user request such as "배포해줘" is sufficient. Do not ask the user to mention GitHub, Actions, OIDC, workflow setup, commit, or push separately.
 - For an explicit deployment request, inspect and update the workflow when missing or stale, run the required checks, commit the exact relevant changes, and safely push them to the connected deployment branch so GitHub Actions performs the deployment.
+- Do not call create_checkpoint or joripspace:save before this push. GitHub Actions creates the deployment checkpoint, so a pre-push agent checkpoint would duplicate storage and history. Only create a separate checkpoint when the user explicitly asks to save one independently of deployment.
 - Do not call deploy_code, deploy_checkpoint, or the direct package deploy helper for this project while this GitHub route is connected.
 - Never force-push or overwrite unrelated user changes. If the connected branch cannot be updated safely, report the concrete Git conflict or permission blocker.
 - After pushing, verify the resulting JoripSpace deployment through available deployment status or HTTP checks before reporting success.
@@ -361,6 +363,7 @@ Deployment verification gate:
 ## Checkpoint And Restore Rules
 
 - After meaningful work and relevant checks, create a JoripSpace checkpoint with create_checkpoint or npm run joripspace:save when that path is available without adding unapproved tooling. Always provide a concise label describing the change. Identical content is reused instead of creating a duplicate.
+- Exception for the GitHub Actions deployment route: when the current task explicitly requests deployment, do not create a separate pre-push agent checkpoint and do not run joripspace:save. Commit and push the verified source; the Actions OIDC upload creates the single deployment checkpoint. Create an additional agent checkpoint only when the user explicitly asks to save a separate snapshot without deployment.
 - Saving is the default after meaningful work when MCP can complete it directly or the required local helper is already available. A local_upload_required checkpoint response must not block ordinary MCP work or direct deployment and must not trigger Node.js installation unless the user explicitly requested a standalone checkpoint, restore, or pull and approved the required helper. Do not enable, assume, or perform automatic deployment during initial onboarding.
 - Deploy the saved checkpoint only when the user explicitly asks to deploy the current change or explicitly asks for completed work to be deployed automatically. Without that request, stop after creating and verifying the checkpoint.
 - If tests or checks fail, do not deploy. A clearly labeled 작업 중 checkpoint may be created when preserving the current files is useful.

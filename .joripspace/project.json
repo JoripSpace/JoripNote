@@ -1,6 +1,6 @@
 {
   "onboarding_schema_version": 7,
-  "agent_guide_updated_at": "2026-08-11T19:50:00+09:00",
+  "agent_guide_updated_at": "2026-08-12T12:03:15+09:00",
   "deployment_policy": {
     "target": "joripspace",
     "guide_required": true,
@@ -19,7 +19,7 @@
   "linked_account_id": "acct_308260a354aa4737aa7ef373",
   "deployment": {
     "mode": "github_actions",
-    "connection_status": "pending",
+    "connection_status": "active",
     "repository_id": "1330511172",
     "repository": "dbs9456/jorip-qwerty",
     "branch": "master",
