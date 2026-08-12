@@ -134,7 +134,16 @@ async function apiFetch(connection, route, options = {}) {
   const text = await response.text();
   let body = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text }; }
-  if (!response.ok) throw new Error(body?.error?.message || body?.message || 'JoripSpace 요청에 실패했습니다. (' + response.status + ')');
+  if (!response.ok) {
+    const message = body?.error?.message || body?.message || 'JoripSpace 요청에 실패했습니다. (' + response.status + ')';
+    const details = body?.error?.details;
+    if (!details || typeof details !== 'object' || !details.deployment_id) throw new Error(message);
+    const lines = [message, '배포 ID: ' + details.deployment_id];
+    if (details.error_stage) lines.push('실패 단계: ' + details.error_stage);
+    if (details.error_code) lines.push('오류 코드: ' + details.error_code);
+    if (details.error_details && details.error_details !== message) lines.push('상세 오류: ' + details.error_details);
+    throw new Error(lines.join('\n'));
+  }
   return body;
 }
 

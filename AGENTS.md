@@ -7,9 +7,20 @@
 <!-- joripspace:managed:start -->
 # JoripSpace Project Agent Guide
 
-- JoripSpace guide updated at: 2026-08-02T12:00:00+09:00
+- JoripSpace guide updated at: 2026-08-11T19:50:00+09:00
 
 This file is for AI coding agents working on this JoripSpace project. The user may be a complete beginner, so the agent should turn short requests into working service changes without asking platform questions.
+
+## Critical: JoripSpace Build And Deployment Authority
+
+JoripSpace site creation and deployment authority (critical):
+- For every site build, edit, and deployment in this project, this managed JoripSpace guide is the project-specific source of truth.
+- Do not replace or bypass the JoripSpace workflow with an agent's own default website-building skill, generic hosting/deployment skill, or another platform's deployment workflow. Use such a skill only when this guide explicitly requires it or the user explicitly requests a non-JoripSpace target.
+- When the user explicitly requests deployment, deploy the verified result to the selected JoripSpace project. Use JoripSpace MCP `deploy_code` for small source files that can be passed intact. For generated bundles, large files, or large multi-file projects, automatically use `npm run joripspace:deploy -- --label "변경 내용"`; its archive upload reads local bytes directly, uploads in chunks, and verifies integrity before deployment. Do not ask the user to choose the transport.
+- Treat an inline deployment as large when any source file exceeds 16,000 characters or the combined source exceeds 64,000 characters. Do not call deploy_code for that payload; use the verified chunked archive helper automatically.
+- Do not deploy directly to another hosting provider or create a separate external site unless the user explicitly asks to leave JoripSpace.
+- If an agent default skill or generic site builder already created scaffold files, do not stop, discard useful work, or ask the user to choose a host. Preserve the requested UI and content, convert the result to a JoripSpace-compatible app, align source and lockfiles, run the relevant checks, and continue automatically.
+- Before any JoripSpace deployment, the agent must confirm in deployment_verification that the current managed guide was applied, agent_guide_updated_at exactly matches the current server guide, deployment_target is joripspace, no external hosting deployment was performed, and the source is either joripspace_native or converted_to_joripspace. The deployment tool rejects missing, stale, or conflicting evidence and the agent must refresh automatically without asking the user.
 
 ## Project
 
@@ -66,10 +77,12 @@ Codex MCP onboarding flow:
 - Create local files only after MCP session connection succeeds and workspace_setup.files or local_file_operations are returned.
 - Before writing files, verify the current working folder. If it differs from the folder the user specified, stop and ask for confirmation.
 - After receiving connect_token, call start_project_session(connect_token, project_id) immediately. If workspace_setup.files are returned, write them. When Git is installed, initialize the current project folder if needed and run git status --short; otherwise continue without Git.
+- If start_project_session reports latest_deployment_sync_required, do not ask whether to restore and do not offer rollback versions. Write the connection workspace files first, call get_deployment_source with deployment_restore.latest_artifact.deployment_id, back up conflicting local files, and apply the returned local_file_operations before asking questions or editing the project.
 - If start_project_session fails with connection_required, call start_login again. If it fails with invalid_token, ask for a fresh token. If it returns needs_project_choice, ask the user to choose one project and call start_project_session again. If project_not_found, ask the user to confirm the project ID.
 - After workspace setup, ask onboarding questions one at a time: service name, what the service does, three required features, whether login is needed, whether payment/email/file upload/admin is needed, then choose or recommend the deployment target yourself.
 - Record each answer in docs/service-brief.md or in the onboarding document returned by MCP.
 - Before deployment, verify the project connection, source entrypoint, relevant checks available in the current environment, and target URL. Direct MCP deployment of Worker-compatible source does not require Node.js or Git.
+- Never obtain a generated bundle or large source file by printing it through a shell/tool output and copying that output into deploy_code. Tool output can be truncated even when the local file is valid. Use the package helper archive upload so local bytes, sizes, and hashes are preserved end to end.
 - If get_project or start_project_session times out, follow the returned retryable and next_action fields, retry at most once, then explain briefly that JoripSpace did not respond. Do not ask the beginner to inspect logs, tokens, Node.js, Git, or network internals.
 - Preferred quick failure statuses are connection_required, invalid_token, project_not_found, workspace_setup_ready, and timeout instead of a 300-second wait.
 
@@ -135,6 +148,17 @@ Project Domains:
 - Do not bypass JoripSpace by editing Cloudflare routes or custom hostnames directly. Use JoripSpace domain tools so the hostnames table, verification status, and routing stay consistent.
 - User-facing wording: 개인 도메인은 Starter 이상에서 사용할 수 있습니다. example.com을 입력하면 www.example.com으로 자동 연결됩니다. 도메인을 추가한 뒤 안내된 CNAME 값을 DNS에 설정하고 상태 확인을 누르면 됩니다.
 
+## Project Scheduled Jobs
+
+Project scheduled jobs:
+- Treat requests such as recurring, periodically, every few minutes, every day, scheduled, automatic, 주기적으로, 정기적으로, 몇 분마다, 매일, 예약 실행, or 자동 실행 as scheduled-job requests.
+- A server path alone is not a completed scheduled job. Implement and test the GET or POST target path, then use list_crons and create_cron so the central JoripSpace scheduler can call it.
+- Register a cron only when the user requested scheduled operation and the target path is already deployed and verified. If deployment of the current change was not explicitly requested, do not register a cron that points to undeployed code; explain that activation is waiting for deployment.
+- Before creating a cron, call list_crons and avoid creating a duplicate with the same schedule, method, and path.
+- After creating a cron, call run_cron for an immediate safe verification, then call list_crons again and confirm last_status and next_run_at. Inspect runtime events when the immediate run fails.
+- Do not report a scheduled job as active until registration and immediate verification succeed. If registration is unavailable, state clearly that only the server path is ready and scheduled execution is not active.
+- JoripSpace schedules use 5-field UTC cron expressions. Convert the user's local schedule carefully and tell the user the resulting local execution time without requiring them to understand cron syntax.
+
 ## Image And File Placement Defaults
 
 Image and file placement defaults:
@@ -146,17 +170,90 @@ Image and file placement defaults:
 - Do not put large file bytes into DB. Keep file bytes in project source for fixed design assets or in env.STORAGE for operational files.
 - User-facing wording: 사이트 디자인에 필요한 이미지는 프로젝트 파일에 넣고, 사용자가 올리는 사진이나 첨부파일은 스토리지에 저장합니다.
 
+## Framework Selection
+
+Framework selection rules (agent decides internally):
+- Keep the current technology stack for an existing project unless there is a concrete reason to change it.
+- Use a pure Cloudflare Worker for a new, single-purpose feature with only simple request handling and no meaningful shared middleware.
+- Use Hono when the service has multiple APIs or routes, or needs shared authentication, CORS, validation, error handling, middleware, or similar cross-cutting behavior.
+- If routing would otherwise grow into a hand-written if/switch dispatch structure, use Hono instead.
+- If the choice between a pure Worker and Hono is ambiguous, choose Hono.
+- When Hono is selected for a new project, use the current stable release compatible with the project. Do not downgrade Hono merely because a bundled entrypoint uses `export { app as default }`; JoripSpace accepts valid ES module default export forms.
+- Re-evaluate this choice as the service grows. If a pure Worker later reaches the Hono conditions above, migrate it to Hono during the task without asking the user to choose a framework.
+- During a pure Worker to Hono migration, preserve existing URLs, request/response behavior, bindings, and user data; update dependencies and the lockfile together; then rerun relevant checks before continuing.
+- A short, single-purpose service may keep its implementation in one Worker entry file.
+- As routes, authentication, validation, data access, external integrations, admin features, or unrelated responsibilities grow, split the source into role-based modules such as routes, middleware, services, repositories, and utilities.
+- Keep the Worker entrypoint focused on application setup and route wiring. Do not combine all implementation into worker.js merely to reduce the source file count.
+- With Hono, organize route groups and shared middleware into feature-focused modules when the service has more than a trivial route set.
+- Reassess module boundaries during feature work. Split modules when unrelated features change the same file repeatedly, a file becomes difficult to test safely, or responsibilities are no longer cohesive.
+- Preserve existing URLs, request/response contracts, bindings, authentication behavior, and user data when splitting modules. Avoid a large refactor based only on file length.
+- Multiple source modules still build and deploy as one JoripSpace Worker service; source modularization must not create extra deployed services unless the user explicitly requests that architecture.
+- The user does not need to choose the file structure. The agent decides based on current complexity and likely change boundaries.
+- The user does not need to know or choose the framework. Ask only when a framework change would create a genuine business, compatibility, or destructive decision that cannot be resolved safely.
+
+## SEO And Server-Side Rendering
+
+Server-side rendering and SEO rules (agent decides internally):
+- Server-side rendering is the default for every user-facing page unless the user explicitly requests a client-only page or a concrete technical constraint makes SSR inappropriate.
+- When the user explicitly requests an SPA, client-only application, WebView application, or similar app-style experience, honor that request. Do not require SSR or SEO evidence, and do not block deployment merely because the initial page is client-rendered.
+- This SSR default includes public pages, login and signup, account pages, authenticated application screens, admin pages, and dashboards. Treat it as a usability and reliable-first-render requirement, not only an SEO feature.
+- When the SSR default applies, every page route must return meaningful, page-specific HTML in the initial HTTP response. Do not ship an accidental empty app shell that depends on client JavaScript to create the title, navigation, form, or primary content.
+- Render SSR pages on the server with the selected pure Worker or Hono stack. Do not introduce Next.js solely to obtain SSR.
+- Add client-side JavaScript as progressive enhancement or hydration only where interaction needs it. Preserve useful content and navigation when hydration is delayed or unavailable.
+- For public indexable routes, include a page-specific title, meta description, canonical URL, social sharing metadata when applicable, and structured data when the page type benefits from it.
+- If an existing SPA is client-only by accident rather than user intent or a concrete app requirement, migrate its main routes to server-rendered initial HTML while preserving existing URLs, behavior, authentication, and user data.
+- Before deployment, verify every main route follows the intended rendering mode. For SSR routes, inspect the initial HTML without browser JavaScript. For an explicitly requested SPA or WebView app, verify app startup, routing, refresh behavior, authentication, loading, empty, and error states instead.
+
 ## Build And Deployment Defaults
 
 Build and deployment defaults:
-1. Prefer a pure Worker app for new JoripSpace services. It is the safest default and works directly with server, DB, storage, and realtime.
-2. Use a plain HTML/CSS/JS static site when the request is mostly a landing page, portfolio, guide, or brochure site.
-3. Use a Vite SPA plus Worker API when the UI is larger and needs React, Vue, Svelte, or similar frontend structure.
-4. Use frameworks with a Cloudflare-compatible output only when the existing project or request clearly benefits from them.
-5. Next.js static export can be deployed after local build/export and Worker-compatible static serving setup.
-6. Next.js SSR needs OpenNext or another Cloudflare-compatible conversion before deployment; do not assume a normal Next.js server can be uploaded directly.
-7. Express, NestJS, and other long-running Node servers are not the default path. Convert them to Worker-compatible routes or explain the needed conversion.
-- Do not ask the user to choose a framework or deployment target. If there is no existing code, start with the pure Worker default. If package.json exists, inspect it, detect the framework, build locally when neede…848 tokens truncated…the user to open a new chat or restart the app, then continue from the copied start prompt.
+1. For a landing page, portfolio, guide, or brochure site, render complete HTML from the selected Worker or Hono route and add plain CSS/JS as progressive enhancement.
+2. When a larger UI needs React, Vue, Svelte, or similar structure, use Vite assets to hydrate server-rendered initial HTML from the pure Worker or Hono API selected by the framework rules above. Do not return a client-only empty shell.
+3. Use other frameworks with a Cloudflare-compatible output only when the existing project or request clearly benefits from them.
+4. Existing Next.js user-facing pages should use OpenNext or another Cloudflare-compatible SSR conversion before deployment; do not assume a normal Next.js server can be uploaded directly.
+5. Use Next.js static export only when the user explicitly requests a static/client-only result or a concrete constraint makes SSR inappropriate.
+6. Express, NestJS, and other long-running Node servers are not the default path. Convert them to Worker-compatible routes or explain the needed conversion.
+- Do not ask the user to choose a framework or deployment target. Inspect existing code and package.json, apply the framework selection rules yourself, build locally when needed, and prepare a Worker-compatible result. Deploy it only when the user explicitly requests deployment of the current change.
+
+GitHub automatic deployment setup:
+- The web UI connects only the repository and deployment branch. It intentionally does not ask the user for build commands, artifact folders, or entrypoints.
+- When a GitHub connection is waiting for agent setup, inspect the repository and choose the build command, clean artifact directory, and Worker entrypoint without asking the user platform questions.
+- Copy `.joripspace/github-actions-template.yml` to `.github/workflows/joripspace-{project}.yml`, replace every `__JORIPSPACE_*__` placeholder, validate the YAML and build output, then commit and push it with the requested project work.
+- Never use the repository root as the artifact directory when it would include `.git`, `node_modules`, secrets, caches, or unrelated source. Stage only deployable output in a clean directory.
+- Keep `permissions: contents: read` and `id-token: write`; do not add a long-lived JoripSpace deployment token to GitHub Secrets.
+- The first valid OIDC deployment changes the web connection status from agent setup pending to connected.
+
+## Current Deployment Route
+
+Current deployment route: GitHub Actions.
+- Connected repository: dbs9456/jorip-qwerty
+- Connected deployment branch: master
+- Expected workflow: .github/workflows/joripspace-qwerty.yml
+- A normal user request such as "배포해줘" is sufficient. Do not ask the user to mention GitHub, Actions, OIDC, workflow setup, commit, or push separately.
+- For an explicit deployment request, inspect and update the workflow when missing or stale, run the required checks, commit the exact relevant changes, and safely push them to the connected deployment branch so GitHub Actions performs the deployment.
+- Do not call deploy_code, deploy_checkpoint, or the direct package deploy helper for this project while this GitHub route is connected.
+- Never force-push or overwrite unrelated user changes. If the connected branch cannot be updated safely, report the concrete Git conflict or permission blocker.
+- After pushing, verify the resulting JoripSpace deployment through available deployment status or HTTP checks before reporting success.
+- A successful report must state deployment method GitHub Actions, repository, branch, workflow path, pushed commit SHA, Actions result, and JoripSpace deployment ID. Do not report only a checkpoint number or deployment ID.
+
+After MCP or CLI setup:
+- At the start of each new distinct user task, call search_knowledge once with the user's plain request before answering, planning, asking questions, or starting work. Apply the returned user_guidance, recommendation, and actions to both the response and the work, including short user requests. Do not repeat the search for every follow-up in the same task unless the topic changes or current guidance is needed.
+- If search_knowledge returns no direct match, use its prioritized fallback guidance and ask at most three short business questions. If the knowledge service fails, continue with the built-in JoripSpace guide and explain only when the failure blocks the task.
+- Do not stop with only "yes, it is possible" or a capability checklist.
+- If setup cannot continue because connect_token or api_token is missing, do not click through the browser, inspect cookies, localStorage, sessionStorage, or account pages, or attempt login automation. Tell the user exactly where to get the token and how to paste it back.
+- The user does not need to say "onboarding". After connection succeeds, continue into project selection, workspace file writing, and the first service questions automatically.
+- Prefer a single start_project_session tool call when it is available. It combines session lookup, project choice handling, workspace file instructions, and first questions.
+- If an MCP response includes workspace_setup.files, write those files into the current working folder immediately before replying.
+- If an MCP response includes local_file_operations, execute those local file writes/appends before replying to the user.
+- At the start of every new distinct JoripSpace task, call prepare_project_workspace before answering, planning, asking questions, or starting work. A new chat does not prove that the local guide is current, and a same-day guide update must not be skipped. Do not use cron or ask the user to run a refresh command.
+- Compare the returned AGENTS.md managed block and agent_guide.updated_at with the local JoripSpace managed block on every task-start check. When the server version is newer, the local version is missing, or the managed block content differs, replace only the JoripSpace managed block and preserve all user-authored content outside it. Write the returned `.joripspace/agent-session.json` after the check so guide_checked_at records when the current server guide was confirmed.
+- When MCP connection and workspace setup succeed, continue without asking the user to install Node.js or Git, run npm or git commands, locate API environment variables, or repeat the connection token.
+- Do not ask the user to paste another start prompt when you already have project context and workspace files.
+- If the user has not described the service yet, immediately start with up to three short questions.
+- If the user asks what to do next, do not only provide examples. Start the onboarding questions when the project is already selected.
+- If the user says they do not know what to build, suggest 2-3 simple service examples and pick a practical default.
+- End each user-facing reply with the next thing to click, check, or answer.
+- If MCP tools do not appear immediately in an app, tell the user to open a new chat or restart the app, then continue from the copied start prompt.
 
 ## Prompts To Start The Build
 
@@ -165,6 +262,7 @@ Use these only when no MCP workspace_setup.files are available yet. If workspace
 ### 처음부터 만들기
 
 이 JoripSpace 프로젝트에서 만들 서비스를 MCP 기본 온보딩 순서대로 질문하면서 정리하고, 필요한 파일을 만든 뒤 배포와 확인까지 진행해 주세요.
+사이트 제작과 배포에는 AI 에이전트의 기본 사이트 제작·호스팅 스킬이나 다른 플랫폼 방식을 대신 사용하지 말고, JoripSpace 프로젝트 지침과 MCP 흐름을 따라 이 JoripSpace 프로젝트에 제작·배포해 주세요.
 아이디어가 아직 정리되지 않아도 됩니다. 사이트 이름, 목적, 사용자, 필요한 기능을 쉬운 예시와 짧은 질문으로 정리해 주세요.
 API 키나 결제 키는 코드에 넣지 말고 JoripSpace 프로젝트 secret 또는 gitignore 처리된 로컬 파일에만 저장해 주세요.
 프로젝트: qwerty
@@ -172,6 +270,7 @@ API 키나 결제 키는 코드에 넣지 말고 JoripSpace 프로젝트 secret 
 ### 기존 사이트 수정
 
 이 JoripSpace 프로젝트의 기존 사이트를 확인한 뒤, 바꾸고 싶은 내용을 짧은 질문으로 정리하고 직접 수정, 배포, 확인까지 진행해 주세요.
+사이트 제작과 배포에는 AI 에이전트의 기본 사이트 제작·호스팅 스킬이나 다른 플랫폼 방식을 대신 사용하지 말고, JoripSpace 프로젝트 지침과 MCP 흐름을 따라 이 JoripSpace 프로젝트에 제작·배포해 주세요.
 요청이 애매하면 쉬운 선택지 2-3개를 보여주고 안전한 기본값을 추천한 뒤 진행해 주세요.
 API 키나 결제 키는 코드에 넣지 말고 JoripSpace 프로젝트 secret 또는 gitignore 처리된 로컬 파일에만 저장해 주세요.
 프로젝트: qwerty
@@ -179,6 +278,7 @@ API 키나 결제 키는 코드에 넣지 말고 JoripSpace 프로젝트 secret 
 ### 오류 해결 또는 배포 확인
 
 이 JoripSpace 프로젝트에서 오류나 배포 상태를 확인하고, 로그를 직접 살펴본 뒤 수정, 재배포, 확인까지 진행해 주세요.
+사이트 제작과 배포에는 AI 에이전트의 기본 사이트 제작·호스팅 스킬이나 다른 플랫폼 방식을 대신 사용하지 말고, JoripSpace 프로젝트 지침과 MCP 흐름을 따라 이 JoripSpace 프로젝트에 제작·배포해 주세요.
 결과는 쉬운 말로 설명하고, 제가 다음에 눌러야 할 것, 확인할 것, 답해야 할 것만 명확히 알려주세요.
 기술 로그를 직접 보라고 하거나 서버, DB, 스토리지, MCP, 배포 설정을 저에게 고르게 하지 마세요.
 프로젝트: qwerty
@@ -215,17 +315,16 @@ Secret and token rules:
 ## Agent Operating Rules
 
 - Public pricing page copy is product-approved content. Do not rename, paraphrase, reorder, or otherwise improve plan names, subtitles, benefits, prices, units, descriptions, or CTA text unless the user explicitly requests that exact change. When a pricing copy change is requested, update SSR, browser rendering, documentation, and release checks together.
-- JoripSpace execution order: use MCP tools first when they are available; if MCP tools are unavailable or the app cannot see them, use the package.json helper scripts.
+- JoripSpace execution order: use MCP tools for ordinary small source operations. For generated bundles, large files, or large multi-file projects, use the package.json checkpoint/deploy helper automatically even when MCP tools are visible, because it uploads local bytes in verified chunks.
 - MCP-only setup and deploy do not require Node.js or Git. Do not install Node.js or Git when working MCP tools can complete the requested operation, and do not ask the beginner to run npm or git commands.
 - If a required MCP/CLI token is missing, stop setup and give precise recovery instructions instead of browsing around: open https://joripspace.com/connect/ in a logged-in browser, approve the connection, copy the displayed MCP/CLI connection token, then provide it as connect_token or run `joripspace login --connect-token "복사한_연결_토큰"`.
-- Package helper scripts require Node.js 18 or newer, but their presence in package.json is not a reason to use or install Node.js. Use a helper only when MCP is unavailable or the requested local checkpoint, restore, pull, or framework build cannot be completed through MCP.
+- Package helper scripts require Node.js 18 or newer, but their presence in package.json alone is not a reason to install Node.js. Use a helper when MCP is unavailable, for local checkpoint/restore/pull work, or when a generated bundle or large project must be uploaded from local bytes without inline tool transport.
 - If a package helper is the only available path and Node.js is missing, explain the reason in one sentence and ask permission before installing Node.js LTS. Never make Node.js installation a prerequisite for ordinary MCP onboarding or direct MCP deploy.
-- Run `npm run joripspace:doctor` or `npm run joripspace:deploy` only when MCP is unavailable and Node.js is already available or the user approved its installation. Do not ask the user to choose or run the command.
+- Run `npm run joripspace:doctor` when MCP is unavailable. Run `npm run joripspace:deploy -- --label "변경 내용"` when MCP is unavailable or when deploying a generated bundle, large file, or large multi-file project and Node.js is already available or the user approved its installation. Do not ask the user to choose or run the command.
 - If package.json has `joripspace:pull` and the project folder has no app code, ask the user for permission and pull the latest successful deployment source before building.
 - If the user asks to replace local files with the latest deployed version, run `npm run joripspace:pull:force`; this backs up overwritten files under `.joripspace/local-backups/` first.
-- During initial onboarding, if restorable successful deployment artifacts exist, show the recent artifact versions and labels, ask whether to restore, and let the user choose the exact artifact before starting a new build.
-- When the user chooses an artifact, restore its source into the current local workspace. Never overwrite `.env.joripspace`, `.joripspace/agent-session.json`, `.joripspace/project.json`, or any token/session file during deployed-source restore.
-- If the user declines restore and later asks for a new deployment, warn first that the currently running code will be replaced by the new code. Clarify that deployment history remains available for rollback.
+- During initial MCP onboarding, if a successful downloadable deployment exists, automatically use the latest successful deployment as the local workspace baseline before starting work. Do not ask whether to restore and do not offer older rollback versions.
+- Restore the latest deployed source into the current local workspace after backing up conflicting local files. Never overwrite `.env.joripspace`, `.joripspace/agent-session.json`, `.joripspace/project.json`, or any token/session file during deployed-source restore.
 - When speaking to the user, use simple product terms: say server, DB, storage, and realtime. Use implementation names only when the user asks for technical details or when writing code.
 - Read `.joripspace/project.json` and `.joripspace/agent-session.json` before deploying or operating the project.
 - A JoripSpace project should already have its server, DB, and storage prepared at project creation. Do not ask the user to choose or configure DB/storage bindings.
@@ -244,6 +343,10 @@ Secret and token rules:
 
 Deployment verification gate:
 - Treat any explicit deployment request, including a short request such as "배포해줘", as authorization to deploy only after completing this verification gate. The user does not need to provide a separate testing or security-review prompt.
+- Apply the current JoripSpace managed guide before deployment. Set deployment_verification.guide_applied to true, deployment_verification.agent_guide_updated_at to the exact agent_guide.updated_at returned by prepare_project_workspace, deployment_target to joripspace, external_hosting_deployment to false, and source_compatibility to joripspace_native or converted_to_joripspace. Missing, stale, or conflicting values are a blocking policy violation. If rejected as stale, refresh the workspace files and retry automatically without asking the user.
+- If generic/default site-builder output exists, preserve useful UI, content, and assets and convert it automatically to JoripSpace-compatible source before checks. Do not ask the user to choose a hosting provider or repeat the original request unless a destructive or business decision is genuinely required.
+- For SSR UI deployments, you may record server_rendered_html and ssr_routes as verification evidence after checking meaningful initial HTML without browser JavaScript. These fields are informational and must not block an explicitly requested SPA, client-only application, or WebView application.
+- For public indexable routes, you may record seo_required, seo_routes, and seo_metadata after verifying page-specific metadata. These fields are informational and are not deployment gate requirements.
 - Before deployment, inspect the completed source and verify that the requested functions are present, connected to the intended project resources, and free of known blocking errors.
 - Run the relevant automated checks available in the project, including syntax, type, build, format, contract, and focused tests as applicable. Do not skip an available relevant check merely because the user asked only to deploy.
 - Exercise representative user flows with automated tests, direct function calls, or HTTP requests before deployment. Verify at least the primary read flow and, when the service writes data, one safe create/update/read path plus expected validation and error behavior.
@@ -268,15 +371,44 @@ Deployment verification gate:
 - Prefer MCP checkpoint tools. If MCP is unavailable, use joripspace:save, joripspace:checkpoints, joripspace:restore, and joripspace:deploy-checkpoint helpers.
 
 Framework and build priority:
+Framework selection rules (agent decides internally):
+- Keep the current technology stack for an existing project unless there is a concrete reason to change it.
+- Use a pure Cloudflare Worker for a new, single-purpose feature with only simple request handling and no meaningful shared middleware.
+- Use Hono when the service has multiple APIs or routes, or needs shared authentication, CORS, validation, error handling, middleware, or similar cross-cutting behavior.
+- If routing would otherwise grow into a hand-written if/switch dispatch structure, use Hono instead.
+- If the choice between a pure Worker and Hono is ambiguous, choose Hono.
+- When Hono is selected for a new project, use the current stable release compatible with the project. Do not downgrade Hono merely because a bundled entrypoint uses `export { app as default }`; JoripSpace accepts valid ES module default export forms.
+- Re-evaluate this choice as the service grows. If a pure Worker later reaches the Hono conditions above, migrate it to Hono during the task without asking the user to choose a framework.
+- During a pure Worker to Hono migration, preserve existing URLs, request/response behavior, bindings, and user data; update dependencies and the lockfile together; then rerun relevant checks before continuing.
+- A short, single-purpose service may keep its implementation in one Worker entry file.
+- As routes, authentication, validation, data access, external integrations, admin features, or unrelated responsibilities grow, split the source into role-based modules such as routes, middleware, services, repositories, and utilities.
+- Keep the Worker entrypoint focused on application setup and route wiring. Do not combine all implementation into worker.js merely to reduce the source file count.
+- With Hono, organize route groups and shared middleware into feature-focused modules when the service has more than a trivial route set.
+- Reassess module boundaries during feature work. Split modules when unrelated features change the same file repeatedly, a file becomes difficult to test safely, or responsibilities are no longer cohesive.
+- Preserve existing URLs, request/response contracts, bindings, authentication behavior, and user data when splitting modules. Avoid a large refactor based only on file length.
+- Multiple source modules still build and deploy as one JoripSpace Worker service; source modularization must not create extra deployed services unless the user explicitly requests that architecture.
+- The user does not need to choose the file structure. The agent decides based on current complexity and likely change boundaries.
+- The user does not need to know or choose the framework. Ask only when a framework change would create a genuine business, compatibility, or destructive decision that cannot be resolved safely.
+
+Server-side rendering and SEO rules (agent decides internally):
+- Server-side rendering is the default for every user-facing page unless the user explicitly requests a client-only page or a concrete technical constraint makes SSR inappropriate.
+- When the user explicitly requests an SPA, client-only application, WebView application, or similar app-style experience, honor that request. Do not require SSR or SEO evidence, and do not block deployment merely because the initial page is client-rendered.
+- This SSR default includes public pages, login and signup, account pages, authenticated application screens, admin pages, and dashboards. Treat it as a usability and reliable-first-render requirement, not only an SEO feature.
+- When the SSR default applies, every page route must return meaningful, page-specific HTML in the initial HTTP response. Do not ship an accidental empty app shell that depends on client JavaScript to create the title, navigation, form, or primary content.
+- Render SSR pages on the server with the selected pure Worker or Hono stack. Do not introduce Next.js solely to obtain SSR.
+- Add client-side JavaScript as progressive enhancement or hydration only where interaction needs it. Preserve useful content and navigation when hydration is delayed or unavailable.
+- For public indexable routes, include a page-specific title, meta description, canonical URL, social sharing metadata when applicable, and structured data when the page type benefits from it.
+- If an existing SPA is client-only by accident rather than user intent or a concrete app requirement, migrate its main routes to server-rendered initial HTML while preserving existing URLs, behavior, authentication, and user data.
+- Before deployment, verify every main route follows the intended rendering mode. For SSR routes, inspect the initial HTML without browser JavaScript. For an explicitly requested SPA or WebView app, verify app startup, routing, refresh behavior, authentication, loading, empty, and error states instead.
+
 Build and deployment defaults:
-1. Prefer a pure Worker app for new JoripSpace services. It is the safest default and works directly with server, DB, storage, and realtime.
-2. Use a plain HTML/CSS/JS static site when the request is mostly a landing page, portfolio, guide, or brochure site.
-3. Use a Vite SPA plus Worker API when the UI is larger and needs React, Vue, Svelte, or similar frontend structure.
-4. Use frameworks with a Cloudflare-compatible output only when the existing project or request clearly benefits from them.
-5. Next.js static export can be deployed after local build/export and Worker-compatible static serving setup.
-6. Next.js SSR needs OpenNext or another Cloudflare-compatible conversion before deployment; do not assume a normal Next.js server can be uploaded directly.
-7. Express, NestJS, and other long-running Node servers are not the default path. Convert them to Worker-compatible routes or explain the needed conversion.
-- Do not ask the user to choose a framework or deployment target. If there is no existing code, start with the pure Worker default. If package.json exists, inspect it, detect the framework, build locally when needed, and prepare a Worker-compatible result. Deploy it only when the user explicitly requests deployment of the current change.
+1. For a landing page, portfolio, guide, or brochure site, render complete HTML from the selected Worker or Hono route and add plain CSS/JS as progressive enhancement.
+2. When a larger UI needs React, Vue, Svelte, or similar structure, use Vite assets to hydrate server-rendered initial HTML from the pure Worker or Hono API selected by the framework rules above. Do not return a client-only empty shell.
+3. Use other frameworks with a Cloudflare-compatible output only when the existing project or request clearly benefits from them.
+4. Existing Next.js user-facing pages should use OpenNext or another Cloudflare-compatible SSR conversion before deployment; do not assume a normal Next.js server can be uploaded directly.
+5. Use Next.js static export only when the user explicitly requests a static/client-only result or a concrete constraint makes SSR inappropriate.
+6. Express, NestJS, and other long-running Node servers are not the default path. Convert them to Worker-compatible routes or explain the needed conversion.
+- Do not ask the user to choose a framework or deployment target. Inspect existing code and package.json, apply the framework selection rules yourself, build locally when needed, and prepare a Worker-compatible result. Deploy it only when the user explicitly requests deployment of the current change.
 
 ## Package Helper Fallback
 

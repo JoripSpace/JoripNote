@@ -72,15 +72,23 @@ function loadConnection() {
   const project = readJson(path.join(ROOT, '.joripspace', 'project.json')) || {};
   const session = readJson(path.join(ROOT, '.joripspace', 'agent-session.json')) || {};
   return {
+    project,
     projectId: process.env.JORIPSPACE_PROJECT_ID || env.JORIPSPACE_PROJECT_ID || project.project_id || project.project_slug || '',
     apiBaseUrl: (process.env.JORIPSPACE_API_BASE_URL || env.JORIPSPACE_API_BASE_URL || session.api_base_url || project.api_base_url || 'https://api.joripspace.com').replace(/\/+$/, ''),
     apiToken: process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN || session.api_token || ''
   };
 }
 
+function hasModuleWorkerDefaultExport(source) {
+  const text = String(source || '');
+  return /\bexport\s+default\b/.test(text) ||
+    /\bexport\s*\{[^}]*\bas\s+default\b[^}]*\}/s.test(text) ||
+    /\bexport\s*\{[^}]*\bdefault\b[^}]*\}\s*from\s*['"]/s.test(text);
+}
+
 function buildPayload(entrypoint) {
   if (!entrypoint) {
-    throw new Error('배포할 서버 진입 파일을 찾지 못했습니다. worker.js 또는 src/index.js처럼 export default가 있는 파일을 만들어 주세요.');
+    throw new Error('배포할 서버 진입 파일을 찾지 못했습니다. worker.js 또는 src/index.js처럼 기본 내보내기가 있는 파일을 만들어 주세요.');
   }
   const entrypointPath = path.join(ROOT, entrypoint);
   if (!fs.existsSync(entrypointPath)) {
@@ -96,8 +104,8 @@ function buildPayload(entrypoint) {
   if (!Object.prototype.hasOwnProperty.call(files, entrypoint)) {
     files[entrypoint] = fs.readFileSync(entrypointPath, 'utf8');
   }
-  if (!files[entrypoint].includes('export default')) {
-    throw new Error('서버 진입 파일 형식이 올바르지 않습니다. 파일에 export default가 필요합니다: ' + entrypoint);
+  if (!hasModuleWorkerDefaultExport(files[entrypoint])) {
+    throw new Error('서버 진입 파일 형식이 올바르지 않습니다. 유효한 ES 모듈 기본 내보내기가 필요합니다: ' + entrypoint);
   }
   return { entrypoint, files };
 }
@@ -107,15 +115,27 @@ function friendlyError(body, fallback) {
   const code = error.code || body?.code || '';
   const message = error.message || body?.message || fallback;
   if (code === 'project_resources_invalid' || code === 'project_db_binding_invalid') {
-    return 'JoripSpace 프로젝트 서버/DB 연결 설정을 복구해야 합니다. 사용자 코드 문제가 아니므로 관리자 복구 후 다시 배포해 주세요. (' + code + ')';
+    return formatDeploymentFailure('JoripSpace 프로젝트 서버/DB 연결 설정을 복구해야 합니다. 사용자 코드 문제가 아니므로 관리자 복구 후 다시 배포해 주세요. (' + code + ')', error.details);
   }
-  return message;
+  return formatDeploymentFailure(message, error.details);
+}
+
+function formatDeploymentFailure(message, details) {
+  if (!details || typeof details !== 'object' || !details.deployment_id) return message;
+  const lines = [message, '배포 ID: ' + details.deployment_id];
+  if (details.error_stage) lines.push('실패 단계: ' + details.error_stage);
+  if (details.error_code) lines.push('오류 코드: ' + details.error_code);
+  if (details.error_details && details.error_details !== message) lines.push('상세 오류: ' + details.error_details);
+  return lines.join('\n');
 }
 
 async function main() {
-  const { projectId, apiBaseUrl, apiToken } = loadConnection();
+  const { project, projectId, apiBaseUrl, apiToken } = loadConnection();
   if (!projectId) throw new Error('JoripSpace 프로젝트 ID를 찾지 못했습니다. MCP 연결 또는 joripspace link를 다시 실행하세요.');
   if (!apiToken) throw new Error('JoripSpace 배포 토큰을 찾지 못했습니다. JoripSpace 연결을 다시 승인해 주세요.');
+  if (project.deployment_policy?.target !== 'joripspace' || project.deployment_policy?.guide_required !== true) {
+    throw new Error('최신 JoripSpace 제작·배포 정책이 필요합니다. 사용자에게 호스팅 방식을 묻지 말고 prepare_project_workspace로 연결 파일을 갱신한 뒤 다시 배포하세요.');
+  }
 
   const entrypoint = detectEntrypoint();
   const payload = buildPayload(entrypoint);

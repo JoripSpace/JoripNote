@@ -17,13 +17,15 @@ const REQUIRED_SCRIPTS = {
 const OPTIONAL_DEPLOY_SCRIPT = 'node .joripspace/save.mjs --deploy';
 const ENTRYPOINT_CANDIDATES = ['worker.js', 'src/worker.js', 'src/index.js', 'server.js', 'dist/worker.js'];
 const RECOMMENDED_STACK_ORDER = [
-  '1. Pure Worker app for new JoripSpace services.',
-  '2. Plain HTML/CSS/JS static site for mostly content pages.',
-  '3. Vite SPA plus Worker API for larger React, Vue, or Svelte UI.',
-  '4. Cloudflare-compatible framework output when the project already uses it.',
-  '5. Next.js static export after local build/export and Worker-compatible static serving setup.',
-  '6. Next.js SSR only after OpenNext or another Cloudflare-compatible conversion.',
-  '7. Express, NestJS, or long-running Node servers only after converting to Worker-compatible routes.'
+  '1. Keep the current stack for an existing project unless complexity or compatibility requires a change.',
+  '2. Pure Worker for one simple purpose without shared middleware.',
+  '3. Hono for multiple routes, shared auth/CORS/validation/error handling, hand-written routing growth, or ambiguity.',
+  '4. Re-evaluate and migrate a growing pure Worker to Hono while preserving behavior.',
+  '5. Server-render every user-facing route by default, including login, account, admin, and dashboards.',
+  '6. Plain HTML/CSS/JS or Vite frontend structure as appropriate, with server-rendered initial HTML.',
+  '7. Other Cloudflare-compatible framework output when the existing project requires it.',
+  '8. Next.js static export or OpenNext conversion only when the existing stack or request requires Next.js.',
+  '9. Express, NestJS, or long-running Node servers only after converting to Worker-compatible routes.'
 ];
 const IMAGE_AND_FILE_PLACEMENT = {
   source_assets: [
@@ -39,7 +41,7 @@ const IMAGE_AND_FILE_PLACEMENT = {
 const CAPABILITIES = {
   server: {
     available: true,
-    agent_path: 'Use MCP deploy_code first when visible. Otherwise run npm run joripspace:deploy.',
+    agent_path: 'Use MCP deploy_code for intact small source. Use npm run joripspace:deploy for generated bundles and large projects so local bytes are uploaded in verified chunks.',
     user_words: '서버 배포 가능'
   },
   db: {
@@ -197,6 +199,9 @@ function main() {
     if (scripts[name] !== command) issues.push({ code: 'missing_package_script', script: name, message: 'package.json에 ' + name + ' 스크립트가 없습니다.', next_action: 'npm run joripspace:doctor -- --fix 를 실행하세요.' });
   }
   if (!entrypoint) issues.push({ code: 'missing_entrypoint', message: '배포할 서버 진입 파일을 찾지 못했습니다.', next_action: 'worker.js 또는 src/index.js처럼 export default가 있는 서버 파일을 만들어 주세요.' });
+  if (project.deployment_policy?.target !== 'joripspace' || project.deployment_policy?.guide_required !== true) {
+    issues.push({ code: 'joripspace_workflow_policy_missing', message: '최신 JoripSpace 제작·배포 정책이 작업 폴더에 적용되지 않았습니다.', next_action: '에이전트가 prepare_project_workspace로 연결 파일을 자동 갱신해야 합니다.' });
+  }
   if (!hasGitignoreEntry('.env.joripspace')) issues.push({ code: 'gitignore_missing_env', message: '.env.joripspace가 .gitignore에 없습니다.', next_action: '.env.joripspace를 .gitignore에 추가하세요.' });
   if (!hasGitignoreEntry('.joripspace/agent-session.json')) issues.push({ code: 'gitignore_missing_session', message: '.joripspace/agent-session.json이 .gitignore에 없습니다.', next_action: '.joripspace/agent-session.json을 .gitignore에 추가하세요.' });
 
