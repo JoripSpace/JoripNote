@@ -98,7 +98,7 @@ jobs:
                     method: "POST",
                     token: deployToken,
                     json: {},
-                    allowedStatuses: [409]
+                    allowedStatuses: [404, 409]
                   });
                   if (!result.__retry) {
                     process.stdout.write(
@@ -107,7 +107,7 @@ jobs:
                     );
                     return;
                   }
-                  if (!["checkpoint_not_deployable", "checkpoint_not_ready"].includes(result.error?.code)) {
+                  if (!["checkpoint_not_found", "checkpoint_not_deployable", "checkpoint_not_ready"].includes(result.error?.code)) {
                     throw apiError(result.__status, result);
                   }
                   await new Promise((resolve) => setTimeout(resolve, 2e3));
