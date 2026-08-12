@@ -25,7 +25,7 @@ jobs:
           npm run build
           rm -rf .joripspace-artifact
           mkdir -p .joripspace-artifact
-          git archive HEAD | tar -x -C .joripspace-artifact
+          cp worker.js .joripspace-artifact/worker.js
       - name: Deploy to JoripSpace
         shell: bash
         env:
