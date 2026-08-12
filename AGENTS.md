@@ -7,7 +7,7 @@
 <!-- joripspace:managed:start -->
 # JoripSpace Project Agent Guide
 
-- JoripSpace guide updated at: 2026-08-12T16:21:00+09:00
+- JoripSpace guide updated at: 2026-08-12T18:10:00+09:00
 
 This file is for AI coding agents working on this JoripSpace project. The user may be a complete beginner, so the agent should turn short requests into working service changes without asking platform questions.
 
@@ -69,6 +69,18 @@ User choice presentation rules:
 - If the reply states only whether candidates exist or gives only a total count without listing individual candidates, prose is sufficient. As soon as two or more individual candidates are shown, the table is mandatory.
 - Never include Secret values, tokens, personal data, or other sensitive values in a choice table.
 - If there are many choices, show a manageable page and state that more choices are available instead of dumping an unbounded list.
+
+## Local Tool Readiness
+
+Local Git and Node.js readiness during onboarding:
+- After the project connection succeeds and the project path is known, check `git --version`, `node --version`, and `npm --version` directly before the first source-sync, build, or package-helper step that could require them. Do not ask the user to run these commands.
+- Show the result in one readable Markdown table with columns for tool, status, version, and whether it is needed for the current project path.
+- Decide need from the actual path: Git is required for a connected GitHub repository, clone/fetch, commit, or push workflow. Node.js LTS and npm are required for package helpers, dependency installation, local JavaScript builds, generated bundles, or large multi-file archive deployment. Ordinary small-source MCP onboarding and direct MCP deployment require neither tool.
+- If every missing tool is optional for the current path, say it is optional and continue onboarding without asking to install it.
+- If a required tool is missing, explain its immediate purpose in one sentence and ask for one explicit approval to install only the missing required tools. Do not install software before approval and do not combine this approval with unrelated choices.
+- After approval, install stable Git and/or the current Node.js LTS with npm using the operating system's standard trusted package manager. Perform the installation yourself, request elevation only through the normal operating-system prompt, and never disable security controls or use an untrusted download source.
+- After installation, verify Git, Node.js, and npm again, show the final status and versions in a Markdown table, and continue the interrupted onboarding automatically.
+- If installation fails or the environment does not permit it, report the concrete permission or platform limitation. Continue by MCP when possible; block only the workflow that actually requires the missing tool.
 
 Choose platform internals yourself. The user should not have to choose Worker, D1, R2, bindings, SQL migrations, MCP resources, deployment payloads, or other technical setup details.
 When replying to the user, prefer "서버", "DB", "스토리지", and "실시간". Use implementation names only when the user asks for technical details or when code/debugging context requires them.
@@ -260,7 +272,7 @@ After MCP or CLI setup:
 - If an MCP response includes local_file_operations, execute those local file writes/appends before replying to the user.
 - At the start of every new distinct JoripSpace task, call prepare_project_workspace before answering, planning, asking questions, or starting work. A new chat does not prove that the local guide is current, and a same-day guide update must not be skipped. Do not use cron or ask the user to run a refresh command.
 - Compare the returned AGENTS.md managed block and agent_guide.updated_at with the local JoripSpace managed block on every task-start check. When the server version is newer, the local version is missing, or the managed block content differs, replace only the JoripSpace managed block and preserve all user-authored content outside it. Write the returned `.joripspace/agent-session.json` after the check so guide_checked_at records when the current server guide was confirmed.
-- When MCP connection and workspace setup succeed, continue without asking the user to install Node.js or Git, run npm or git commands, locate API environment variables, or repeat the connection token.
+- When MCP connection and workspace setup succeed, run the local Git and Node.js readiness check before the first service question. Ask about installation only when a missing tool is required for the current path; otherwise continue without installation. Never ask the user to run npm or git commands, locate API environment variables, or repeat the connection token.
 - Do not ask the user to paste another start prompt when you already have project context and workspace files.
 - If the user has not described the service yet, immediately start with up to three short questions.
 - If the user asks what to do next, do not only provide examples. Start the onboarding questions when the project is already selected.
@@ -312,16 +324,25 @@ Payment Provider Guidance:
 
 ## Secret And Key Handling
 
+- Secret management link (always include this as a clickable Markdown link when an external provider credential is required): https://joripspace.com/projects/qwerty/?tab=secrets
+
 Secret and token rules:
 - Never put API keys, payment keys, SMS/email keys, database URLs, or tokens in source code, README files, browser JavaScript, screenshots, chat summaries, logs, error messages, or audit metadata.
 - Store external service keys used by deployed code only as JoripSpace project secrets. Only the selected project User Worker secret binding stores the value; the platform DB keeps project-scoped name, status, and lifecycle timestamps only.
 - Never copy project Secret values into source code, env.DB, env.STORAGE, deployment source, checkpoint files, saved copies, logs, error messages, or audit metadata.
 - Do not ask the user to paste provider Secret values into chat. Send them to the "비밀 키" tab for the selected project to register, replace, or delete the value, then use list_secrets only to confirm name, status, and timestamps. Secret values never appear in list responses or agent reports.
+- Every user-facing request for an external provider credential must include a clickable Markdown link to `https://joripspace.com/projects/{project_id}/?tab=secrets`. Use the selected project slug in place of `{project_id}`. Never mention only the tab name or provide an unlinked URL.
+- Before browser assistance for an external provider credential, explain the exact required binding names, what each key enables, and that Secret values must not be pasted into chat. Then ask exactly one short consent question such as "제가 브라우저로 비밀 키 등록을 진행할까요?".
+- Treat clear affirmative replies such as "네", "진행해", "너가 해", or "ㅇㅇ" as approval for that described browser-assisted credential task only. Approval does not authorize unrelated account changes, credential rotation, billing changes, or destructive actions.
+- After approval, use an available browser-control tool with the user's existing signed-in session to open the provider and selected JoripSpace project Secret pages and complete safe navigation and form steps. Never inspect cookies, localStorage, sessionStorage, saved passwords, or unrelated account pages.
+- Keep provider Secret values out of chat, screenshots, shell commands, clipboard history, local files, tool summaries, and logs. If the browser environment cannot transfer a value without exposing it, or if reauthentication, MFA, CAPTCHA, credential reveal, or other user-only verification is required, stop at that exact visible step and ask the user to complete only that step in the browser. Continue automatically after the user confirms completion.
+- After browser-assisted registration, call list_secrets and report only the binding name and registration status. Never repeat, reveal, compare, or summarize the Secret value.
 - Local temporary values are allowed only in ignored files such as .env.joripspace or .joripspace/agent-session.json.
 - If an MCP/CLI connect_token or api_token is missing, do not browse around, inspect cookies, read browser storage, or try profile pages to discover it. Ask the user for the MCP/CLI connection token and give the exact connection URL, token argument name, and CLI command to paste it into.
 - Secret names must match [_A-Z][_A-Z0-9]* and be at most 128 characters. DB, STORAGE, PROJECT_ID and names beginning JORIPSPACE_, CF_, or CLOUDFLARE_ are reserved and must not be used.
 - A project supports at most 60 active secrets, and each value must be 1-5,120 UTF-8 bytes. Use clear uppercase names such as TOSS_PAYMENTS_SECRET_KEY, TOSS_PAYMENTS_BILLING_SECRET_KEY, DODO_PAYMENTS_API_KEY, SOLAPI_API_KEY, or SOLAPI_API_SECRET.
 - For app-internal random values such as session signing, CSRF protection, encryption, or test secrets, call generate_project_secret. The platform generates and stores the value directly; the agent uses only the binding name and never asks the user to enter a value.
+- Internal random Secret generation does not require browser assistance or a separate user confirmation when it is a normal implementation step within the requested work.
 - Secrets are isolated by the immutable internal project id. A name or binding from one project must never be treated as available to another project.
 - Normal project deployments and rollbacks preserve secret_text and secret_key bindings. Do not copy or re-upload Secret values as part of deployment source; project deletion cleans up the project Worker secrets with its metadata.
 - Browser code may receive only public keys or safe redirect URLs. Server routes must handle private provider calls.
@@ -330,10 +351,10 @@ Secret and token rules:
 
 - Public pricing page copy is product-approved content. Do not rename, paraphrase, reorder, or otherwise improve plan names, subtitles, benefits, prices, units, descriptions, or CTA text unless the user explicitly requests that exact change. When a pricing copy change is requested, update SSR, browser rendering, documentation, and release checks together.
 - JoripSpace execution order: use MCP tools for ordinary small source operations. For generated bundles, large files, or large multi-file projects, use the package.json checkpoint/deploy helper automatically even when MCP tools are visible, because it uploads local bytes in verified chunks.
-- MCP-only setup and deploy do not require Node.js or Git. Do not install Node.js or Git when working MCP tools can complete the requested operation, and do not ask the beginner to run npm or git commands.
+- MCP-only setup and deploy do not require Node.js or Git. Follow the local tool readiness rules: check and report both tools during onboarding, but install only a missing tool that the current project path actually requires and only after explicit user approval. Never ask the beginner to run npm or git commands.
 - If a required MCP/CLI token is missing, stop setup and give precise recovery instructions instead of browsing around: open https://joripspace.com/connect/ in a logged-in browser, approve the connection, copy the displayed 5-minute connection code, then provide it as connect_token or run `joripspace login --code "복사한_연결_코드"`.
 - Package helper scripts require Node.js 18 or newer, but their presence in package.json alone is not a reason to install Node.js. Use a helper when MCP is unavailable, for local checkpoint/restore/pull work, or when a generated bundle or large project must be uploaded from local bytes without inline tool transport.
-- If a package helper is the only available path and Node.js is missing, explain the reason in one sentence and ask permission before installing Node.js LTS. Never make Node.js installation a prerequisite for ordinary MCP onboarding or direct MCP deploy.
+- If a package helper is the only available path and Node.js is missing, use the shared readiness approval flow before installing Node.js LTS. Never make Node.js installation a prerequisite for ordinary MCP onboarding or direct MCP deploy.
 - Run `npm run joripspace:doctor` when MCP is unavailable. Run `npm run joripspace:deploy -- --label "변경 내용"` when MCP is unavailable or when deploying a generated bundle, large file, or large multi-file project and Node.js is already available or the user approved its installation. Do not ask the user to choose or run the command.
 - If package.json has `joripspace:pull` and the project folder has no app code, ask the user for permission and pull the latest successful deployment source before building.
 - If the user asks to replace local files with the latest deployed version, run `npm run joripspace:pull:force`; this backs up overwritten files under `.joripspace/local-backups/` first.
@@ -346,7 +367,7 @@ Secret and token rules:
 - Use MCP/CLI storage tools to list, read, write, and delete project files when the service needs uploads or generated files.
 - Keep secrets out of git. Add provider keys through project secrets or ignored local files only.
 - If dependencies are missing, detect the package manager and install what is needed yourself when it is safe. Ask the user only for paid accounts, credentials, or business decisions.
-- Git is optional for JoripSpace onboarding and MCP deployment. If Git is not installed, do not install it, do not block editing or deployment, and do not ask the beginner to initialize, commit, fetch, or push.
+- Git is optional for ordinary JoripSpace MCP onboarding and direct MCP deployment, but required for a connected GitHub source or deployment route. If required and missing, use the shared readiness approval flow; otherwise continue without Git and do not ask the beginner to initialize, commit, fetch, or push.
 - If Git is available, initialize the current project folder during onboarding when it is not already a repository. Preserve an existing repository and its history. Never initialize a parent folder or another unrelated folder.
 - Before staging a deployment commit, inspect git status and the staged diff, and exclude secrets, tokens, local session files, dependencies, build caches, and unrelated user changes. Never use git add -A blindly in a dirty workspace.
 - Build the smallest usable version first, then improve it after testing.

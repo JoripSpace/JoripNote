@@ -1,6 +1,6 @@
 {
   "onboarding_schema_version": 7,
-  "agent_guide_updated_at": "2026-08-12T16:21:00+09:00",
+  "agent_guide_updated_at": "2026-08-12T18:10:00+09:00",
   "deployment_policy": {
     "target": "joripspace",
     "guide_required": true,
