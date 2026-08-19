@@ -54,17 +54,20 @@ DB.database.exec(readFileSync(new URL('../migrations/0004_extended_blocks_public
 DB.database.exec(readFileSync(new URL('../migrations/0005_block_indentation.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0006_workspace_collaboration.sql', import.meta.url), 'utf8'));
 
+const emptyPreview = process.env.JORIPNOTE_PREVIEW_EMPTY === '1';
 const password = process.env.QWERTY_PREVIEW_PASSWORD;
-if (!password) throw new Error('QWERTY_PREVIEW_PASSWORD is required.');
+if (!emptyPreview && !password) throw new Error('QWERTY_PREVIEW_PASSWORD is required unless JORIPNOTE_PREVIEW_EMPTY=1.');
 const previewDelayMs = Math.max(0, Math.min(2000, Number(process.env.QWERTY_PREVIEW_DELAY_MS) || 0));
-const salt = 'local-preview-salt';
-const passwordHash = await hashPassword(password, salt, 1000);
-DB.database.prepare(
-  'INSERT INTO users (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,unixepoch())'
-).run('usr_previewowner', 'preview_owner', passwordHash, salt, 1000, 'preview-realtime-key');
-DB.database.prepare(
-  "INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES ('qwerty','usr_previewowner','owner',unixepoch(),unixepoch())"
-).run();
+if (!emptyPreview) {
+  const salt = 'local-preview-salt';
+  const passwordHash = await hashPassword(password, salt, 1000);
+  DB.database.prepare(
+    'INSERT INTO users (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,unixepoch())'
+  ).run('usr_previewowner', 'preview_owner', passwordHash, salt, 1000, 'preview-realtime-key');
+  DB.database.prepare(
+    "INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES ('qwerty','usr_previewowner','owner',unixepoch(),unixepoch())"
+  ).run();
+}
 
 const env = {
   DB,
@@ -83,7 +86,7 @@ const server = createServer(async (incoming, outgoing) => {
   if (previewDelayMs && incoming.url.startsWith('/api/')) {
     await new Promise((resolve) => setTimeout(resolve, previewDelayMs));
   }
-  if (incoming.url === '/__preview_login') {
+  if (!emptyPreview && incoming.url === '/__preview_login') {
     const loginResponse = await worker.fetch(new Request(origin + '/api/login', {
       method: 'POST',
       headers: { origin, 'content-type': 'application/json', 'cf-connecting-ip': '127.0.0.1' },

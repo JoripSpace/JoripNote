@@ -157,15 +157,18 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(home.headers.get('content-security-policy'), /font-src 'self' https:\/\/cdn\.jsdelivr\.net/);
   assert.equal(home.headers.get('x-frame-options'), 'DENY');
   const html = await home.text();
-  assert.match(html, /<title>Workspace Note<\/title>/);
+  assert.match(html, /<title>JoripNote<\/title>/);
   assert.match(html, /멤버 관리/);
   assert.match(html, /id="auth-view" class="auth-shell" hidden/);
-  assert.match(html, /class="wordmark">Workspace Note</);
+  assert.match(html, /class="wordmark">JoripNote</);
+  assert.match(html, /id="setup-view" class="setup-shell" hidden/);
+  assert.match(html, /id="setup-form" class="setup-card"/);
+  assert.match(html, /관리자 계정 만들기/);
   assert.doesNotMatch(html, /workspace-avatar large">N/);
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260803-collaboration-19/);
+  assert.match(html, /app\.css\?v=20260819-joripnote-1/);
   assert.match(html, /id="brand-workspace-note"/);
   assert.match(html, /class="workspace-note-logo"/);
   assert.match(html, /class="star-icon"/);
@@ -174,7 +177,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Notion에서 가져오기/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260803-collaboration-19/);
+  assert.match(html, /app\.js\?v=20260819-joripnote-1/);
   assert.match(html, /id="global-search-dialog"/);
   assert.match(html, /id="publish-dialog"/);
   assert.match(html, /id="inline-toolbar"/);
@@ -182,8 +185,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /id="link-form"/);
   assert.match(html, /id="icon-link"/);
   assert.match(html, /id="url-paste-menu"/);
-  assert.match(html, /<strong>Workspace Note<\/strong><small id="sidebar-role"/);
-  assert.match(html, /<p class="eyebrow">Workspace Note<\/p>/);
+  assert.match(html, /<strong>JoripNote<\/strong><small id="sidebar-role"/);
+  assert.match(html, /<p class="eyebrow">JoripNote<\/p>/);
   assert.doesNotMatch(html, />qwerty</);
   assert.doesNotMatch(html, />QWERTY</);
   assert.match(html, /id="icon-settings"/);
@@ -305,11 +308,11 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /openAccessDialog/);
 
   const health = await worker.fetch(request('/health'), {});
-  assert.deepEqual(await health.json(), { ok: true, service: 'qwerty-docs' });
+  assert.deepEqual(await health.json(), { ok: true, service: 'joripnote' });
   const missingPage = await worker.fetch(request('/missing-page'), {});
   assert.equal(missingPage.status, 404);
   assert.equal(await missingPage.text(), '페이지를 찾을 수 없습니다.');
-  for (const route of ['/', '/all', '/recent', '/favorites', '/trash', '/search?q=team', '/members', '/settings', '/notifications', '/templates', '/doc/doc_12345678', '/public/pub_12345678', '/invite/' + 'a'.repeat(32)]) {
+  for (const route of ['/', '/setup', '/all', '/recent', '/favorites', '/trash', '/search?q=team', '/members', '/settings', '/notifications', '/templates', '/doc/doc_12345678', '/public/pub_12345678', '/invite/' + 'a'.repeat(32)]) {
     const page = await worker.fetch(request(route), {});
     assert.equal(page.status, 200, route);
     assert.match(page.headers.get('content-type'), /text\/html/, route);
@@ -441,6 +444,40 @@ test('authentication requires qwerty membership and blocks public signup after b
     body: { username: 'public_user', password: 'correct-password' }
   });
   assert.equal(signup.response.status, 403);
+});
+
+test('first-run setup installs exactly one owner and seeds builtin templates', async () => {
+  const env = envWithDb();
+  const before = await call(env, '/api/setup-status');
+  assert.equal(before.response.status, 200);
+  assert.equal(before.body.installed, false);
+
+  const mismatch = await call(env, '/api/setup', {
+    method: 'POST',
+    headers: ORIGIN_HEADERS,
+    body: { username: 'first_owner', password: 'secure-password', password_confirmation: 'different-password' }
+  });
+  assert.equal(mismatch.response.status, 400);
+
+  const installed = await call(env, '/api/setup', {
+    method: 'POST',
+    headers: ORIGIN_HEADERS,
+    body: { username: 'first_owner', password: 'secure-password', password_confirmation: 'secure-password' }
+  });
+  assert.equal(installed.response.status, 201, JSON.stringify(installed.body));
+  assert.equal(installed.body.membership.role, 'owner');
+  assert.match(installed.response.headers.get('set-cookie'), /qwerty_session=/);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty' AND role='owner'").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='qwerty' AND is_builtin=1").get().count, 3);
+
+  const after = await call(env, '/api/setup-status');
+  assert.equal(after.body.installed, true);
+  const repeated = await call(env, '/api/setup', {
+    method: 'POST',
+    headers: ORIGIN_HEADERS,
+    body: { username: 'second_owner', password: 'secure-password', password_confirmation: 'secure-password' }
+  });
+  assert.equal(repeated.response.status, 409);
 });
 
 test('documents support hierarchy, all block types, autosave persistence, favorites, recent, search and trash', async () => {

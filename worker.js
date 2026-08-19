@@ -7,6 +7,11 @@ const CAPTCHA_TTL_SECONDS = 60 * 5;
 const BLOCK_TYPES = new Set(['text', 'heading1', 'heading2', 'heading3', 'heading4', 'bullet', 'numbered', 'todo', 'quote', 'code', 'divider', 'toggle', 'callout', 'table', 'database', 'toc', 'math', 'bookmark', 'image', 'video', 'audio', 'file', 'embed', 'page_link']);
 const EDIT_ROLES = new Set(['owner', 'admin', 'member']);
 const MANAGE_ROLES = new Set(['owner', 'admin']);
+const BUILTIN_TEMPLATES = [
+  ['tpl_meeting', '회의록', '안건, 논의 내용과 할 일을 정리합니다.', '🗒️', [{ type: 'heading2', content: '회의 정보' }, { type: 'bullet', content: '일시: ' }, { type: 'bullet', content: '참석자: ' }, { type: 'heading2', content: '안건' }, { type: 'text', content: '논의할 안건을 입력하세요.' }, { type: 'heading2', content: '결정 및 할 일' }, { type: 'todo', content: '담당자와 기한을 적어 주세요.' }]],
+  ['tpl_daily', '업무일지', '오늘의 목표와 진행 상황을 기록합니다.', '✅', [{ type: 'heading2', content: '오늘의 목표' }, { type: 'todo', content: '가장 중요한 일을 적어 주세요.' }, { type: 'heading2', content: '진행 내용' }, { type: 'text', content: '진행한 내용을 적어 주세요.' }, { type: 'heading2', content: '내일 할 일' }, { type: 'todo', content: '다음 할 일을 적어 주세요.' }]],
+  ['tpl_project', '프로젝트 계획서', '목표, 일정, 담당자와 위험 요소를 정리합니다.', '🚀', [{ type: 'heading2', content: '프로젝트 목표' }, { type: 'text', content: '달성하려는 목표를 적어 주세요.' }, { type: 'heading2', content: '주요 일정' }, { type: 'todo', content: '일정과 담당자를 적어 주세요.' }, { type: 'heading2', content: '위험 요소' }, { type: 'callout', content: '예상되는 위험과 대응 방법을 적어 주세요.' }]]
+];
 const encoder = new TextEncoder();
 
 const HTML = String.raw`<!doctype html>
@@ -15,9 +20,9 @@ const HTML = String.raw`<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f7f5">
-  <title>Workspace Note</title>
+  <title>JoripNote</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260803-collaboration-19">
+  <link rel="stylesheet" href="/app.css?v=20260819-joripnote-1">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -64,10 +69,37 @@ const HTML = String.raw`<!doctype html>
   <main id="boot-view" class="boot-shell" aria-busy="true" aria-live="polite">
     <span class="boot-spinner" aria-hidden="true"></span><span>워크스페이스를 여는 중</span>
   </main>
+  <main id="setup-view" class="setup-shell" hidden>
+    <section class="setup-intro" aria-labelledby="setup-title">
+      <div class="setup-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong>JoripNote</strong></div>
+      <div class="setup-copy">
+        <span class="setup-step">처음 한 번만 설정해요</span>
+        <h1 id="setup-title">당신의 문서 공간을<br>시작해 볼까요?</h1>
+        <p>첫 관리자는 모든 문서와 멤버를 관리하는 Owner가 됩니다. 설치 후에는 초대받은 멤버만 참여할 수 있어요.</p>
+      </div>
+      <ul class="setup-benefits" aria-label="설치 후 제공 기능">
+        <li><span>1</span><div><strong>안전한 개인 공간</strong><small>로그인한 멤버만 접근</small></div></li>
+        <li><span>2</span><div><strong>Notion처럼 유연하게</strong><small>계층형 문서와 블록 편집</small></div></li>
+        <li><span>3</span><div><strong>팀과 함께</strong><small>초대, 권한, 댓글과 버전 기록</small></div></li>
+      </ul>
+    </section>
+    <section class="setup-panel">
+      <form id="setup-form" class="setup-card">
+        <div class="setup-progress"><span class="active"></span><span></span><span></span></div>
+        <header><p class="eyebrow">ADMIN SETUP</p><h2>관리자 계정 만들기</h2><p>이 계정은 JoripNote의 최고 관리자입니다.</p></header>
+        <div id="setup-alert" class="alert" role="alert" hidden></div>
+        <label>관리자 아이디<input name="username" autocomplete="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" placeholder="영문, 숫자, 밑줄 3–20자" required></label>
+        <label>비밀번호<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="8자 이상" required></label>
+        <label>비밀번호 확인<input name="password_confirmation" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
+        <button class="button primary setup-submit" type="submit"><span>JoripNote 시작하기</span><span aria-hidden="true">→</span></button>
+        <p class="setup-security">비밀번호는 복구할 수 없도록 안전하게 암호화해 저장합니다.</p>
+      </form>
+    </section>
+  </main>
   <main id="auth-view" class="auth-shell" hidden>
     <section class="auth-panel">
       <form id="login-form" class="auth-card">
-        <div class="login-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong class="wordmark">Workspace Note</strong></div>
+        <div class="login-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong class="wordmark">JoripNote</strong></div>
         <div id="auth-alert" class="alert" role="alert" hidden></div>
         <label>아이디<input name="username" autocomplete="username" minlength="3" maxlength="20" required></label>
         <label>비밀번호<input name="password" type="password" autocomplete="current-password" minlength="8" maxlength="72" required></label>
@@ -75,7 +107,7 @@ const HTML = String.raw`<!doctype html>
         <p class="form-note">새 계정은 멤버 초대를 통해서만 만들 수 있습니다.</p>
       </form>
       <form id="invite-form" class="auth-card" hidden>
-        <div class="login-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong class="wordmark">Workspace Note</strong></div>
+        <div class="login-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong class="wordmark">JoripNote</strong></div>
         <h2>워크스페이스 참여</h2>
         <p id="invite-summary" class="invite-summary">초대를 확인하고 있습니다.</p>
         <div id="invite-alert" class="alert" role="alert" hidden></div>
@@ -87,7 +119,7 @@ const HTML = String.raw`<!doctype html>
   </main>
 
   <main id="public-view" class="public-shell" hidden>
-    <header class="public-header"><a href="/" class="public-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong>Workspace Note</strong></a><span>공개 문서</span></header>
+    <header class="public-header"><a href="/" class="public-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong>JoripNote</strong></a><span>공개 문서</span></header>
     <article class="document-editor public-document"><h1 id="public-title" class="public-title"></h1><div id="public-block-editor" class="block-editor public-block-editor"></div></article>
   </main>
 
@@ -97,7 +129,7 @@ const HTML = String.raw`<!doctype html>
     <aside id="sidebar" class="sidebar">
       <header class="workspace-header">
         <button id="workspace-home" class="workspace-button" type="button">
-          <span class="workspace-avatar">W</span><span><strong>Workspace Note</strong><small id="sidebar-role"></small></span>
+          <span class="workspace-avatar">J</span><span><strong>JoripNote</strong><small id="sidebar-role"></small></span>
         </button>
         <button id="sidebar-collapse" class="icon-button desktop-only" type="button" aria-label="사이드바 축소" data-tooltip="사이드바 축소"><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-left"/></svg></button>
         <button id="sidebar-close" class="icon-button mobile-only" type="button" aria-label="사이드바 닫기" data-tooltip="사이드바 닫기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
@@ -127,13 +159,13 @@ const HTML = String.raw`<!doctype html>
     <section id="main-content" class="main-pane" tabindex="-1">
       <header class="mobile-header">
         <button id="sidebar-open" class="icon-button" type="button" aria-label="사이드바 열기" data-tooltip="사이드바 열기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-menu"/></svg></button>
-        <strong>Workspace Note</strong>
+        <strong>JoripNote</strong>
         <span id="mobile-save-state" role="status" aria-live="polite"></span>
       </header>
 
       <section id="editor-view" class="editor-view" hidden>
         <header class="editor-toolbar">
-          <div class="breadcrumbs"><button id="breadcrumb-home" type="button">Workspace Note</button><span>/</span><span id="breadcrumb-title">제목 없음</span></div>
+          <div class="breadcrumbs"><button id="breadcrumb-home" type="button">JoripNote</button><span>/</span><span id="breadcrumb-title">제목 없음</span></div>
           <div class="toolbar-actions">
             <span id="save-state" class="save-state" role="status" aria-live="polite"></span>
             <button id="favorite-button" class="icon-button favorite-toggle" type="button" aria-label="즐겨찾기 추가" data-tooltip="즐겨찾기 추가"><svg class="star-icon" aria-hidden="true"><use href="#icon-star"/></svg></button>
@@ -157,7 +189,7 @@ const HTML = String.raw`<!doctype html>
 
       <section id="list-view" class="page-view">
         <header class="page-header">
-          <div><p class="eyebrow">Workspace Note</p><h1 id="list-title">전체 문서</h1><p id="list-description">워크스페이스의 최상위 문서입니다.</p></div>
+          <div><p class="eyebrow">JoripNote</p><h1 id="list-title">전체 문서</h1><p id="list-description">워크스페이스의 최상위 문서입니다.</p></div>
           <button id="list-new-document" class="button primary compact" type="button">새 문서</button>
         </header>
         <form id="search-form" class="search-panel" hidden>
@@ -190,7 +222,7 @@ const HTML = String.raw`<!doctype html>
       <section id="settings-view" class="page-view" hidden>
         <header class="page-header"><div><p class="eyebrow">WORKSPACE</p><h1>설정</h1><p>현재 워크스페이스 정보를 확인합니다.</p></div></header>
         <div class="settings-grid">
-          <div class="settings-card"><span class="workspace-avatar large">W</span><div><h2>Workspace Note</h2><p>로그인한 멤버만 접근할 수 있는 협업 문서 공간</p></div></div>
+          <div class="settings-card"><span class="workspace-avatar large">J</span><div><h2>JoripNote</h2><p>로그인한 멤버만 접근할 수 있는 협업 문서 공간</p></div></div>
           <div class="settings-card import-card">
             <div><h2>Notion에서 가져오기</h2><p>Notion에서 내보낸 Markdown(.md) 파일을 문서와 블록으로 변환합니다.</p><small>현재는 Markdown 한 파일의 텍스트·제목·목록·할 일·인용·코드·구분선을 지원합니다. 첨부파일, 데이터베이스, 댓글은 가져오지 않습니다.</small></div>
             <label id="notion-import-button" class="button subtle compact import-button">Markdown 선택<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
@@ -262,7 +294,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260803-collaboration-19" defer></script>
+  <script src="/app.js?v=20260819-joripnote-1" defer></script>
 </body>
 </html>`;
 
@@ -339,9 +371,10 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .tree-row{position:relative;height:32px;margin:1px 0;padding-right:3px;border-radius:7px}
 .tree-toggle{width:27px;height:30px}
 .tree-title{height:30px;padding:0 8px 0 1px;line-height:30px}
-.tree-add{position:absolute;right:3px;width:27px;height:27px;border-radius:6px;opacity:0;visibility:visible;pointer-events:none}
-.tree-row:hover .tree-add,.tree-row:focus-within .tree-add{opacity:1;pointer-events:auto}
-.tree-row:hover .tree-title,.tree-row:focus-within .tree-title{padding-right:34px}
+.tree-action{position:absolute;top:2px;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;opacity:0;visibility:visible;pointer-events:none}
+.tree-add{right:30px}.tree-trash{right:3px;color:#9a4b4b}
+.tree-row:hover .tree-action,.tree-row:focus-within .tree-action{opacity:1;pointer-events:auto}
+.tree-row:hover .tree-title,.tree-row:focus-within .tree-title{padding-right:61px}
 .tree-children{margin-left:13px;padding-left:4px;border-left:1px solid #e4e4e0}
 .bottom-nav{padding-top:10px;background:#f8f8f7}
 .profile-footer{padding:11px 13px}
@@ -360,8 +393,16 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .template-card p{font-size:13px;line-height:1.6}
 .template-card .button{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:40px;padding-inline:14px;border-radius:8px}
 .template-card .button::after{content:"→";font-size:15px;font-weight:700;opacity:.82}
+.setup-shell{display:grid;grid-template-columns:minmax(420px,1.05fr) minmax(440px,.95fr);min-height:100vh;background:#fff}
+.setup-intro{display:flex;flex-direction:column;padding:clamp(36px,5vw,72px);background:#f5f6f8}
+.setup-brand{display:flex;align-items:center;gap:11px;font-size:18px;letter-spacing:-.03em}.setup-brand .workspace-note-logo{width:34px;height:34px}
+.setup-copy{max-width:590px;margin:auto 0}.setup-step{display:inline-flex;padding:7px 11px;border-radius:999px;background:#e7f0ff;color:#1769d2;font-size:12px;font-weight:800}.setup-copy h1{margin:22px 0 18px;font-size:clamp(42px,5vw,68px);line-height:1.08;letter-spacing:-.055em}.setup-copy p{max-width:520px;margin:0;color:#666c76;font-size:16px;line-height:1.75}
+.setup-benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:48px 0 0;padding:0;list-style:none}.setup-benefits li{display:flex;align-items:center;gap:10px}.setup-benefits li>span{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:10px;background:#fff;color:#2878db;font-size:12px;font-weight:900}.setup-benefits strong,.setup-benefits small{display:block}.setup-benefits strong{font-size:12px}.setup-benefits small{margin-top:3px;color:#8a8f98;font-size:10px}
+.setup-panel{display:grid;place-items:center;padding:44px}.setup-card{display:grid;gap:19px;width:min(100%,420px)}.setup-progress{display:flex;gap:6px;margin-bottom:18px}.setup-progress span{width:32px;height:4px;border-radius:99px;background:#e8e9ec}.setup-progress .active{width:54px;background:#3182f6}.setup-card header h2{margin:0;font-size:30px;letter-spacing:-.045em}.setup-card header>p:last-child{margin:9px 0 0;color:#7b8089;font-size:13px}.setup-card label{display:grid;gap:8px;color:#44484f;font-size:13px;font-weight:750}.setup-card input{width:100%;height:52px;padding:0 15px;border:1px solid #dfe1e5;border-radius:12px;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s}.setup-card input:focus{border-color:#3182f6;box-shadow:0 0 0 4px rgba(49,130,246,.11)}.setup-submit{display:flex;align-items:center;justify-content:space-between;min-height:54px;margin-top:5px;padding-inline:18px;border-radius:12px;background:#3182f6}.setup-submit:hover{background:#1b64da}.setup-security{margin:0;color:#92969d;font-size:11px;text-align:center}
+.card-actions .icon-button{width:34px;height:34px}.card-actions .list-trash{color:#8d5555}.card-actions .list-trash:hover{background:#fff0f0;color:#ba3434}
 @media(max-width:1050px) and (min-width:761px){.template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.tree-add{opacity:1;pointer-events:auto}.tree-title{padding-right:34px}}
+@media(max-width:900px){.setup-shell{grid-template-columns:1fr}.setup-intro{min-height:auto;padding:32px 28px}.setup-copy{margin:56px 0 20px}.setup-copy h1{font-size:42px}.setup-benefits{display:none}.setup-panel{padding:48px 24px}}
+@media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.tree-action{opacity:1;pointer-events:auto}.tree-title{padding-right:61px}.setup-intro{padding:24px 20px}.setup-copy{margin:38px 0 4px}.setup-copy h1{font-size:34px}.setup-copy p{font-size:14px}.setup-panel{align-items:start;padding:36px 20px}.setup-card header h2{font-size:27px}}
 `;
 
 const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null};
@@ -389,7 +430,7 @@ const blockLabels=[
   ['quote','"','인용문','강조된 인용','기본 블록'],
   ['table','table','표','행과 열이 있는 표','기본 블록'],
   ['divider','---','구분선','내용 구분','기본 블록'],
-  ['page_link','page','페이지 링크','Workspace Note 문서 연결','기본 블록'],
+  ['page_link','page','페이지 링크','JoripNote 문서 연결','기본 블록'],
   ['image','img','이미지','이미지 URL','미디어'],
   ['video','video','동영상','동영상 URL','미디어'],
   ['audio','audio','오디오','오디오 URL','미디어'],
@@ -408,13 +449,15 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function alertBox(id,message){const el=$(id);el.textContent=message;el.hidden=!message}
 function busy(form,value){for(const el of form.elements)el.disabled=value}
 function inviteToken(){const match=location.pathname.match(/^\/invite\/([A-Za-z0-9_-]{32,128})$/);return match&&match[1]}
-function showAuth(){state.user=null;$('boot-view').hidden=true;$('app-view').hidden=true;$('auth-view').hidden=false;const token=inviteToken();$('login-form').hidden=!!token;$('invite-form').hidden=!token;if(token)loadInvitePreview(token)}
+function showAuth(){state.user=null;$('boot-view').hidden=true;$('setup-view').hidden=true;$('app-view').hidden=true;$('auth-view').hidden=false;const token=inviteToken();$('login-form').hidden=!!token;$('invite-form').hidden=!token;if(token)loadInvitePreview(token)}
+function showSetup(){state.user=null;$('boot-view').hidden=true;$('auth-view').hidden=true;$('app-view').hidden=true;$('setup-view').hidden=false;if(location.pathname!=='/setup')history.replaceState({},'','/setup');setTimeout(()=>$('setup-form').elements.username.focus(),0)}
 async function loadInvitePreview(token){try{const data=await api('/api/invitations/'+encodeURIComponent(token));$('invite-summary').textContent=data.email_hint+' 주소로 보낸 '+roleLabel[data.role]+' 초대입니다. '+new Date(data.expires_at*1000).toLocaleString()+'까지 유효합니다.'}catch(error){alertBox('invite-alert',error.message);for(const el of $('invite-form').elements)el.disabled=true}}
 $('login-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('auth-alert','');busy(formEl,true);try{const data=await api('/api/login',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});enterApp(data)}catch(error){alertBox('auth-alert',error.message)}finally{busy(formEl,false)}});
 $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('invite-alert','');busy(formEl,true);try{const data=await api('/api/invitations/'+encodeURIComponent(inviteToken())+'/accept',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});history.replaceState({},'', '/');enterApp(data)}catch(error){alertBox('invite-alert',error.message);busy(formEl,false)}});
+$('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
-async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const data=await api('/api/me');enterApp(data)}catch{showAuth()}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1'}catch{}setSidebarCollapsed(collapsed,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1'}catch{}setSidebarCollapsed(collapsed,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
@@ -433,14 +476,15 @@ async function showList(view){if(state.dirty&&!await flushSave())return;state.cu
 async function loadDocumentList(append){alertBox('list-alert','');if(!append)showLoading('document-list','list',5);else setLoadButton('load-more-documents',true);const params=new URLSearchParams({scope:state.view,limit:'20'});if(state.cursor)params.set('cursor',state.cursor);if(state.view==='search'&&state.search)params.set('q',state.search);try{const data=await api('/api/documents?'+params);if(!append)$('document-list').replaceChildren();for(const doc of data.documents)$('document-list').append(renderDocumentCard(doc));state.cursor=data.next_cursor;$('load-more-documents').hidden=!state.cursor;if(!$('document-list').children.length)$('document-list').innerHTML='<div class="empty-state"><strong>표시할 문서가 없습니다.</strong><span>'+(state.view==='trash'?'휴지통이 비어 있습니다.':'새 문서를 만들어 시작해 보세요.')+'</span></div>'}catch(error){alertBox('list-alert',error.message);if(!append)$('document-list').replaceChildren()}finally{finishLoading('document-list');setLoadButton('load-more-documents',false)}}
 $('load-more-documents').onclick=()=>loadDocumentList(true);
 $('search-form').onsubmit=(event)=>{event.preventDefault();state.search=$('search-input').value.trim().slice(0,80);state.cursor=null;const next='/search'+(state.search?'?q='+encodeURIComponent(state.search):'');if(location.pathname+location.search!==next)history.pushState({},'',next);loadDocumentList(false)};
-function renderDocumentCard(doc){const row=document.createElement('div');row.className='document-card';const open=document.createElement('button');open.className='doc-open';open.type='button';const title=document.createElement('strong');title.textContent=doc.title||'제목 없음';const meta=document.createElement('small');meta.textContent='수정 '+formatDate(doc.updated_at);open.append(title,meta);open.onclick=()=>push('/doc/'+doc.id);const actions=document.createElement('div');actions.className='card-actions';if(doc.status==='trashed'){if(canEdit()){actions.append(actionButton('복구',()=>restoreDoc(doc.id)),actionButton('영구 삭제',()=>deleteForever(doc.id),true))}}else{const favorite=actionButton('',()=>toggleFavorite(doc.id,!doc.is_favorite));setFavoriteButton(favorite,!!doc.is_favorite);actions.append(favorite)}row.append(open,actions);return row}
+function renderDocumentCard(doc){const row=document.createElement('div');row.className='document-card';const open=document.createElement('button');open.className='doc-open';open.type='button';const title=document.createElement('strong');title.textContent=doc.title||'제목 없음';const meta=document.createElement('small');meta.textContent='수정 '+formatDate(doc.updated_at);open.append(title,meta);open.onclick=()=>push('/doc/'+doc.id);const actions=document.createElement('div');actions.className='card-actions';if(doc.status==='trashed'){if(canEdit()){actions.append(actionButton('복구',()=>restoreDoc(doc.id)),actionButton('영구 삭제',()=>deleteForever(doc.id),true))}}else{const favorite=actionButton('',()=>toggleFavorite(doc.id,!doc.is_favorite));setFavoriteButton(favorite,!!doc.is_favorite);actions.append(favorite);if(canEdit())actions.append(iconAction('trash','휴지통으로 이동',()=>moveToTrash(doc.id),'list-trash'))}row.append(open,actions);return row}
 function actionButton(label,handler,danger=false){const button=document.createElement('button');button.type='button';button.className='button subtle compact'+(danger?' danger-text':'');button.textContent=label;button.onclick=handler;return button}
+function iconAction(name,label,handler,className=''){const button=document.createElement('button');button.type='button';button.className='icon-button '+className;button.innerHTML=icon(name);button.setAttribute('aria-label',label);button.dataset.tooltip=label;button.onclick=handler;return button}
 function formatDate(seconds){return new Date(seconds*1000).toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 async function createDocument(parentId=null){if(!canEdit())return;try{const data=await api('/api/documents',{method:'POST',body:{parent_document_id:parentId}});await loadTree();push('/doc/'+data.document.id)}catch(error){toast(error.message)}}
 $('new-root-document').onclick=()=>createDocument();$('list-new-document').onclick=()=>createDocument();$('new-child-button').onclick=()=>state.current&&createDocument(state.current.id);
 $('duplicate-button').onclick=async()=>{if(!state.current||!canEdit())return;try{const data=await api('/api/documents/'+state.current.id+'/duplicate',{method:'POST'});await loadTree();push('/doc/'+data.document.id);toast('문서를 복제했습니다.')}catch(error){toast(error.message)}};
 async function loadTree(){const container=$('document-tree');showLoading('document-tree','tree',5);try{const data=await api('/api/documents?scope=all&limit=50');container.replaceChildren();for(const doc of data.documents)container.append(treeNode(doc));if(!data.documents.length)container.innerHTML='<div class="empty-state">문서가 없습니다.</div>'}catch{container.innerHTML='<div class="empty-state">트리를 불러오지 못했습니다.</div>'}finally{finishLoading('document-tree')}}
-function treeNode(doc){const wrap=document.createElement('div');wrap.dataset.id=doc.id;const row=document.createElement('div');row.className='tree-row'+(state.current&&state.current.id===doc.id?' active':'');const toggle=document.createElement('button');toggle.className='tree-toggle';toggle.type='button';toggle.hidden=!doc.has_children;if(doc.has_children){const expanded=state.expanded.has(doc.id);toggle.innerHTML=icon('chevron-right');toggle.classList.toggle('expanded',expanded);toggle.setAttribute('aria-label',expanded?'하위 문서 접기':'하위 문서 펼치기');toggle.setAttribute('aria-expanded',expanded?'true':'false');toggle.dataset.tooltip=expanded?'하위 문서 접기':'하위 문서 펼치기'}toggle.onclick=()=>toggleTree(doc,wrap,toggle);const title=document.createElement('button');title.className='tree-title';title.type='button';title.textContent=doc.title||'제목 없음';title.title=title.textContent;title.onclick=()=>push('/doc/'+doc.id);const add=document.createElement('button');add.className='tree-add';add.type='button';add.innerHTML=icon('plus');add.setAttribute('aria-label','하위 문서 추가');add.dataset.tooltip='하위 문서 추가';add.hidden=!canEdit();add.onclick=()=>createDocument(doc.id);row.append(toggle,title,add);wrap.append(row);if(state.expanded.has(doc.id))loadTreeChildren(doc.id,wrap,toggle);return wrap}
+function treeNode(doc){const wrap=document.createElement('div');wrap.dataset.id=doc.id;const row=document.createElement('div');row.className='tree-row'+(state.current&&state.current.id===doc.id?' active':'');const toggle=document.createElement('button');toggle.className='tree-toggle';toggle.type='button';toggle.hidden=!doc.has_children;if(doc.has_children){const expanded=state.expanded.has(doc.id);toggle.innerHTML=icon('chevron-right');toggle.classList.toggle('expanded',expanded);toggle.setAttribute('aria-label',expanded?'하위 문서 접기':'하위 문서 펼치기');toggle.setAttribute('aria-expanded',expanded?'true':'false');toggle.dataset.tooltip=expanded?'하위 문서 접기':'하위 문서 펼치기'}toggle.onclick=()=>toggleTree(doc,wrap,toggle);const title=document.createElement('button');title.className='tree-title';title.type='button';title.textContent=doc.title||'제목 없음';title.title=title.textContent;title.onclick=()=>push('/doc/'+doc.id);const add=iconAction('plus','하위 문서 추가',()=>createDocument(doc.id),'tree-action tree-add');const trash=iconAction('trash','휴지통으로 이동',()=>moveToTrash(doc.id),'tree-action tree-trash');add.hidden=!canEdit();trash.hidden=!canEdit();row.append(toggle,title,add,trash);wrap.append(row);if(state.expanded.has(doc.id))loadTreeChildren(doc.id,wrap,toggle);return wrap}
 async function toggleTree(doc,wrap,toggle){if(!doc.has_children)return;if(state.expanded.has(doc.id)){state.expanded.delete(doc.id);wrap.querySelector('.tree-children')?.remove();toggle.classList.remove('expanded');toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','하위 문서 펼치기');toggle.dataset.tooltip='하위 문서 펼치기'}else{state.expanded.add(doc.id);toggle.classList.add('expanded');toggle.setAttribute('aria-expanded','true');toggle.setAttribute('aria-label','하위 문서 접기');toggle.dataset.tooltip='하위 문서 접기';await loadTreeChildren(doc.id,wrap,toggle)}}
 async function loadTreeChildren(parentId,wrap,toggle){if(state.treeLoading.has(parentId)||wrap.querySelector('.tree-children'))return;state.treeLoading.add(parentId);const children=document.createElement('div');children.className='tree-children';children.setAttribute('aria-busy','true');children.innerHTML=loadingMarkup('tree',3);wrap.append(children);try{const data=await api('/api/documents?scope=all&parent_id='+encodeURIComponent(parentId)+'&limit=50');children.replaceChildren();for(const doc of data.documents)children.append(treeNode(doc));children.removeAttribute('aria-busy')}catch{children.remove();toggle.innerHTML=icon('alert');toggle.setAttribute('aria-label','하위 문서를 불러오지 못함');toggle.dataset.tooltip='하위 문서를 불러오지 못했습니다'}finally{state.treeLoading.delete(parentId)}}
 function resizeDocumentTitle(){const title=$('document-title');title.style.height='auto';title.style.height=title.scrollHeight+'px'}
@@ -450,7 +494,8 @@ function updateDocumentChrome(value){const label=value.trim()||'제목 없음';$
 $('document-title').addEventListener('input',()=>{if(!state.current||!canEdit())return;resizeDocumentTitle();updateDocumentChrome($('document-title').value);scheduleSave()});
 $('favorite-button').onclick=()=>state.current&&toggleFavorite(state.current.id,!state.current.is_favorite);
 async function toggleFavorite(id,value){try{await api('/api/documents/'+id+'/favorite',{method:value?'PUT':'DELETE'});if(state.current&&state.current.id===id){state.current.is_favorite=value;setFavoriteButton($('favorite-button'),value)}if(['favorites','all','recent'].includes(state.view)&&!$('list-view').hidden)showList(state.view);toast(value?'즐겨찾기에 추가했습니다.':'즐겨찾기에서 해제했습니다.')}catch(error){toast(error.message)}}
-$('trash-button').onclick=async()=>{if(!state.current||!confirm('이 문서를 휴지통으로 이동할까요?'))return;try{await api('/api/documents/'+state.current.id+'/trash',{method:'POST'});state.dirty=false;await loadTree();navigateView('trash')}catch(error){toast(error.message)}};
+$('trash-button').onclick=()=>state.current&&moveToTrash(state.current.id,true);
+async function moveToTrash(id,openTrash=false){if(!confirm('이 문서를 휴지통으로 이동할까요? 하위 문서도 함께 이동합니다.'))return;try{await api('/api/documents/'+id+'/trash',{method:'POST'});if(state.current&&state.current.id===id){state.current=null;state.dirty=false;openTrash=true}await loadTree();if(openTrash)navigateView('trash');else if(!$('list-view').hidden)await showList(state.view);toast('문서를 휴지통으로 이동했습니다.')}catch(error){toast(error.message)}}
 async function restoreDoc(id){try{await api('/api/documents/'+id+'/restore',{method:'POST'});await loadTree();showList('trash');toast('문서를 복구했습니다.')}catch(error){toast(error.message)}}
 async function deleteForever(id){if(!confirm('문서와 하위 문서를 영구 삭제합니다. 되돌릴 수 없습니다.'))return;try{await api('/api/documents/'+id,{method:'DELETE'});showList('trash');toast('문서를 영구 삭제했습니다.')}catch(error){toast(error.message)}}
 function renderBlocks(blocks){$('block-editor').replaceChildren();(blocks.length?blocks:[newBlock()]).forEach((block,index)=>$('block-editor').append(blockRow(block,index)));renumberBlocks()}
@@ -477,7 +522,7 @@ function hideUrlPasteMenu(){const menu=$('url-paste-menu');menu.hidden=true;menu
 function updateUrlPasteSelection(){const buttons=[...$('url-paste-menu').querySelectorAll('button')];buttons.forEach((button,index)=>button.classList.toggle('active',index===state.urlPasteIndex));buttons[state.urlPasteIndex]?.focus({preventScroll:true})}
 function applyUrlPasteChoice(choice){const pending=state.urlPaste;if(!pending||!pending.el.isConnected)return hideUrlPasteMenu();const {el,url}=pending;const row=el.closest('.block-row');hideUrlPasteMenu();if(choice==='preview'){const type=safeEmbedUrl(url)?'embed':'bookmark';const next=blockRow({id:row.dataset.id,type,content:url,checked:false,indent_level:Number(row.dataset.indent||0)},0);row.replaceWith(next);renumberBlocks();focusBlock(next);scheduleSave();return}if(choice==='link'){const anchor=document.createElement('a');anchor.href=url;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.textContent=url;el.replaceChildren(anchor);el.dataset.rich='true'}else{el.textContent=url;delete el.dataset.rich}placeCaret(el,true);scheduleSave()}
 function openUrlPasteMenu(el,url){hideSlashMenu();hideBlockMenu();hideUrlPasteMenu();state.urlPaste={el,url};const menu=$('url-paste-menu');const supported=!!safeEmbedUrl(url);const choices=[['preview','code','미리보기로 삽입',supported?'지원되는 서비스 임베드':'링크 카드로 미리보기'],['link','files','링크로 삽입','클릭할 수 있는 링크'],['text','type','주소 텍스트로 붙여넣기','서식 없는 일반 텍스트']];menu.innerHTML='<div class="url-paste-heading">URL을 어떻게 붙여넣을까요?</div>'+choices.map(([choice,iconName,label,description],index)=>'<button type="button" role="menuitem" data-url-choice="'+choice+'" class="'+(index===0?'active':'')+'"><span class="url-paste-icon">'+icon(iconName)+'</span><span class="url-paste-copy"><strong>'+label+'</strong><small>'+description+'</small></span></button>').join('');menu.querySelectorAll('button').forEach((button,index)=>{button.onmouseenter=()=>{state.urlPasteIndex=index;updateUrlPasteSelection()};button.onmousedown=event=>event.preventDefault();button.onclick=()=>applyUrlPasteChoice(button.dataset.urlChoice)});menu.onkeydown=event=>{const buttons=[...menu.querySelectorAll('button')];if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();state.urlPasteIndex=(state.urlPasteIndex+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;updateUrlPasteSelection()}else if(event.key==='Enter'){event.preventDefault();applyUrlPasteChoice(buttons[state.urlPasteIndex].dataset.urlChoice)}else if(event.key==='Escape'){event.preventDefault();const target=state.urlPaste?.el;hideUrlPasteMenu();target?.focus()}};menu.hidden=false;const rect=el.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(rect.left,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-menu.offsetHeight-8))+'px';updateUrlPasteSelection()}
-function mediaBlock(block){const wrap=document.createElement('div');wrap.className='block-content media-block';wrap.dataset.type=block.type;wrap.dataset.urlBlock='true';const input=document.createElement('input');input.className='media-url';input.type='url';input.value=block.content||'';const mediaLabels={image:'이미지',video:'동영상',audio:'오디오',file:'파일',bookmark:'웹 북마크',embed:'임베드',page_link:'문서 링크'};input.placeholder=({image:'이미지 URL을 붙여넣으세요',video:'동영상 URL을 붙여넣으세요',audio:'오디오 URL을 붙여넣으세요',file:'파일 URL을 붙여넣으세요',bookmark:'웹페이지 URL을 붙여넣으세요',embed:'YouTube, Figma, Loom 등 URL',page_link:'Workspace Note 문서 URL을 붙여넣으세요'})[block.type];input.setAttribute('aria-label',(mediaLabels[block.type]||'미디어')+' URL');input.disabled=!canEdit();input.maxLength=2000;const preview=document.createElement('div');preview.className='media-preview';preview.setAttribute('aria-live','polite');const refresh=()=>renderMediaPreview(preview,block.type,input.value);input.oninput=()=>{refresh();scheduleSave()};wrap.append(input,preview);refresh();if(!canEdit()&&safeWebUrl(input.value))input.hidden=true;return wrap}
+function mediaBlock(block){const wrap=document.createElement('div');wrap.className='block-content media-block';wrap.dataset.type=block.type;wrap.dataset.urlBlock='true';const input=document.createElement('input');input.className='media-url';input.type='url';input.value=block.content||'';const mediaLabels={image:'이미지',video:'동영상',audio:'오디오',file:'파일',bookmark:'웹 북마크',embed:'임베드',page_link:'문서 링크'};input.placeholder=({image:'이미지 URL을 붙여넣으세요',video:'동영상 URL을 붙여넣으세요',audio:'오디오 URL을 붙여넣으세요',file:'파일 URL을 붙여넣으세요',bookmark:'웹페이지 URL을 붙여넣으세요',embed:'YouTube, Figma, Loom 등 URL',page_link:'JoripNote 문서 URL을 붙여넣으세요'})[block.type];input.setAttribute('aria-label',(mediaLabels[block.type]||'미디어')+' URL');input.disabled=!canEdit();input.maxLength=2000;const preview=document.createElement('div');preview.className='media-preview';preview.setAttribute('aria-live','polite');const refresh=()=>renderMediaPreview(preview,block.type,input.value);input.oninput=()=>{refresh();scheduleSave()};wrap.append(input,preview);refresh();if(!canEdit()&&safeWebUrl(input.value))input.hidden=true;return wrap}
 function renderMediaPreview(preview,type,value){preview.replaceChildren();const href=safeWebUrl(value);if(!href){preview.textContent='URL을 입력하면 미리보기가 표시됩니다.';return}if(type==='image'){const img=document.createElement('img');img.src=href;img.alt='문서 이미지';img.loading='lazy';preview.append(img);return}if(type==='video'){const video=document.createElement('video');video.src=href;video.controls=true;video.preload='metadata';preview.append(video);return}if(type==='audio'){const audio=document.createElement('audio');audio.src=href;audio.controls=true;audio.preload='metadata';preview.append(audio);return}if(type==='embed'){const embed=safeEmbedUrl(href);if(embed){const frame=document.createElement('iframe');frame.src=embed;frame.loading='lazy';frame.referrerPolicy='no-referrer';frame.allow='fullscreen; picture-in-picture';frame.sandbox='allow-scripts allow-same-origin allow-presentation';preview.append(frame);return}}const link=document.createElement('a');link.href=href;link.target='_blank';link.rel='noopener noreferrer';link.innerHTML=icon(type==='bookmark'?'star':'files')+'<span>'+(type==='page_link'?'연결된 문서 열기':type==='file'?'파일 열기':'웹페이지 열기')+'</span>';preview.append(link)}
 function tocBlock(){const wrap=document.createElement('div');wrap.className='block-content toc-block';wrap.contentEditable='false';wrap.innerHTML='<strong>목차</strong>';queueMicrotask(()=>refreshTableOfContents(wrap));return wrap}
 function refreshTableOfContents(target){if(!target?.isConnected)return;target.querySelectorAll('a').forEach(a=>a.remove());const headings=[...target.closest('.document-editor')?.querySelectorAll('.block-content[data-type^="heading"]')||[]];for(const [index,heading] of headings.entries()){if(!heading.id)heading.id='heading-'+index+'-'+Math.random().toString(36).slice(2,7);const link=document.createElement('a');link.href='#'+heading.id;link.textContent=heading.textContent||'제목 없음';link.style.paddingLeft=((Number(heading.dataset.type.slice(-1))||1)-1)*10+'px';target.append(link)}if(!headings.length){const empty=document.createElement('span');empty.className='muted';empty.textContent='제목 블록을 추가하면 자동으로 표시됩니다.';target.append(empty)}}
@@ -571,7 +616,7 @@ $('publication-toggle').onclick=async()=>{if(!state.current)return;const publish
 async function openPublicDocument(id){$('boot-view').hidden=false;$('auth-view').hidden=true;$('app-view').hidden=true;try{const data=await api('/api/public/documents/'+id);state.role='viewer';state.current=data.document;$('public-title').textContent=data.document.title||'제목 없음';const editor=$('public-block-editor');editor.replaceChildren(...data.document.blocks.map((block,index)=>blockRow(block,index)));let numbered=0;for(const row of editor.children){const el=row.querySelector('.block-content');if(el?.dataset.type==='numbered'){numbered+=1;el.dataset.number=numbered}else numbered=0}$('boot-view').hidden=true;$('public-view').hidden=false}catch(error){$('boot-view').innerHTML='<div class="empty-state"><strong>공개 문서를 열 수 없습니다.</strong><span>'+escapeText(error.message)+'</span></div>'}}
 async function refreshNotificationBadge(){try{const data=await api('/api/notifications?limit=1');const badge=$('notification-badge');badge.textContent=String(data.unread_count||'');badge.hidden=!data.unread_count}catch{}}
 async function showNotifications(){if(state.dirty&&!await flushSave())return;state.current=null;markNav('notifications');showPane('notifications-view');showLoading('notification-list','list',4);showLoading('activity-list','list',4);try{const [notifications,activity]=await Promise.all([api('/api/notifications?limit=50'),api('/api/activity?limit=50')]);$('notification-list').replaceChildren(...notifications.notifications.map(notificationItem));$('activity-list').replaceChildren(...activity.events.map(activityItem));if(!notifications.notifications.length)$('notification-list').innerHTML='<div class="empty-state">새 알림이 없습니다.</div>';if(!activity.events.length)$('activity-list').innerHTML='<div class="empty-state">아직 활동이 없습니다.</div>'}catch(error){$('notification-list').innerHTML='<div class="empty-state">'+escapeText(error.message)+'</div>'}finally{finishLoading('notification-list');finishLoading('activity-list')}}
-function notificationItem(item){const el=document.createElement('article');el.className='feed-item'+(item.read_at?'':' unread');el.innerHTML='<strong>'+escapeText(item.actor_username||'Workspace Note')+'</strong><span>'+escapeText(item.message)+'</span><small>'+escapeText(formatDate(item.created_at))+'</small>';if(item.document_id)el.onclick=()=>push('/doc/'+item.document_id);return el}
+function notificationItem(item){const el=document.createElement('article');el.className='feed-item'+(item.read_at?'':' unread');el.innerHTML='<strong>'+escapeText(item.actor_username||'JoripNote')+'</strong><span>'+escapeText(item.message)+'</span><small>'+escapeText(formatDate(item.created_at))+'</small>';if(item.document_id)el.onclick=()=>push('/doc/'+item.document_id);return el}
 function activityItem(item){const el=document.createElement('article');el.className='feed-item';el.innerHTML='<strong>'+escapeText(item.actor_username||'멤버')+'</strong><span>'+escapeText(item.message)+'</span><small>'+escapeText(formatDate(item.created_at))+'</small>';if(item.document_id)el.onclick=()=>push('/doc/'+item.document_id);return el}
 $('mark-notifications-read').onclick=async()=>{try{await api('/api/notifications/read',{method:'POST',body:{all:true}});await showNotifications();refreshNotificationBadge();toast('알림을 모두 읽음으로 표시했습니다.')}catch(error){toast(error.message)}};
 async function showTemplates(){if(state.dirty&&!await flushSave())return;markNav('templates');showPane('templates-view');showLoading('template-list','list',5);try{const data=await api('/api/templates?limit=50');$('template-list').replaceChildren(...data.templates.map(templateCard));if(!data.templates.length)$('template-list').innerHTML='<div class="empty-state">등록된 템플릿이 없습니다.</div>'}catch(error){$('template-list').innerHTML='<div class="empty-state">'+escapeText(error.message)+'</div>'}finally{finishLoading('template-list')}}
@@ -614,11 +659,16 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if (request.method === 'GET' && path === '/health') return json({ ok: true, service: 'qwerty-docs' });
+  if (request.method === 'GET' && path === '/health') return json({ ok: true, service: 'joripnote' });
   if (request.method === 'GET' && path === '/app.css') return asset(CSS + UI_POLISH_CSS, 'text/css; charset=utf-8');
   if (request.method === 'GET' && path === '/app.js') return asset(CLIENT_JS, 'text/javascript; charset=utf-8');
   if (request.method === 'GET' && /^\/api\/captcha\/[a-f0-9-]{36}\.svg$/.test(path)) return getCaptchaSvg(env, path.slice(13, -4));
   if (request.method === 'GET' && path === '/api/captcha') return createCaptcha(request, env);
+  if (request.method === 'GET' && path === '/api/setup-status') return setupStatus(env);
+  if (request.method === 'POST' && path === '/api/setup') {
+    assertSameOrigin(request);
+    return installAdmin(request, env);
+  }
   if (request.method === 'POST' && path === '/api/bootstrap-signup') {
     assertSameOrigin(request);
     return bootstrapSignup(request, env);
@@ -695,7 +745,7 @@ async function route(request, env) {
     if (templateDocumentRoute && request.method === 'POST') return createDocumentFromTemplate(request, env, actor, templateDocumentRoute[1]);
     throw new HttpError(404, '요청한 기능을 찾을 수 없습니다.');
   }
-  if (request.method === 'GET' && (path === '/' || /^\/(all|recent|favorites|trash|search|members|settings|notifications|templates)$/.test(path) || /^\/doc\/[A-Za-z0-9_-]{8,80}$/.test(path) || /^\/public\/[A-Za-z0-9_-]{8,80}$/.test(path) || /^\/invite\/[A-Za-z0-9_-]{32,128}$/.test(path))) {
+  if (request.method === 'GET' && (path === '/' || path === '/setup' || /^\/(all|recent|favorites|trash|search|members|settings|notifications|templates)$/.test(path) || /^\/doc\/[A-Za-z0-9_-]{8,80}$/.test(path) || /^\/public\/[A-Za-z0-9_-]{8,80}$/.test(path) || /^\/invite\/[A-Za-z0-9_-]{32,128}$/.test(path))) {
     return securedResponse(new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } }), true);
   }
   return text('페이지를 찾을 수 없습니다.', 404);
@@ -721,7 +771,7 @@ async function requireMember(request, env) {
   const member = await env.DB.prepare(
     'SELECT role, joined_at FROM project_members WHERE project_id = ? AND user_id = ?'
   ).bind(PROJECT_ID, user.id).first();
-  if (!member) throw new HttpError(403, 'Workspace Note 멤버만 접근할 수 있습니다.');
+  if (!member) throw new HttpError(403, 'JoripNote 멤버만 접근할 수 있습니다.');
   return { ...user, ...member };
 }
 
@@ -730,19 +780,43 @@ function requireRole(actor, roles, message = '이 작업을 수행할 권한이 
 }
 
 async function bootstrapSignup(request, env) {
+  requireDb(env);
+  throw new HttpError(403, '첫 관리자는 JoripNote 설치 화면에서만 만들 수 있습니다.');
+}
+
+async function setupStatus(env) {
+  const row = await requireDb(env).prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first();
+  return json({ installed: Number(row && row.installed) === 1 });
+}
+
+async function installAdmin(request, env) {
   const db = requireDb(env);
-  const count = await db.prepare('SELECT COUNT(*) AS count FROM users').first();
-  if (Number(count.count) !== 0) throw new HttpError(403, '새 계정은 멤버 초대를 통해서만 만들 수 있습니다.');
+  await enforceRateLimit(db, 'setup_ip', await requestKey(request, 'setup'), 8, 900);
+  const installed = await db.prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first();
+  if (Number(installed && installed.installed) === 1) throw new HttpError(409, '이미 JoripNote 설치가 완료되었습니다.');
   const body = await readJson(request);
   const username = normalizeUsername(body.username);
   const password = String(body.password || '');
-  if (!validateUsername(username) || !validatePassword(password)) throw new HttpError(400, '아이디 또는 비밀번호 형식이 올바르지 않습니다.');
+  if (!validateUsername(username)) throw new HttpError(400, '관리자 아이디는 영문, 숫자, 밑줄 3–20자로 입력해 주세요.');
+  if (!validatePassword(password)) throw new HttpError(400, '비밀번호는 8–72자로 입력해 주세요.');
+  if (password !== String(body.password_confirmation || '')) throw new HttpError(400, '비밀번호 확인이 일치하지 않습니다.');
   const user = await passwordUser(username, password);
   const now = nowSeconds();
-  await db.batch([
+  const statements = [
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('installation_complete', '1', now),
     db.prepare('INSERT INTO users (id, username, password_hash, password_salt, password_iterations, realtime_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(user.id, user.username, user.password_hash, user.password_salt, user.password_iterations, randomString(32), now),
-    db.prepare('INSERT INTO project_members (project_id, user_id, role, joined_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(PROJECT_ID, user.id, 'owner', now, now)
-  ]);
+    db.prepare('INSERT INTO project_members (project_id, user_id, role, joined_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(PROJECT_ID, user.id, 'owner', now, now),
+    ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT OR IGNORE INTO workspace_templates
+      (id,project_id,name,description,icon,blocks_json,created_by,is_builtin,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now))
+  ];
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    const after = await db.prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first();
+    if (Number(after && after.installed) === 1) throw new HttpError(409, '다른 요청에서 설치가 완료되었습니다. 로그인해 주세요.');
+    throw error;
+  }
   return createSessionResponse(db, user, 'owner', 201);
 }
 
@@ -755,7 +829,7 @@ async function login(request, env) {
   const user = await db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').bind(username).first();
   if (!user || !await verifyPassword(password, user.password_salt, Number(user.password_iterations), user.password_hash)) throw new HttpError(401, '아이디 또는 비밀번호가 올바르지 않습니다.');
   const membership = await db.prepare('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?').bind(PROJECT_ID, user.id).first();
-  if (!membership) throw new HttpError(403, 'Workspace Note 멤버가 아닙니다.');
+  if (!membership) throw new HttpError(403, 'JoripNote 멤버가 아닙니다.');
   return createSessionResponse(db, user, membership.role);
 }
 
@@ -1249,8 +1323,8 @@ async function deliverInvitation(env, email, inviteUrl, role, resend) {
   if (!env.MAIL || typeof env.MAIL.send !== 'function') return 'manual';
   await env.MAIL.send({
     to: email,
-    subject: resend ? '[Workspace Note] 멤버 초대를 다시 보냈습니다' : '[Workspace Note] 협업 문서 멤버 초대',
-    text: 'Workspace Note 협업 문서에 ' + roleLabelServer(role) + ' 역할로 초대되었습니다.\n\n초대 수락: ' + inviteUrl + '\n\n이 링크는 7일 동안 유효하며 한 번만 사용할 수 있습니다.'
+    subject: resend ? '[JoripNote] 멤버 초대를 다시 보냈습니다' : '[JoripNote] 협업 문서 멤버 초대',
+    text: 'JoripNote 협업 문서에 ' + roleLabelServer(role) + ' 역할로 초대되었습니다.\n\n초대 수락: ' + inviteUrl + '\n\n이 링크는 7일 동안 유효하며 한 번만 사용할 수 있습니다.'
   });
   return 'sent';
 }
