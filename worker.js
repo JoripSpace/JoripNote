@@ -326,6 +326,42 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .db-board-column{padding:8px}
 .db-card{gap:8px;padding:10px}
 @media(max-width:760px){.database-block{margin-right:-8px;border-radius:9px}.db-header{padding:13px 12px 9px}.db-viewbar{padding-inline:11px}.db-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:9px}.db-search-wrap{grid-column:1/-1;min-width:0}.db-select{min-width:0;max-width:none}.db-control{padding-inline:9px}.db-property-head{padding:6px 7px}.db-footer{padding:10px}.db-footer-note{font-size:9px}}
+/* Workspace layout detail pass */
+:root{--sidebar-width:260px;--content-width:1040px}
+.sidebar{width:var(--sidebar-width);background:#f8f8f7}
+.main-pane{margin-left:var(--sidebar-width)}
+.workspace-header{padding:12px 12px 10px}
+.workspace-button{gap:11px;padding:6px 7px}
+.main-nav{gap:2px;padding:6px 10px 10px}
+.main-nav button{height:34px;padding:0 10px;border-radius:7px}
+.tree-heading{min-height:44px;padding:14px 13px 7px 17px;letter-spacing:.02em}
+.document-tree{min-height:0;max-height:none;flex:1 1 auto;padding:0 8px 14px;scrollbar-gutter:stable}
+.tree-row{position:relative;height:32px;margin:1px 0;padding-right:3px;border-radius:7px}
+.tree-toggle{width:27px;height:30px}
+.tree-title{height:30px;padding:0 8px 0 1px;line-height:30px}
+.tree-add{position:absolute;right:3px;width:27px;height:27px;border-radius:6px;opacity:0;visibility:visible;pointer-events:none}
+.tree-row:hover .tree-add,.tree-row:focus-within .tree-add{opacity:1;pointer-events:auto}
+.tree-row:hover .tree-title,.tree-row:focus-within .tree-title{padding-right:34px}
+.tree-children{margin-left:13px;padding-left:4px;border-left:1px solid #e4e4e0}
+.bottom-nav{padding-top:10px;background:#f8f8f7}
+.profile-footer{padding:11px 13px}
+.page-view{width:min(calc(100% - 64px),var(--content-width));padding:38px 0 112px}
+.page-header{align-items:center;gap:32px;padding-bottom:26px}
+.page-header>div{min-width:0}
+.page-header h1{font-size:36px;line-height:1.16}
+.page-header p:last-child{margin-top:10px;line-height:1.55}
+.page-header>.button{flex:none}
+.template-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:28px}
+.template-card{grid-template-rows:auto auto 1fr auto;gap:12px;min-height:216px;padding:24px;border-color:#e2e2de;border-radius:14px;box-shadow:0 1px 2px rgba(30,30,28,.025);transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}
+.template-card:hover{border-color:#d6d7dc;background:#fff;box-shadow:0 8px 24px rgba(38,41,49,.07);transform:translateY(-1px)}
+.template-card:focus-visible{border-color:#8e96a8;outline:3px solid rgba(89,100,127,.16);outline-offset:2px}
+.template-card .template-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#f1f2f5;font-size:24px;line-height:1}
+.template-card h2{font-size:18px;line-height:1.35;letter-spacing:-.02em}
+.template-card p{font-size:13px;line-height:1.6}
+.template-card .button{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:40px;padding-inline:14px;border-radius:8px}
+.template-card .button::after{content:"→";font-size:15px;font-weight:700;opacity:.82}
+@media(max-width:1050px) and (min-width:761px){.template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.tree-add{opacity:1;pointer-events:auto}.tree-title{padding-right:34px}}
 `;
 
 const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null};

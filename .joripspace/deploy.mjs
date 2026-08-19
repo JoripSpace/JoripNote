@@ -70,12 +70,11 @@ function detectEntrypoint() {
 function loadConnection() {
   const env = readEnv(path.join(ROOT, '.env.joripspace'));
   const project = readJson(path.join(ROOT, '.joripspace', 'project.json')) || {};
-  const session = readJson(path.join(ROOT, '.joripspace', 'agent-session.json')) || {};
   return {
     project,
     projectId: process.env.JORIPSPACE_PROJECT_ID || env.JORIPSPACE_PROJECT_ID || project.project_id || project.project_slug || '',
-    apiBaseUrl: (process.env.JORIPSPACE_API_BASE_URL || env.JORIPSPACE_API_BASE_URL || session.api_base_url || project.api_base_url || 'https://api.joripspace.com').replace(/\/+$/, ''),
-    apiToken: process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN || session.api_token || ''
+    apiBaseUrl: (process.env.JORIPSPACE_API_BASE_URL || env.JORIPSPACE_API_BASE_URL || project.api_base_url || 'https://api.joripspace.com').replace(/\/+$/, ''),
+    apiToken: process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN || ''
   };
 }
 

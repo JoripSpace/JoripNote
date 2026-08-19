@@ -16,7 +16,9 @@
     "joripspace:deploy": "node .joripspace/save.mjs --deploy",
     "joripspace:pull": "node .joripspace/pull.mjs",
     "joripspace:pull:force": "node .joripspace/pull.mjs --force",
-    "deploy": "node .joripspace/save.mjs --deploy"
+    "deploy": "node .joripspace/save.mjs --deploy",
+    "joripspace:install-template": "node .joripspace/install-template.mjs",
+    "joripspace:template-pull": "node .joripspace/install-template.mjs --update"
   },
   "dependencies": {
     "fflate": "^0.8.2"

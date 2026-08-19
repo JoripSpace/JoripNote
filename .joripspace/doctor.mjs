@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
+  import crypto from 'node:crypto';
+  import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -12,7 +13,9 @@ const REQUIRED_SCRIPTS = {
   'joripspace:deploy-checkpoint': 'node .joripspace/deploy-checkpoint.mjs',
   'joripspace:deploy': 'node .joripspace/save.mjs --deploy',
   'joripspace:pull': 'node .joripspace/pull.mjs',
-  'joripspace:pull:force': 'node .joripspace/pull.mjs --force'
+  'joripspace:pull:force': 'node .joripspace/pull.mjs --force',
+  'joripspace:install-template': 'node .joripspace/install-template.mjs',
+  'joripspace:template-pull': 'node .joripspace/install-template.mjs --update'
 };
 const OPTIONAL_DEPLOY_SCRIPT = 'node .joripspace/save.mjs --deploy';
 const ENTRYPOINT_CANDIDATES = ['worker.js', 'src/worker.js', 'src/index.js', 'server.js', 'dist/worker.js'];
@@ -182,14 +185,13 @@ function main() {
 
   const env = readEnv(path.join(ROOT, '.env.joripspace'));
   const project = readJson(path.join(ROOT, '.joripspace', 'project.json')) || {};
-  const session = readJson(path.join(ROOT, '.joripspace', 'agent-session.json')) || {};
   const packageJson = readJson(path.join(ROOT, 'package.json')) || {};
   const scripts = packageJson.scripts && typeof packageJson.scripts === 'object' ? packageJson.scripts : {};
   const issues = [];
 
   const projectId = env.JORIPSPACE_PROJECT_ID || project.project_id || project.project_slug || '';
-  const apiBaseUrl = env.JORIPSPACE_API_BASE_URL || session.api_base_url || project.api_base_url || '';
-  const tokenPresent = Boolean(process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN || session.api_token);
+  const apiBaseUrl = env.JORIPSPACE_API_BASE_URL || project.api_base_url || '';
+  const tokenPresent = Boolean(process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN);
   const entrypoint = detectEntrypoint();
 
   if (!projectId) issues.push({ code: 'missing_project_id', message: 'JoripSpace 프로젝트 ID를 찾지 못했습니다.', next_action: 'MCP 연결 또는 joripspace link를 다시 실행하세요.' });
@@ -203,7 +205,6 @@ function main() {
     issues.push({ code: 'joripspace_workflow_policy_missing', message: '최신 JoripSpace 제작·배포 정책이 작업 폴더에 적용되지 않았습니다.', next_action: '에이전트가 prepare_project_workspace로 연결 파일을 자동 갱신해야 합니다.' });
   }
   if (!hasGitignoreEntry('.env.joripspace')) issues.push({ code: 'gitignore_missing_env', message: '.env.joripspace가 .gitignore에 없습니다.', next_action: '.env.joripspace를 .gitignore에 추가하세요.' });
-  if (!hasGitignoreEntry('.joripspace/agent-session.json')) issues.push({ code: 'gitignore_missing_session', message: '.joripspace/agent-session.json이 .gitignore에 없습니다.', next_action: '.joripspace/agent-session.json을 .gitignore에 추가하세요.' });
 
   const result = {
     ok: issues.length === 0,

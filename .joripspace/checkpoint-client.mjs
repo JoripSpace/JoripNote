@@ -6,7 +6,7 @@ import { strToU8, unzipSync, zipSync } from 'fflate';
 
 const ROOT = process.cwd();
 const HARD_DIRS = new Set(['.git', 'node_modules', '.wrangler', '.cache', 'coverage', 'tmp', 'temp']);
-const HARD_FILES = new Set(['.joripspace/agent-session.json', '.ds_store', 'thumbs.db', 'desktop.ini']);
+const HARD_FILES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini']);
 const TEXT_ENCODER = new TextEncoder();
 
 function readJson(filePath) {
@@ -29,11 +29,10 @@ function readEnv(filePath) {
 function connection() {
   const env = readEnv(path.join(ROOT, '.env.joripspace'));
   const project = readJson(path.join(ROOT, '.joripspace', 'project.json')) || {};
-  const session = readJson(path.join(ROOT, '.joripspace', 'agent-session.json')) || {};
   const result = {
     projectId: process.env.JORIPSPACE_PROJECT_ID || env.JORIPSPACE_PROJECT_ID || project.project_id || project.project_slug || '',
-    apiBaseUrl: (process.env.JORIPSPACE_API_BASE_URL || env.JORIPSPACE_API_BASE_URL || session.api_base_url || project.api_base_url || 'https://api.joripspace.com').replace(/\/+$/, ''),
-    apiToken: process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN || session.api_token || ''
+    apiBaseUrl: (process.env.JORIPSPACE_API_BASE_URL || env.JORIPSPACE_API_BASE_URL || project.api_base_url || 'https://api.joripspace.com').replace(/\/+$/, ''),
+    apiToken: process.env.JORIPSPACE_API_TOKEN || env.JORIPSPACE_API_TOKEN || ''
   };
   if (!result.projectId || !result.apiToken) throw new Error('JoripSpace 프로젝트 연결 정보가 없습니다. 연결을 다시 승인해 주세요.');
   return result;
