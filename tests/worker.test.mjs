@@ -303,6 +303,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /function parseDatabaseModel/);
   assert.match(source, /function renderDatabaseBoard/);
   assert.match(source, /function renderDatabaseTable/);
+  assert.match(source, /function databaseFilterControls/);
+  assert.match(source, /조건에 맞는 작업이 없습니다/);
   assert.match(source, /DATABASE_PROPERTY_TYPES=\{text:'텍스트',select:'선택',person:'담당자'/);
   assert.match(source, /type==='database'\?100000:20000/);
   assert.match(source, /const next='\/search'\+\(state\.search\?'\?q='/);
@@ -650,6 +652,49 @@ test('documents support hierarchy, all block types, autosave persistence, favori
   assert.equal((await call(env, '/api/documents/' + parentId + '/trash', { method: 'POST', headers: auth(cookie) })).response.status, 200);
   assert.equal((await call(env, '/api/documents/' + parentId, { method: 'DELETE', headers: auth(cookie) })).response.status, 200);
   assert.equal(env.DB.database.prepare('SELECT COUNT(*) AS count FROM documents').get().count, 0);
+});
+
+test('database cells enforce typed values and persist safe filters', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  const created = await call(env, '/api/documents', { method: 'POST', headers: auth(cookie), body: {} });
+  const id = created.body.document.id;
+  const database = {
+    version: 2,
+    title: '형식 검사',
+    columns: [
+      { id: 'col_text', name: '이름', type: 'text', options: [] },
+      { id: 'col_num', name: '수량', type: 'number', options: [] },
+      { id: 'col_date', name: '날짜', type: 'date', options: [] },
+      { id: 'col_url', name: '링크', type: 'url', options: [] },
+      { id: 'col_done', name: '완료', type: 'checkbox', options: [] },
+      { id: 'col_status', name: '상태', type: 'select', options: ['진행 중', '완료'] }
+    ],
+    rows: [{ id: 'row_typed01', cells: { col_text: '  공백 보존  ', col_num: '12.50', col_date: '2026-02-28', col_url: 'https://example.com/docs', col_done: 'false', col_status: '진행 중' } }],
+    view: { mode: 'table', groupBy: 'col_status', sortBy: 'col_num', sortDir: 'desc', filter: { column: 'col_status', operator: 'equals', value: '진행 중' } }
+  };
+  for (const [column, value] of [['col_num', '많음'], ['col_date', '2026-02-30'], ['col_url', 'javascript:alert(1)']]) {
+    const invalid = structuredClone(database);
+    invalid.rows[0].cells[column] = value;
+    const result = await call(env, '/api/documents/' + id, {
+      method: 'PUT',
+      headers: auth(cookie),
+      body: { title: '형식 검사', version: 1, save_id: 'snap_invalid_case_' + column, blocks: [{ id: 'blk_database1', type: 'database', content: JSON.stringify(invalid) }] }
+    });
+    assert.equal(result.response.status, 400, column);
+  }
+  const saved = await call(env, '/api/documents/' + id, {
+    method: 'PUT',
+    headers: auth(cookie),
+    body: { title: '형식 검사', version: 1, save_id: 'snap_valid_database_001', blocks: [{ id: 'blk_database1', type: 'database', content: JSON.stringify(database) }] }
+  });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  const reloaded = await call(env, '/api/documents/' + id, { headers: { cookie } });
+  const persisted = JSON.parse(reloaded.body.document.blocks[0].content);
+  assert.equal(persisted.rows[0].cells.col_text, '  공백 보존  ');
+  assert.equal(persisted.rows[0].cells.col_done, false);
+  assert.deepEqual(persisted.view.filter, { column: 'col_status', operator: 'equals', value: '진행 중' });
 });
 
 test('Owner and Admin can publish documents while anonymous readers only see published content', async () => {
