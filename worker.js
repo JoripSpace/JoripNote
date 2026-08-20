@@ -408,7 +408,7 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .document-tree{min-height:0;max-height:none;flex:1 1 auto;padding:0 10px 14px;scrollbar-gutter:stable}
 .tree-row{position:relative;height:32px;margin:1px 0;padding-right:3px;border-radius:7px}
 .tree-toggle{width:27px;height:30px}
-.tree-title{height:30px;padding:0 8px;line-height:30px}
+.tree-title{height:30px;padding:0 8px 0 10px;line-height:30px}
 .tree-toggle[hidden]+.tree-title{margin-left:27px}
 .tree-action{position:absolute;top:2px;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;opacity:0;visibility:visible;pointer-events:none}
 .tree-add{right:30px}.tree-trash{right:3px;color:#9a4b4b}
