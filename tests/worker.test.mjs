@@ -177,11 +177,13 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /class="boot-spinner"/);
   assert.match(html, /워크스페이스를 여는 중<\/span>/);
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
-  assert.match(html, /Notion에서 가져오기/);
+  assert.match(html, /Markdown 업로드/);
   assert.match(html, /textarea id="document-title"/);
   assert.match(html, /app\.js\?v=20260820-joripnote-5/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
+  assert.match(html, /id="ip-tag-editor" class="ip-tag-editor"/);
+  assert.match(html, /id="add-current-ip"/);
   assert.match(html, /data-document-width="narrow"/);
   assert.match(html, /id="global-search-dialog"/);
   assert.match(html, /id="publish-dialog"/);
@@ -211,6 +213,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   const styles = await stylesheet.text();
   assert.match(styles, /\.document-tree>\.empty-state\{padding:14px 8px 18px[^}]*font-size:11px/);
   assert.match(styles, /\.settings-page \.settings-grid\{grid-template-columns:minmax\(0,1fr\);gap:0/);
+  assert.match(styles, /\.ip-tag-editor\{display:flex/);
+  assert.match(styles, /\.app-shell\.document-width-full \.settings-page\{width:min\(100% - 72px,1440px\)/);
   assert.match(styles, /@media\(max-width:760px\)\{\.settings-page\{width:calc\(100% - 24px\)/);
   assert.match(styles, /select:not\(:disabled\)\{cursor:pointer\}select:disabled\{cursor:not-allowed\}/);
   assert.match(styles, /\.skip-link\{position:fixed/);
@@ -294,6 +298,9 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /function setSidebarCollapsed/);
   assert.match(source, /qwerty_sidebar_collapsed/);
   assert.match(source, /function setDocumentWidth/);
+  assert.match(source, /function setupIpTagEditor/);
+  assert.match(source, /function normalizeIpEntries/);
+  assert.match(source, /state\.ipAllowlist\.join\('\\n'\)/);
   assert.match(source, /joripnote_document_width/);
   assert.match(source, /\/api\/settings/);
   assert.match(source, /\/api\/register/);
