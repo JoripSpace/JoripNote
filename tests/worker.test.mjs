@@ -168,7 +168,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260820-joripnote-2/);
+  assert.match(html, /app\.css\?v=20260820-joripnote-3/);
   assert.match(html, /id="brand-workspace-note"/);
   assert.match(html, /class="workspace-note-logo"/);
   assert.match(html, /class="star-icon"/);
@@ -177,7 +177,10 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Notion에서 가져오기/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260819-joripnote-1/);
+  assert.match(html, /app\.js\?v=20260820-joripnote-3/);
+  assert.match(html, /id="workspace-access-form"/);
+  assert.match(html, /id="ip-access-form"/);
+  assert.match(html, /data-document-width="narrow"/);
   assert.match(html, /id="global-search-dialog"/);
   assert.match(html, /id="publish-dialog"/);
   assert.match(html, /id="inline-toolbar"/);
@@ -284,6 +287,10 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /notion-import-input/);
   assert.match(source, /function setSidebarCollapsed/);
   assert.match(source, /qwerty_sidebar_collapsed/);
+  assert.match(source, /function setDocumentWidth/);
+  assert.match(source, /joripnote_document_width/);
+  assert.match(source, /\/api\/settings/);
+  assert.match(source, /\/api\/register/);
   assert.match(source, /openGlobalSearch/);
   assert.match(source, /openPublicationDialog/);
   assert.match(source, /structuredTableBlock/);
@@ -478,6 +485,61 @@ test('first-run setup installs exactly one owner and seeds builtin templates', a
     body: { username: 'second_owner', password: 'secure-password', password_confirmation: 'secure-password' }
   });
   assert.equal(repeated.response.status, 409);
+});
+
+test('Owner controls public signup roles and exact IP access without locking out the current IP', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_policyowner', username: 'policyowner', role: 'owner' });
+  await addUser(env, { id: 'usr_policymember', username: 'policymember', role: 'member' });
+  const ownerCookie = await login(env, 'policyowner');
+  const memberCookie = await login(env, 'policymember');
+
+  const initial = await call(env, '/api/settings', { headers: auth(ownerCookie) });
+  assert.equal(initial.response.status, 200);
+  assert.equal(initial.body.public_signup_enabled, false);
+  assert.equal(initial.body.current_ip, '203.0.113.10');
+
+  const memberUpdate = await call(env, '/api/settings', {
+    method: 'PATCH', headers: auth(memberCookie), body: { public_signup_enabled: true }
+  });
+  assert.equal(memberUpdate.response.status, 403);
+
+  const signupPolicy = await call(env, '/api/settings', {
+    method: 'PATCH', headers: auth(ownerCookie), body: { public_signup_enabled: true, public_signup_role: 'viewer' }
+  });
+  assert.equal(signupPolicy.response.status, 200);
+  assert.equal(signupPolicy.body.public_signup_role, 'viewer');
+  assert.equal((await call(env, '/api/setup-status')).body.public_signup_enabled, true);
+
+  const registered = await call(env, '/api/register', {
+    method: 'POST', headers: ORIGIN_HEADERS,
+    body: { username: 'self_joined', password: 'secure-password', password_confirmation: 'secure-password' }
+  });
+  assert.equal(registered.response.status, 201, JSON.stringify(registered.body));
+  assert.equal(registered.body.membership.role, 'viewer');
+
+  const unsafeIpPolicy = await call(env, '/api/settings', {
+    method: 'PATCH', headers: auth(ownerCookie),
+    body: { ip_allowlist_enabled: true, ip_allowlist: '198.51.100.20' }
+  });
+  assert.equal(unsafeIpPolicy.response.status, 400);
+  assert.equal(unsafeIpPolicy.body.current_ip, '203.0.113.10');
+
+  const safeIpPolicy = await call(env, '/api/settings', {
+    method: 'PATCH', headers: auth(ownerCookie),
+    body: { ip_allowlist_enabled: true, ip_allowlist: '203.0.113.10\n198.51.100.20' }
+  });
+  assert.equal(safeIpPolicy.response.status, 200, JSON.stringify(safeIpPolicy.body));
+  assert.equal(safeIpPolicy.body.ip_allowlist_enabled, true);
+
+  const blockedLogin = await call(env, '/api/login', {
+    method: 'POST',
+    headers: { origin: ORIGIN, 'cf-connecting-ip': '192.0.2.30' },
+    body: { username: 'policyowner', password: 'correct-password' }
+  });
+  assert.equal(blockedLogin.response.status, 403);
+  const publicStatus = await call(env, '/api/setup-status', { headers: { 'cf-connecting-ip': '192.0.2.30' } });
+  assert.equal(publicStatus.response.status, 200);
 });
 
 test('documents support hierarchy, all block types, autosave persistence, favorites, recent, search and trash', async () => {

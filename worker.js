@@ -22,7 +22,7 @@ const HTML = String.raw`<!doctype html>
   <meta name="theme-color" content="#f7f7f5">
   <title>JoripNote</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260820-joripnote-2">
+  <link rel="stylesheet" href="/app.css?v=20260820-joripnote-3">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -104,7 +104,19 @@ const HTML = String.raw`<!doctype html>
         <label>아이디<input name="username" autocomplete="username" minlength="3" maxlength="20" required></label>
         <label>비밀번호<input name="password" type="password" autocomplete="current-password" minlength="8" maxlength="72" required></label>
         <button class="button primary" type="submit">워크스페이스 열기</button>
-        <p class="form-note">새 계정은 멤버 초대를 통해서만 만들 수 있습니다.</p>
+        <button id="open-signup" class="button subtle" type="button" hidden>새 계정 만들기</button>
+        <p id="login-policy-note" class="form-note">새 계정은 멤버 초대를 통해서만 만들 수 있습니다.</p>
+      </form>
+      <form id="signup-form" class="auth-card" hidden>
+        <div class="login-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong class="wordmark">JoripNote</strong></div>
+        <h2>계정 만들기</h2>
+        <p class="invite-summary">워크스페이스 관리자가 공개 회원가입을 허용했습니다.</p>
+        <div id="signup-alert" class="alert" role="alert" hidden></div>
+        <label>아이디<input name="username" autocomplete="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" required></label>
+        <label>비밀번호<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
+        <label>비밀번호 확인<input name="password_confirmation" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
+        <button class="button primary" type="submit">가입하고 시작하기</button>
+        <button id="back-to-login" class="button subtle" type="button">로그인으로 돌아가기</button>
       </form>
       <form id="invite-form" class="auth-card" hidden>
         <div class="login-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong class="wordmark">JoripNote</strong></div>
@@ -227,6 +239,28 @@ const HTML = String.raw`<!doctype html>
             <div><h2>Notion에서 가져오기</h2><p>Notion에서 내보낸 Markdown(.md) 파일을 문서와 블록으로 변환합니다.</p><small>현재는 Markdown 한 파일의 텍스트·제목·목록·할 일·인용·코드·구분선을 지원합니다. 첨부파일, 데이터베이스, 댓글은 가져오지 않습니다.</small></div>
             <label id="notion-import-button" class="button subtle compact import-button">Markdown 선택<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
           </div>
+          <div class="settings-card document-width-card">
+            <div><h2>문서 너비</h2><p>집중해서 읽거나, 넓은 화면을 모두 활용할 수 있습니다.</p></div>
+            <div class="width-options" role="radiogroup" aria-label="문서 보기 너비">
+              <button type="button" data-document-width="narrow" role="radio" aria-checked="false"><span class="width-preview narrow" aria-hidden="true"></span><strong>좁게</strong></button>
+              <button type="button" data-document-width="default" role="radio" aria-checked="true"><span class="width-preview default" aria-hidden="true"></span><strong>기본</strong></button>
+              <button type="button" data-document-width="full" role="radio" aria-checked="false"><span class="width-preview full" aria-hidden="true"></span><strong>전체 화면</strong></button>
+            </div>
+          </div>
+          <form id="workspace-access-form" class="settings-card policy-card">
+            <header><div><h2>가입 정책</h2><p>초대 없이 새 계정을 만들 수 있는지 정합니다.</p></div><span class="owner-only-badge">Owner 전용</span></header>
+            <label class="setting-toggle"><span><strong>공개 회원가입</strong><small>로그인 화면에 회원가입 버튼을 표시합니다.</small></span><input id="public-signup-enabled" type="checkbox" role="switch"></label>
+            <label class="setting-select"><span><strong>신규 회원 기본 역할</strong><small>Member는 문서 작성, Viewer는 읽기만 가능합니다.</small></span><select id="public-signup-role"><option value="member">Member</option><option value="viewer">Viewer</option></select></label>
+            <button class="button primary compact policy-save" type="submit">가입 정책 저장</button>
+          </form>
+          <form id="ip-access-form" class="settings-card policy-card">
+            <header><div><h2>IP 접근 제한</h2><p>등록한 IP에서만 로그인하고 내부 문서에 접근하도록 제한합니다.</p></div><span class="owner-only-badge">Owner 전용</span></header>
+            <div class="current-ip">현재 접속 IP <strong id="current-request-ip">확인 중</strong></div>
+            <label class="setting-toggle"><span><strong>허용목록 사용</strong><small>공개 문서 링크에는 적용하지 않습니다.</small></span><input id="ip-allowlist-enabled" type="checkbox" role="switch"></label>
+            <label class="ip-list-label"><span><strong>허용할 IP</strong><small>한 줄에 하나씩, 최대 50개까지 입력하세요.</small></span><textarea id="ip-allowlist" rows="5" maxlength="2500" placeholder="203.0.113.10&#10;2001:db8::1"></textarea></label>
+            <p class="security-warning">현재 접속 IP가 목록에 없으면 제한을 켤 수 없습니다.</p>
+            <button class="button primary compact policy-save" type="submit">IP 정책 저장</button>
+          </form>
         </div>
       </section>
 
@@ -294,7 +328,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260819-joripnote-1" defer></script>
+  <script src="/app.js?v=20260820-joripnote-3" defer></script>
 </body>
 </html>`;
 
@@ -314,10 +348,12 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 :root{font-family:"SUIT Variable",SUIT,system-ui,-apple-system,sans-serif}.auth-copy h1,.workspace-avatar,.document-title,.slash-icon{font-family:"SUIT Variable",SUIT,system-ui,-apple-system,sans-serif}
 .icon-sprite{position:absolute;width:0;height:0;overflow:hidden}.ui-icon,.star-icon{display:block;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.auth-shell{grid-template-columns:1fr;place-items:center;background:#f7f7f5}.auth-panel{width:100%;padding:24px}.auth-card{gap:14px;padding:32px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 18px 55px rgba(30,30,28,.08)}.login-brand{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;margin-bottom:14px;text-align:center}.workspace-note-logo{display:block;width:56px;height:56px}.wordmark{font-size:25px}.auth-card h2{margin:8px 0 4px;font-size:25px}.auth-card input{height:42px}.auth-card .button{min-height:42px}.button{min-height:36px;padding:0 14px;font-size:13px}.button.compact{min-height:34px;padding:0 12px}.icon-button{width:30px;height:30px;font-size:16px}.toolbar-actions .button{min-height:32px;padding:0 11px;font-size:12px}[data-tooltip]{position:relative}[data-tooltip]::after{position:absolute;z-index:250;top:calc(100% + 7px);left:50%;display:none;max-width:190px;padding:6px 8px;border-radius:6px;background:#292926;color:#fff;content:attr(data-tooltip);font-size:11px;font-weight:600;line-height:1.2;white-space:nowrap;pointer-events:none;transform:translateX(-50%)}[data-tooltip]:hover::after,[data-tooltip]:focus-visible::after{display:block}.sidebar [data-tooltip]::after{top:50%;left:calc(100% + 8px);transform:translateY(-50%)}
 .sidebar{width:244px;transition:width .18s ease}.main-pane{margin-left:244px;transition:margin-left .18s ease}.main-nav button .nav-label{width:auto;min-width:0;flex:1;overflow:hidden;color:inherit;font-size:13px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.nav-icon{display:grid;place-items:center;flex:none}.favorite-toggle{color:#77766f}.favorite-toggle:hover{color:#484741}.favorite-toggle.active{color:#b7791f}.favorite-toggle.active .star-icon{fill:currentColor;stroke-width:1.4}.card-actions .favorite-toggle{display:grid;place-items:center;width:34px;padding:0}.document-title:not(:read-only),.block-content[contenteditable="true"]{cursor:text}.document-title:read-only,.block-content[contenteditable="false"]{cursor:default}.tree-toggle .ui-icon,.tree-add .ui-icon{width:14px;height:14px}.tree-toggle .ui-icon{transition:transform .15s}.tree-toggle.expanded .ui-icon{transform:rotate(90deg)}.block-handle .ui-icon{width:16px;height:16px}.block-handle:active{cursor:grabbing}.block-row.dragging{opacity:.38}.block-row.drop-before::before,.block-row.drop-after::after{position:absolute;right:0;left:24px;height:2px;border-radius:2px;background:#4b7bec;content:""}.block-row.drop-before::before{top:-2px}.block-row.drop-after::after{bottom:-2px}.toggle-wrap{min-width:0}.toggle-summary{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:start}.toggle-caret{display:grid;place-items:center;width:22px;height:30px;padding:0;border:0;background:transparent;color:#77766f}.toggle-caret .ui-icon{width:15px;height:15px;transition:transform .15s}.toggle-caret[aria-expanded="true"] .ui-icon{transform:rotate(90deg)}.toggle-body{margin:2px 0 5px 22px;padding:4px 10px;border-left:2px solid #e5e4df;color:#55544f}.document-tree{max-height:calc(100vh - 360px)}.document-editor{width:min(100% - 40px,900px);padding:48px 0 120px}.block-editor{margin-top:28px}.append-block{display:inline-flex;align-items:center;gap:5px}.append-block .ui-icon{width:14px;height:14px}.block-menu{position:fixed;z-index:70;display:grid;width:220px;padding:6px;border:1px solid var(--line);border-radius:9px;background:#fff;box-shadow:0 14px 44px rgba(0,0,0,.16)}.block-menu button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 9px;border:0;border-radius:5px;background:#fff;color:#4f4e49;font-size:12px;text-align:left}.block-menu button:hover,.block-menu button:focus-visible{background:var(--hover);outline:none}.block-menu button.danger-text{color:var(--danger)}.block-menu .ui-icon{width:15px;height:15px}.block-menu-separator{height:1px;margin:5px;background:var(--line)}.page-view{width:min(100% - 40px,1080px);padding:28px 0 100px}.page-header{padding-bottom:20px}.empty-state{padding:44px 20px}.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:24px}.settings-grid .settings-card{margin-top:0;min-height:126px}.import-card{justify-content:space-between}.import-card small{display:block;margin-top:10px;color:var(--muted);font-size:11px;line-height:1.55}.import-button{display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:pointer}
+.document-width-card{grid-column:1/-1;justify-content:space-between}.width-options{display:grid;grid-template-columns:repeat(3,112px);gap:8px}.width-options button{display:grid;gap:7px;justify-items:center;padding:10px 8px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#73726c;font-size:11px}.width-options button:hover{background:#f8f8f6}.width-options button.active{border-color:#6f8fbe;background:#f3f7fd;color:#255b9e;box-shadow:0 0 0 2px rgba(49,130,246,.08)}.width-preview{display:block;height:22px;border:1px solid currentColor;border-radius:3px;opacity:.7}.width-preview.narrow{width:20px}.width-preview.default{width:34px}.width-preview.full{width:48px}.app-shell.document-width-narrow .document-editor{width:min(100% - 40px,720px)}.app-shell.document-width-full .document-editor{width:min(100% - 72px,1440px)}
+.policy-card{display:grid;align-content:start;gap:18px;min-height:0!important}.policy-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.policy-card header h2{margin:0}.policy-card header p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.5}.owner-only-badge{flex:none;padding:5px 8px;border-radius:999px;background:#f1f3f6;color:#69717d;font-size:10px;font-weight:800}.setting-toggle,.setting-select,.ip-list-label{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:16px;border-top:1px solid var(--line)}.setting-toggle strong,.setting-toggle small,.setting-select strong,.setting-select small,.ip-list-label strong,.ip-list-label small{display:block}.setting-toggle strong,.setting-select strong,.ip-list-label strong{font-size:13px}.setting-toggle small,.setting-select small,.ip-list-label small{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.45}.setting-toggle input{width:42px;height:24px;flex:none;accent-color:#3182f6}.setting-select select{height:38px;padding:0 30px 0 11px;border:1px solid var(--line);border-radius:8px;background:#fff}.ip-list-label{display:grid;align-items:stretch}.ip-list-label textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;resize:vertical;outline:none;font:12px/1.6 "SFMono-Regular",Consolas,monospace}.ip-list-label textarea:focus{border-color:#3182f6;box-shadow:0 0 0 3px rgba(49,130,246,.1)}.current-ip{padding:10px 12px;border-radius:8px;background:#f6f7f9;color:#747982;font-size:11px}.current-ip strong{margin-left:5px;color:#30343a}.security-warning{margin:0;color:#9b6a20!important;font-size:11px!important}.policy-save{justify-self:end}
 .block-menu{max-height:min(70vh,460px);overflow:auto}.block-menu button{flex:none}.block-menu-separator{flex:none}
 .slash-category{padding:10px 8px 5px;color:var(--muted);font-size:10px;font-weight:800}.public-shell{min-height:100vh;background:#fff}.public-header{display:flex;align-items:center;justify-content:space-between;height:58px;padding:0 24px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}.public-brand{display:flex;align-items:center;gap:9px;color:var(--ink);text-decoration:none}.public-brand .workspace-note-logo{width:30px;height:30px}.public-title{margin:0;font-size:44px;line-height:1.2;letter-spacing:-.045em}.public-document{padding-top:68px}.public-block-editor .block-row{grid-template-columns:minmax(0,1fr);margin-left:0}.public-block-editor .block-handle{display:none}.block-content[data-type=heading4]{font-size:16px;font-weight:800;line-height:1.55}.callout-wrap{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;padding:12px 14px;border:1px solid #e5e4df;border-radius:7px;background:#f7f7f5}.callout-wrap>.ui-icon{margin-top:5px;color:#6f6e68}.structured-block{min-width:0;padding:4px 0}.structured-block .block-content{width:100%}.block-table{width:100%;border-collapse:collapse;table-layout:fixed}.block-table td,.block-table th{min-width:100px;height:38px;padding:0;border:1px solid #deddd8}.block-table input{width:100%;height:37px;padding:0 10px;border:0;background:transparent;outline:none}.block-table thead{background:#f7f7f5;font-weight:700}.block-table-actions{display:flex;gap:6px;margin-top:7px}.block-table-actions button{height:28px;padding:0 9px;border:0;border-radius:5px;background:#f2f2ef;color:#696862;font-size:11px}.database-block{padding:12px;border:1px solid var(--line);border-radius:8px}.database-label{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px;font-weight:800}.media-block{display:grid;gap:8px}.media-url{width:100%;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#fff;outline:none}.media-preview{display:grid;place-items:center;min-height:54px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#fafaf8;color:var(--muted);font-size:12px}.media-preview img,.media-preview video{display:block;max-width:100%;max-height:520px}.media-preview audio{width:min(100%,520px);margin:16px}.media-preview iframe{width:100%;height:420px;border:0}.media-preview a{display:flex;align-items:center;gap:8px;width:100%;padding:16px;color:var(--ink);text-decoration:none}.toc-block{padding:10px 14px;border-left:2px solid #dddcd7}.toc-block strong{display:block;margin-bottom:7px;font-size:12px}.toc-block a{display:block;padding:3px 0;color:#696862;font-size:12px;text-decoration:none}.math-block{padding:13px;border-radius:7px;background:#f7f7f5;text-align:center}.math-block .block-content{font-family:"SFMono-Regular",Consolas,monospace}.inline-toolbar{position:fixed;z-index:90;display:flex;padding:4px;border-radius:7px;background:#2f2f2c;box-shadow:0 8px 30px rgba(0,0,0,.22)}.inline-toolbar button{display:grid;place-items:center;min-width:30px;height:30px;padding:0 7px;border:0;border-radius:4px;background:transparent;color:#fff;font-size:12px}.inline-toolbar button:hover{background:#4b4b47}.inline-toolbar .ui-icon{width:15px;height:15px}.block-content a{color:#2563a8;text-decoration:underline;text-underline-offset:2px}.block-content code{padding:1px 4px;border-radius:4px;background:#efefec;color:#c33;font-family:"SFMono-Regular",Consolas,monospace;font-size:.9em}.search-dialog{width:min(92vw,660px);padding:0;border-radius:12px}.global-search-card{background:#fff}.global-search-card>header{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}.global-search-card input{height:38px;border:0;outline:none;font-size:16px}.global-search-card kbd{padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:#f7f7f5;color:var(--muted);font-size:10px}.global-search-results{max-height:min(58vh,480px);overflow:auto;padding:7px}.global-search-item{display:grid;gap:3px;width:100%;padding:10px 11px;border:0;border-radius:6px;background:#fff;text-align:left}.global-search-item:hover,.global-search-item.active{background:var(--hover)}.global-search-item strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.global-search-item small{color:var(--muted);font-size:10px}.global-search-empty{padding:44px 20px;color:var(--muted);font-size:13px;text-align:center}.global-search-card>footer{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}.publish-card{width:min(92vw,480px)}.publication-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px;border:1px solid var(--line);border-radius:8px}.publication-row strong,.publication-row small{display:block}.publication-row small{margin-top:4px;color:var(--muted);font-size:11px}.link-dialog-card{width:min(92vw,460px)}.link-dialog-actions{display:flex;justify-content:flex-end;gap:8px}.link-dialog-actions .button{min-width:82px}
 @media(min-width:761px){.app-shell.sidebar-collapsed .sidebar{width:68px}.app-shell.sidebar-collapsed .main-pane{margin-left:68px}.app-shell.sidebar-collapsed .workspace-header{justify-content:center;padding-inline:8px}.app-shell.sidebar-collapsed #workspace-home,.app-shell.sidebar-collapsed .nav-label,.app-shell.sidebar-collapsed .document-tree,.app-shell.sidebar-collapsed .profile-footer .avatar,.app-shell.sidebar-collapsed .profile-copy{display:none}.app-shell.sidebar-collapsed .main-nav{padding-inline:8px}.app-shell.sidebar-collapsed .main-nav button{justify-content:center;padding:0}.app-shell.sidebar-collapsed .main-nav button>span:first-child{width:24px}.app-shell.sidebar-collapsed .tree-heading{justify-content:center;padding:14px 8px 6px}.app-shell.sidebar-collapsed .profile-footer{justify-content:center;padding-inline:8px}}
-@media(max-width:900px){.settings-grid{grid-template-columns:1fr}}@media(max-width:760px){.desktop-only{display:none!important}.sidebar{width:264px}.main-pane{margin-left:0}.document-editor{width:calc(100% - 28px);padding:34px 0 90px}.page-view{width:calc(100% - 24px);padding:20px 0 80px}.settings-grid{margin-top:16px}.settings-card{align-items:flex-start}.import-card{display:grid}.import-button{width:100%}.button{min-height:40px}.icon-button{width:38px;height:38px}}
+@media(max-width:900px){.settings-grid{grid-template-columns:1fr}.document-width-card{grid-column:auto}.width-options{grid-template-columns:repeat(3,minmax(82px,1fr));width:100%}}@media(max-width:760px){.desktop-only{display:none!important}.sidebar{width:264px}.main-pane{margin-left:0}.document-editor,.app-shell.document-width-narrow .document-editor,.app-shell.document-width-full .document-editor{width:calc(100% - 28px);padding:34px 0 90px}.page-view{width:calc(100% - 24px);padding:20px 0 80px}.settings-grid{margin-top:16px}.settings-card{align-items:flex-start}.import-card,.document-width-card{display:grid}.import-button{width:100%}.width-options{grid-template-columns:repeat(3,1fr)}.setting-toggle,.setting-select{width:100%}.policy-save{width:100%;justify-self:stretch}.button{min-height:40px}.icon-button{width:38px;height:38px}}
 :root{--accent:#59647f}body{background:#fff}.workspace-avatar{border-radius:8px;background:#596174}.main-nav button.active{background:#e8e9ee;color:#303748}.button.primary{background:#343b4a}.button.primary:hover{background:#242a36}.block-row.drop-before::before,.block-row.drop-after::after{background:var(--accent)}
 .block-row{padding-left:calc(var(--indent,0) * 26px)}.block-row.selected{margin-right:-6px;border-radius:6px;background:rgba(89,100,127,.09);box-shadow:inset 2px 0 #7a849b}.block-row.selected .block-handle{visibility:visible;color:#59647f}@media(max-width:760px){.block-row{padding-left:calc(var(--indent,0) * 18px)}}
 .url-paste-menu{position:fixed;z-index:95;width:min(340px,calc(100vw - 16px));padding:7px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 16px 48px rgba(28,28,26,.16)}.url-paste-heading{padding:7px 9px 8px;color:var(--muted);font-size:11px;font-weight:700}.url-paste-menu button{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:10px;width:100%;padding:8px 9px;border:0;border-radius:7px;background:#fff;text-align:left}.url-paste-menu button:hover,.url-paste-menu button:focus-visible,.url-paste-menu button.active{background:var(--hover);outline:none}.url-paste-icon{display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:7px;color:#626b80}.url-paste-icon .ui-icon{width:16px;height:16px}.url-paste-copy{min-width:0}.url-paste-copy strong,.url-paste-copy small{display:block}.url-paste-copy strong{font-size:13px}.url-paste-copy small{overflow:hidden;margin-top:3px;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
@@ -405,7 +441,7 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 @media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.tree-action{opacity:1;pointer-events:auto}.tree-title{padding-right:61px}.setup-intro{padding:24px 20px}.setup-copy{margin:38px 0 4px}.setup-copy h1{font-size:34px}.setup-copy p{font-size:14px}.setup-panel{align-items:start;padding:36px 20px}.setup-card header h2{font-size:27px}}
 `;
 
-const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null};
+const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,workspaceSettings:null};
 const $=(id)=>document.getElementById(id);
 function loadingMarkup(kind,count=4){const hidden='<span class="sr-only">콘텐츠를 불러오는 중</span>';if(kind==='tree')return'<div class="skeleton-tree" role="status" aria-label="문서 트리 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='document')return'<div class="skeleton-document" role="status" aria-label="문서 내용 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='member')return'<div class="skeleton-stack" role="status" aria-label="멤버 목록 불러오는 중">'+hidden+Array.from({length:count},()=>'<div class="skeleton-member-row"><span class="skeleton skeleton-avatar"></span><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('')+'</div>';const rows=Array.from({length:count},()=>'<div class="skeleton-list-row"><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('');return'<div class="'+(kind==='search'?'global-search-skeleton':'skeleton-stack')+'" role="status" aria-label="목록 불러오는 중">'+hidden+rows+'</div>'}
 function showLoading(id,kind,count){const container=$(id);container.setAttribute('aria-busy','true');container.innerHTML=loadingMarkup(kind,count)}
@@ -449,20 +485,24 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function alertBox(id,message){const el=$(id);el.textContent=message;el.hidden=!message}
 function busy(form,value){for(const el of form.elements)el.disabled=value}
 function inviteToken(){const match=location.pathname.match(/^\/invite\/([A-Za-z0-9_-]{32,128})$/);return match&&match[1]}
-function showAuth(){state.user=null;$('boot-view').hidden=true;$('setup-view').hidden=true;$('app-view').hidden=true;$('auth-view').hidden=false;const token=inviteToken();$('login-form').hidden=!!token;$('invite-form').hidden=!token;if(token)loadInvitePreview(token)}
+function showAuth(){state.user=null;$('boot-view').hidden=true;$('setup-view').hidden=true;$('app-view').hidden=true;$('auth-view').hidden=false;const token=inviteToken();$('login-form').hidden=!!token;$('signup-form').hidden=true;$('invite-form').hidden=!token;$('open-signup').hidden=!!token||!state.publicSignup;$('login-policy-note').textContent=state.publicSignup?'초대가 없어도 새 계정을 만들 수 있습니다.':'새 계정은 멤버 초대를 통해서만 만들 수 있습니다.';if(token)loadInvitePreview(token)}
 function showSetup(){state.user=null;$('boot-view').hidden=true;$('auth-view').hidden=true;$('app-view').hidden=true;$('setup-view').hidden=false;if(location.pathname!=='/setup')history.replaceState({},'','/setup');setTimeout(()=>$('setup-form').elements.username.focus(),0)}
 async function loadInvitePreview(token){try{const data=await api('/api/invitations/'+encodeURIComponent(token));$('invite-summary').textContent=data.email_hint+' 주소로 보낸 '+roleLabel[data.role]+' 초대입니다. '+new Date(data.expires_at*1000).toLocaleString()+'까지 유효합니다.'}catch(error){alertBox('invite-alert',error.message);for(const el of $('invite-form').elements)el.disabled=true}}
 $('login-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('auth-alert','');busy(formEl,true);try{const data=await api('/api/login',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});enterApp(data)}catch(error){alertBox('auth-alert',error.message)}finally{busy(formEl,false)}});
+$('open-signup').onclick=()=>{$('login-form').hidden=true;$('signup-form').hidden=false;$('signup-form').elements.username.focus()};$('back-to-login').onclick=()=>{$('signup-form').hidden=true;$('login-form').hidden=false};
+$('signup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('signup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('signup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/register',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 계정을 만들었습니다.')}catch(error){alertBox('signup-alert',error.message)}finally{busy(formEl,false)}});
 $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('invite-alert','');busy(formEl,true);try{const data=await api('/api/invitations/'+encodeURIComponent(inviteToken())+'/accept',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});history.replaceState({},'', '/');enterApp(data)}catch(error){alertBox('invite-alert',error.message);busy(formEl,false)}});
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
-async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1'}catch{}setSidebarCollapsed(collapsed,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
 function setSidebarCollapsed(collapsed,persist=true){const label=collapsed?'사이드바 확대':'사이드바 축소';$('app-view').classList.toggle('sidebar-collapsed',collapsed);$('sidebar-collapse').innerHTML=icon(collapsed?'chevron-right':'chevron-left');$('sidebar-collapse').setAttribute('aria-label',label);$('sidebar-collapse').dataset.tooltip=label;if(persist)try{localStorage.setItem('qwerty_sidebar_collapsed',collapsed?'1':'0')}catch{}}
 $('sidebar-collapse').onclick=()=>setSidebarCollapsed(!$('app-view').classList.contains('sidebar-collapsed'));
+function setDocumentWidth(value,persist=true){const width=['narrow','default','full'].includes(value)?value:'default';$('app-view').classList.toggle('document-width-narrow',width==='narrow');$('app-view').classList.toggle('document-width-full',width==='full');document.querySelectorAll('[data-document-width]').forEach(button=>{const active=button.dataset.documentWidth===width;button.classList.toggle('active',active);button.setAttribute('aria-checked',active?'true':'false')});if(persist)try{localStorage.setItem('joripnote_document_width',width)}catch{}}
+document.querySelectorAll('[data-document-width]').forEach(button=>button.onclick=()=>{setDocumentWidth(button.dataset.documentWidth);toast('문서 너비를 변경했습니다.')} );
 document.querySelectorAll('[data-view]').forEach((button)=>button.addEventListener('click',()=>button.dataset.view==='search'?openGlobalSearch():navigateView(button.dataset.view)));
 $('workspace-home').onclick=()=>navigateView('all');$('breadcrumb-home').onclick=()=>navigateView('all');
 function push(path){setSidebar(false);history.pushState({},'',path);routeFromLocation()}
@@ -587,7 +627,9 @@ function inviteRow(invite){const row=document.createElement('div');row.className
 $('open-invite').onclick=()=>{$('invite-link-result').hidden=true;alertBox('create-invite-alert','');$('invite-dialog').showModal()};$('close-invite').onclick=()=>$('invite-dialog').close();
 $('create-invite-form').onsubmit=async(event)=>{event.preventDefault();const formEl=event.currentTarget;alertBox('create-invite-alert','');busy(formEl,true);try{const form=new FormData(formEl);const data=await api('/api/invitations',{method:'POST',body:{email:form.get('email'),role:form.get('role')}});showInviteLink(data.invite_url,data.delivery);formEl.elements.email.value='';loadInvites(false);toast(data.delivery==='sent'?'초대 메일을 보냈습니다.':'초대 링크를 만들었습니다.')}catch(error){alertBox('create-invite-alert',error.message)}finally{busy(formEl,false);$('close-invite').disabled=false;$('invite-link-result').querySelector('button').disabled=false}}
 function showInviteLink(url,delivery){const result=$('invite-link-result');result.hidden=false;result.querySelector('p').textContent=delivery==='sent'?'초대 메일을 보냈습니다. 링크도 복사할 수 있습니다.':'메일 연결 전에는 아래 링크를 안전하게 전달하세요.';result.querySelector('input').value=url;result.querySelector('button').onclick=async()=>{await navigator.clipboard.writeText(url);toast('초대 링크를 복사했습니다.')};if(!$('invite-dialog').open)$('invite-dialog').showModal()}
-function showSettings(){state.current=null;markNav('settings');showPane('settings-view')}
+async function showSettings(){state.current=null;markNav('settings');showPane('settings-view');try{const data=await api('/api/settings');state.workspaceSettings=data;$('public-signup-enabled').checked=data.public_signup_enabled;$('public-signup-role').value=data.public_signup_role;$('ip-allowlist-enabled').checked=data.ip_allowlist_enabled;$('ip-allowlist').value=data.ip_allowlist;$('current-request-ip').textContent=data.current_ip;for(const form of [$('workspace-access-form'),$('ip-access-form')]){form.querySelectorAll('input,select,textarea,button').forEach(el=>el.disabled=!data.can_manage_security);form.querySelector('.owner-only-badge').textContent=data.can_manage_security?'Owner 전용':'읽기 전용'}}catch(error){toast(error.message)}}
+$('workspace-access-form').onsubmit=async event=>{event.preventDefault();try{const data=await api('/api/settings',{method:'PATCH',body:{public_signup_enabled:$('public-signup-enabled').checked,public_signup_role:$('public-signup-role').value}});state.workspaceSettings=data;state.publicSignup=data.public_signup_enabled;toast('가입 정책을 저장했습니다.')}catch(error){toast(error.message)}};
+$('ip-access-form').onsubmit=async event=>{event.preventDefault();try{const data=await api('/api/settings',{method:'PATCH',body:{ip_allowlist_enabled:$('ip-allowlist-enabled').checked,ip_allowlist:$('ip-allowlist').value}});state.workspaceSettings=data;$('ip-allowlist').value=data.ip_allowlist;toast('IP 접근 정책을 저장했습니다.')}catch(error){if(error.details?.current_ip)$('current-request-ip').textContent=error.details.current_ip;toast(error.message)}};
 $('notion-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;if(file.size>2*1024*1024){toast('Markdown 파일은 2MB 이하만 가져올 수 있습니다.');input.value='';return}try{const content=await file.text();const data=await api('/api/import/markdown',{method:'POST',body:{filename:file.name,content}});await loadTree();push('/doc/'+data.document.id);toast('Notion Markdown을 가져왔습니다.')}catch(error){toast(error.message)}finally{input.value=''}};
 document.addEventListener('selectionchange',()=>{if(!canEdit())return;const selection=getSelection();const toolbar=$('inline-toolbar');if(!selection||selection.isCollapsed||!selection.rangeCount){toolbar.hidden=true;return}const origin=selection.anchorNode?.nodeType===1?selection.anchorNode:selection.anchorNode?.parentElement;const el=origin?.closest?.('.block-content[contenteditable="true"]');if(!el||!el.contains(selection.focusNode)){toolbar.hidden=true;return}state.inlineTarget=el;state.inlineRange=selection.getRangeAt(0).cloneRange();const rect=state.inlineRange.getBoundingClientRect();toolbar.style.left=Math.max(8,Math.min(rect.left,innerWidth-toolbar.offsetWidth-8))+'px';toolbar.style.top=Math.max(8,rect.top-42)+'px';toolbar.hidden=false});
 function restoreInlineSelection(target,range){if(!target?.isConnected||!range)return false;target.focus();const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return true}
@@ -673,8 +715,14 @@ async function route(request, env) {
     assertSameOrigin(request);
     return bootstrapSignup(request, env);
   }
+  if (request.method === 'POST' && path === '/api/register') {
+    assertSameOrigin(request);
+    await enforceIpAllowlist(request, env);
+    return publicRegister(request, env);
+  }
   if (request.method === 'POST' && path === '/api/login') {
     assertSameOrigin(request);
+    await enforceIpAllowlist(request, env);
     return login(request, env);
   }
   if (request.method === 'POST' && path === '/api/logout') {
@@ -682,19 +730,23 @@ async function route(request, env) {
     return logout(request, env);
   }
   const invitePublic = path.match(/^\/api\/invitations\/([A-Za-z0-9_-]{32,128})$/);
-  if (request.method === 'GET' && invitePublic) return invitationPreview(env, invitePublic[1]);
+  if (request.method === 'GET' && invitePublic) { await enforceIpAllowlist(request, env); return invitationPreview(env, invitePublic[1]); }
   const inviteAccept = path.match(/^\/api\/invitations\/([A-Za-z0-9_-]{32,128})\/accept$/);
   if (request.method === 'POST' && inviteAccept) {
     assertSameOrigin(request);
+    await enforceIpAllowlist(request, env);
     return acceptInvitation(request, env, inviteAccept[1]);
   }
   const publicDocumentRoute = path.match(/^\/api\/public\/documents\/([A-Za-z0-9_-]{8,80})$/);
   if (request.method === 'GET' && publicDocumentRoute) return getPublicDocument(env, publicDocumentRoute[1]);
 
   if (path.startsWith('/api/')) {
+    await enforceIpAllowlist(request, env);
     const actor = await requireMember(request, env);
     if (request.method !== 'GET') assertSameOrigin(request);
     if (request.method === 'GET' && path === '/api/me') return json({ user: publicUser(actor), membership: { role: actor.role } });
+    if (request.method === 'GET' && path === '/api/settings') return getWorkspaceSettings(request, env, actor);
+    if (request.method === 'PATCH' && path === '/api/settings') return updateWorkspaceSettings(request, env, actor);
     if (path === '/api/documents' && request.method === 'GET') return listDocuments(url, env, actor);
     if (path === '/api/documents' && request.method === 'POST') return createDocument(request, env, actor);
     if (path === '/api/import/markdown' && request.method === 'POST') return importMarkdown(request, env, actor);
@@ -785,8 +837,12 @@ async function bootstrapSignup(request, env) {
 }
 
 async function setupStatus(env) {
-  const row = await requireDb(env).prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first();
-  return json({ installed: Number(row && row.installed) === 1 });
+  const db = requireDb(env);
+  const [row, signup] = await Promise.all([
+    db.prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first(),
+    db.prepare("SELECT value FROM app_settings WHERE key='public_signup_enabled'").first()
+  ]);
+  return json({ installed: Number(row && row.installed) === 1, public_signup_enabled: signup?.value === '1' });
 }
 
 async function installAdmin(request, env) {
@@ -804,6 +860,10 @@ async function installAdmin(request, env) {
   const now = nowSeconds();
   const statements = [
     db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('installation_complete', '1', now),
+    db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_enabled', '0', now),
+    db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_role', 'member', now),
+    db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist_enabled', '0', now),
+    db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist', '', now),
     db.prepare('INSERT INTO users (id, username, password_hash, password_salt, password_iterations, realtime_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(user.id, user.username, user.password_hash, user.password_salt, user.password_iterations, randomString(32), now),
     db.prepare('INSERT INTO project_members (project_id, user_id, role, joined_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(PROJECT_ID, user.id, 'owner', now, now),
     ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT OR IGNORE INTO workspace_templates
@@ -818,6 +878,111 @@ async function installAdmin(request, env) {
     throw error;
   }
   return createSessionResponse(db, user, 'owner', 201);
+}
+
+async function publicRegister(request, env) {
+  const db = requireDb(env);
+  const enabled = await readAppSetting(db, 'public_signup_enabled', '0');
+  if (enabled !== '1') throw new HttpError(403, '현재 공개 회원가입을 받지 않습니다. 멤버 초대를 요청해 주세요.');
+  await enforceRateLimit(db, 'register_ip', await requestKey(request, 'register'), 8, 3600);
+  const body = await readJson(request);
+  const username = normalizeUsername(body.username);
+  const password = String(body.password || '');
+  if (!validateUsername(username)) throw new HttpError(400, '아이디는 영문, 숫자, 밑줄 3–20자로 입력해 주세요.');
+  if (!validatePassword(password)) throw new HttpError(400, '비밀번호는 8–72자로 입력해 주세요.');
+  if (password !== String(body.password_confirmation || '')) throw new HttpError(400, '비밀번호 확인이 일치하지 않습니다.');
+  const configuredRole = await readAppSetting(db, 'public_signup_role', 'member');
+  const role = ['member', 'viewer'].includes(configuredRole) ? configuredRole : 'member';
+  const user = await passwordUser(username, password);
+  const now = nowSeconds();
+  try {
+    await db.batch([
+      db.prepare('INSERT INTO users (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,?)').bind(user.id, user.username, user.password_hash, user.password_salt, user.password_iterations, randomString(32), now),
+      db.prepare('INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES (?,?,?,?,?)').bind(PROJECT_ID, user.id, role, now, now)
+    ]);
+  } catch (error) {
+    if (String(error?.message || '').toLowerCase().includes('unique')) throw new HttpError(409, '이미 사용 중인 아이디입니다.');
+    throw error;
+  }
+  return createSessionResponse(db, user, role, 201);
+}
+
+async function getWorkspaceSettings(request, env, actor) {
+  const db = requireDb(env);
+  const keys = ['public_signup_enabled', 'public_signup_role', 'ip_allowlist_enabled', 'ip_allowlist'];
+  const result = await db.prepare(`SELECT key,value FROM app_settings WHERE key IN (${keys.map(() => '?').join(',')})`).bind(...keys).all();
+  const values = Object.fromEntries((result.results || []).map(row => [row.key, row.value]));
+  return json({
+    can_manage_security: actor.role === 'owner',
+    public_signup_enabled: values.public_signup_enabled === '1',
+    public_signup_role: ['member', 'viewer'].includes(values.public_signup_role) ? values.public_signup_role : 'member',
+    ip_allowlist_enabled: values.ip_allowlist_enabled === '1',
+    ip_allowlist: values.ip_allowlist || '',
+    current_ip: clientIp(request)
+  });
+}
+
+async function updateWorkspaceSettings(request, env, actor) {
+  if (actor.role !== 'owner') throw new HttpError(403, 'Owner만 가입과 IP 접근 정책을 변경할 수 있습니다.');
+  const body = await readJson(request);
+  const updates = {};
+  if ('public_signup_enabled' in body) {
+    if (typeof body.public_signup_enabled !== 'boolean') throw new HttpError(400, '회원가입 설정이 올바르지 않습니다.');
+    updates.public_signup_enabled = body.public_signup_enabled ? '1' : '0';
+  }
+  if ('public_signup_role' in body) {
+    if (!['member', 'viewer'].includes(body.public_signup_role)) throw new HttpError(400, '신규 회원 역할이 올바르지 않습니다.');
+    updates.public_signup_role = body.public_signup_role;
+  }
+  if ('ip_allowlist' in body || 'ip_allowlist_enabled' in body) {
+    const existingList = await readAppSetting(env.DB, 'ip_allowlist', '');
+    const list = normalizeIpList('ip_allowlist' in body ? body.ip_allowlist : existingList);
+    const enabled = 'ip_allowlist_enabled' in body ? body.ip_allowlist_enabled : (await readAppSetting(env.DB, 'ip_allowlist_enabled', '0')) === '1';
+    if (typeof enabled !== 'boolean') throw new HttpError(400, 'IP 제한 설정이 올바르지 않습니다.');
+    if (enabled && !list.includes(clientIp(request))) throw new HttpError(400, '현재 접속 IP를 허용목록에 먼저 추가해 주세요.', { current_ip: clientIp(request) });
+    updates.ip_allowlist = list.join('\n');
+    updates.ip_allowlist_enabled = enabled ? '1' : '0';
+  }
+  if (!Object.keys(updates).length) throw new HttpError(400, '변경할 설정이 없습니다.');
+  const now = nowSeconds();
+  await env.DB.batch(Object.entries(updates).map(([key, value]) => env.DB.prepare(`INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`).bind(key, value, now)));
+  return getWorkspaceSettings(request, env, actor);
+}
+
+async function readAppSetting(db, key, fallback = '') {
+  const row = await db.prepare('SELECT value FROM app_settings WHERE key=?').bind(key).first();
+  return row ? String(row.value) : fallback;
+}
+
+function clientIp(request) {
+  return String(request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown').split(',')[0].trim().toLowerCase();
+}
+
+function normalizeIpList(value) {
+  const entries = [...new Set(String(value || '').split(/[\s,]+/).map(item => item.trim().toLowerCase()).filter(Boolean))];
+  if (entries.length > 50) throw new HttpError(400, '허용 IP는 최대 50개까지 등록할 수 있습니다.');
+  for (const ip of entries) if (!isIpAddress(ip)) throw new HttpError(400, '올바르지 않은 IP가 있습니다: ' + ip);
+  return entries;
+}
+
+function isIpAddress(value) {
+  const ipv4 = value.split('.');
+  if (ipv4.length === 4 && ipv4.every(part => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255)) return true;
+  if (value.length > 39 || !value.includes(':') || !/^[0-9a-f:]+$/.test(value)) return false;
+  const halves = value.split('::');
+  if (halves.length > 2) return false;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (![...left, ...right].every(part => /^[0-9a-f]{1,4}$/.test(part))) return false;
+  return halves.length === 2 ? left.length + right.length < 8 : left.length === 8;
+}
+
+async function enforceIpAllowlist(request, env) {
+  const db = requireDb(env);
+  if (await readAppSetting(db, 'ip_allowlist_enabled', '0') !== '1') return;
+  const allowed = normalizeIpList(await readAppSetting(db, 'ip_allowlist', ''));
+  if (!allowed.includes(clientIp(request))) throw new HttpError(403, '이 네트워크에서는 JoripNote에 접근할 수 없습니다.');
 }
 
 async function login(request, env) {
