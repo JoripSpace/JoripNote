@@ -22,7 +22,7 @@ const HTML = String.raw`<!doctype html>
   <meta name="theme-color" content="#f7f7f5">
   <title>JoripNote</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260820-joripnote-3">
+  <link rel="stylesheet" href="/app.css?v=20260820-joripnote-4">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -342,6 +342,7 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 :where(button,input,textarea,select,[contenteditable="true"],a,[tabindex]):focus-visible{outline:2px solid #1f5fbf;outline-offset:2px}
 .document-title:focus-visible,.block-content[contenteditable="true"]:focus-visible{outline:2px solid #1f5fbf;outline-offset:4px}
 .append-block,.block-handle{color:#6b6a64}.block-content:empty:before,.document-title::placeholder{color:#73726c}.tree-heading,.breadcrumbs{color:#6f6e68}
+.document-tree>.empty-state{padding:14px 8px 18px;color:#9a9993;font-size:11px;line-height:1.45;text-align:center}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 @media(forced-colors:active){:where(button,input,textarea,select,[contenteditable="true"],a,[tabindex]):focus-visible{outline:2px solid CanvasText}.ui-icon,.star-icon{forced-color-adjust:auto}}
 .boot-shell{display:flex;align-items:center;justify-content:center;gap:10px;min-height:100vh;color:var(--muted);font-size:13px}.boot-spinner{width:16px;height:16px;border:2px solid #deded9;border-top-color:#565650;border-radius:50%;animation:boot-spin .75s linear infinite}@keyframes boot-spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.boot-spinner{animation-duration:1.8s}}

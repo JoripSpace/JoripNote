@@ -168,7 +168,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260820-joripnote-3/);
+  assert.match(html, /app\.css\?v=20260820-joripnote-4/);
   assert.match(html, /id="brand-workspace-note"/);
   assert.match(html, /class="workspace-note-logo"/);
   assert.match(html, /class="star-icon"/);
@@ -207,6 +207,7 @@ test('app shell, editor capabilities and security headers are served', async () 
 
   const stylesheet = await worker.fetch(request('/app.css'), {});
   const styles = await stylesheet.text();
+  assert.match(styles, /\.document-tree>\.empty-state\{padding:14px 8px 18px[^}]*font-size:11px/);
   assert.match(styles, /select:not\(:disabled\)\{cursor:pointer\}select:disabled\{cursor:not-allowed\}/);
   assert.match(styles, /\.skip-link\{position:fixed/);
   assert.match(styles, /:focus-visible\{outline:2px solid #1f5fbf/);
