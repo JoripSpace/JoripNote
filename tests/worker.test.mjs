@@ -179,7 +179,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Notion에서 가져오기/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260820-joripnote-4/);
+  assert.match(html, /app\.js\?v=20260820-joripnote-5/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   assert.match(html, /data-document-width="narrow"/);
@@ -271,6 +271,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /showLoading\('member-list','member',4\)/);
   assert.doesNotMatch(source, /<div class="empty-state">불러오는 중…<\/div>/);
   assert.match(source, /safeEmbedUrl\(url\)\?'embed':'bookmark'/);
+  assert.match(source, /strict-origin-when-cross-origin/);
   assert.match(source, /URL을 어떻게 붙여넣을까요\?/);
   assert.match(source, /function undoDocument/);
   assert.match(source, /CONTINUING_BLOCK_TYPES\.has\(type\)&&!el\.textContent\.trim\(\)/);
