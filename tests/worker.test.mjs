@@ -179,7 +179,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Notion에서 가져오기/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260820-joripnote-3/);
+  assert.match(html, /app\.js\?v=20260820-joripnote-4/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   assert.match(html, /data-document-width="narrow"/);
