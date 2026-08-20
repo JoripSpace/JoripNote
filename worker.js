@@ -405,10 +405,11 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .main-nav{gap:2px;padding:6px 10px 10px}
 .main-nav button{height:34px;padding:0 10px;border-radius:7px}
 .tree-heading{min-height:44px;padding:14px 13px 7px 17px;letter-spacing:.02em}
-.document-tree{min-height:0;max-height:none;flex:1 1 auto;padding:0 8px 14px;scrollbar-gutter:stable}
+.document-tree{min-height:0;max-height:none;flex:1 1 auto;padding:0 10px 14px;scrollbar-gutter:stable}
 .tree-row{position:relative;height:32px;margin:1px 0;padding-right:3px;border-radius:7px}
 .tree-toggle{width:27px;height:30px}
-.tree-title{height:30px;padding:0 8px 0 1px;line-height:30px}
+.tree-title{height:30px;padding:0 8px;line-height:30px}
+.tree-toggle[hidden]+.tree-title{margin-left:27px}
 .tree-action{position:absolute;top:2px;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;opacity:0;visibility:visible;pointer-events:none}
 .tree-add{right:30px}.tree-trash{right:3px;color:#9a4b4b}
 .tree-row:hover .tree-action,.tree-row:focus-within .tree-action{opacity:1;pointer-events:auto}
