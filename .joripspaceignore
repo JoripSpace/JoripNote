@@ -7,3 +7,13 @@ private/
 *.local.json
 *.personal.json
 migrations/
+.gitignore
+AGENTS.md
+CLAUDE.md
+LICENSE*
+README*
+package*.json
+joripspace-template.json
+docs/
+tests/
+.joripspace/
