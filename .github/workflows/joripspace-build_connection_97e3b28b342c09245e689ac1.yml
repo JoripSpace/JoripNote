@@ -1,4 +1,4 @@
-# joripspace-workflow-version: 3
+# joripspace-workflow-version: 4
 name: JoripSpace Deploy "(build_connection_97e3b28b342c09245e689ac1)"
 
 on:
@@ -27,12 +27,15 @@ jobs:
           rm -rf .joripspace-artifact
           mkdir -p .joripspace-artifact
           while IFS= read -r -d '' file; do
+            if [ -f .joripspaceignore ] && git -c core.excludesFile="$PWD/.joripspaceignore" check-ignore --no-index -q -- "$file"; then
+              continue
+            fi
             target=".joripspace-artifact/${file#./}"
             mkdir -p "$(dirname "$target")"
             cp "$file" "$target"
           done < <(find . \
-            \( -path './.git' -o -path './node_modules' -o -path './.wrangler' -o -path './.cache' -o -path './coverage' -o -path './.github' -o -path './.joripspace' -o -path './.joripspace-artifact' \) -prune -o \
-            -type f ! -name '.env' ! -name '.env.*' ! -name '.dev.vars' ! -name '*.pem' ! -name '*.key' -print0)
+            \( -path './.git' -o -path './node_modules' -o -path './.wrangler' -o -path './.cache' -o -path './coverage' -o -path './.github' -o -path './.joripspace' -o -path './.joripspace-artifact' -o -path '*/test' -o -path '*/tests' -o -path '*/__tests__' -o -path './docs' \) -prune -o \
+            -type f ! -name '.env' ! -name '.env.*' ! -name '.dev.vars' ! -name '*.pem' ! -name '*.key' ! -name '*.test.*' ! -name '*.spec.*' ! -name 'AGENTS.md' ! -name 'CLAUDE.md' ! -name 'README*' ! -name 'LICENSE*' ! -name 'package.json' ! -name 'package-lock.json' ! -name 'npm-shrinkwrap.json' ! -name 'wrangler.toml' ! -name 'wrangler.json' ! -name 'wrangler.jsonc' ! -name 'tsconfig*.json' ! -name '.joripspaceignore' ! -name 'joripspace-template.json' -print0)
       - name: Deploy to JoripSpace
         shell: bash
         env:
@@ -107,7 +110,7 @@ jobs:
                 method: "POST",
                 token: deployToken,
                 json: {},
-                allowedStatuses: [409]
+                allowedStatuses: [404, 409]
               });
               if (!result.__retry) {
                 process.stdout.write(
@@ -116,7 +119,7 @@ jobs:
                 );
                 return;
               }
-              if (!["checkpoint_not_deployable", "checkpoint_not_ready", "external_build_deploy_busy"].includes(
+              if (!["checkpoint_not_found", "checkpoint_not_deployable", "checkpoint_not_ready", "external_build_deploy_busy"].includes(
                 result.error?.code
               )) {
                 throw apiError(result.__status, result);
