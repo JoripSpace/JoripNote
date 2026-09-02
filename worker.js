@@ -5,7 +5,7 @@ const DEMO_HOSTNAME = 'joripnote.joripspace.run';
 const DEMO_RESET_PATH = '/__joripnote_demo/reset';
 const DEMO_USER_ID = 'demo_owner';
 const DEMO_USERNAME = 'demo';
-const DEMO_MODE_KEY = 'demo_mode';
+const DEMO_MODE_SETTING = 'demo_mode';
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7;
 const PASSWORD_ITERATIONS = 100000;
 const CAPTCHA_TTL_SECONDS = 60 * 5;
@@ -920,7 +920,7 @@ async function setupStatus(request, env) {
 async function ensureDemoData(env) {
   const db = requireDb(env);
   const [marker, member] = await Promise.all([
-    readAppSetting(db, DEMO_MODE_KEY, '0'),
+    readAppSetting(db, DEMO_MODE_SETTING, '0'),
     db.prepare('SELECT 1 AS yes FROM project_members WHERE project_id=? AND user_id=?').bind(PROJECT_ID, DEMO_USER_ID).first()
   ]);
   if (marker === '1' && member) return;
@@ -978,7 +978,7 @@ async function resetDemoData(env) {
     db.prepare('DELETE FROM captcha_challenges'),
     db.prepare('DELETE FROM workspace_templates'),
     db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('installation_complete', '1', now),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind(DEMO_MODE_KEY, '1', now),
+    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind(DEMO_MODE_SETTING, '1', now),
     db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('public_signup_enabled', '0', now),
     db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('public_signup_role', 'member', now),
     db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('ip_allowlist_enabled', '0', now),
