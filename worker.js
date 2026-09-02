@@ -2,6 +2,7 @@ const PROJECT_ID = 'qwerty';
 const SESSION_COOKIE = 'qwerty_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DEMO_HOSTNAME = 'joripnote.joripspace.run';
+const DEMO_CRON_HOSTNAME = 'joripspace-cron.internal';
 const DEMO_RESET_PATH = '/__joripnote_demo/reset';
 const DEMO_USER_ID = 'demo_owner';
 const DEMO_USERNAME = 'demo';
@@ -900,7 +901,8 @@ async function bootstrapSignup(request, env) {
 }
 
 function isDemoRequest(request) {
-  return new URL(request.url).hostname === DEMO_HOSTNAME;
+  const hostname = new URL(request.url).hostname;
+  return hostname === DEMO_HOSTNAME || hostname === DEMO_CRON_HOSTNAME;
 }
 
 async function setupStatus(request, env) {

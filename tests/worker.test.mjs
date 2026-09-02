@@ -521,6 +521,8 @@ test('joripnote demo host auto-signs in and restores sample workspace', async ()
   assert.equal(documents.body.documents.length, 2);
   const reset = await call(env, '/__joripnote_demo/reset', { origin, method: 'POST' });
   assert.equal(reset.response.status, 200, JSON.stringify(reset.body));
+  const cronReset = await call(env, '/__joripnote_demo/reset', { origin: 'https://joripspace-cron.internal', method: 'POST' });
+  assert.equal(cronReset.response.status, 200, JSON.stringify(cronReset.body));
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 3);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 1);
 });
