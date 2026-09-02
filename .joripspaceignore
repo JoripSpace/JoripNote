@@ -6,3 +6,4 @@ personal/
 private/
 *.local.json
 *.personal.json
+migrations/
