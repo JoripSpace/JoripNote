@@ -527,18 +527,29 @@ test('first-run setup installs one owner and a complete editable starter workspa
   assert.equal(repeated.response.status, 409);
 });
 
-test('release build requires first-run setup and exposes no demo reset endpoint', async () => {
+test('demo host auto-signs in and restores the complete sample workspace', async () => {
   const env = envWithDb();
   const origin = 'https://joripnote.joripspace.run';
   const status = await call(env, '/api/setup-status', { origin });
   assert.equal(status.response.status, 200);
-  assert.equal(status.body.installed, false);
-  assert.equal('demo_mode' in status.body, false);
-  assert.equal(status.response.headers.get('set-cookie'), null);
-  const reset = await call(env, '/__joripnote_demo/reset', { origin, method: 'POST' });
-  assert.equal(reset.response.status, 404);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 0);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 0);
+  assert.equal(status.body.installed, true);
+  assert.equal(status.body.demo_mode, true);
+  const cookie = cookieFrom(status.response);
+  const me = await call(env, '/api/me', { origin, headers: { cookie } });
+  assert.equal(me.response.status, 200);
+  assert.equal(me.body.user.username, 'demo');
+  assert.equal(me.body.membership.role, 'owner');
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(DISTINCT block_type) AS count FROM document_blocks").get().count, 24);
+
+  const created = await call(env, '/api/documents', { origin, method: 'POST', headers: auth(cookie, { origin }), body: {} });
+  assert.equal(created.response.status, 201);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 5);
+  const cronReset = await call(env, '/__joripnote_demo/reset', { origin: 'https://joripspace-cron.internal', method: 'POST' });
+  assert.equal(cronReset.response.status, 200, JSON.stringify(cronReset.body));
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_publications WHERE project_id='qwerty'").get().count, 0);
 });
 
 test('Owner controls public signup roles and exact IP access without locking out the current IP', async () => {

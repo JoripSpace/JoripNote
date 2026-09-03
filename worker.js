@@ -1,6 +1,12 @@
 const PROJECT_ID = 'qwerty';
 const SESSION_COOKIE = 'qwerty_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEMO_HOSTNAME = 'joripnote.joripspace.run';
+const DEMO_CRON_HOSTNAME = 'joripspace-cron.internal';
+const DEMO_RESET_PATH = '/__joripnote_demo/reset';
+const DEMO_USER_ID = 'demo_owner';
+const DEMO_USERNAME = 'demo';
+const DEMO_MODE_SETTING = 'demo_mode';
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7;
 const PASSWORD_ITERATIONS = 100000;
 const CAPTCHA_TTL_SECONDS = 60 * 5;
@@ -256,6 +262,7 @@ const HTML = String.raw`<!doctype html>
     </aside>
 
     <section id="main-content" class="main-pane" tabindex="-1">
+      <aside id="demo-banner" class="demo-banner" aria-label="데모 안내" hidden><strong>DEMO</strong><span>모든 기능을 자유롭게 체험하세요. 입력한 내용은 매일 00:00(KST)에 샘플 상태로 초기화됩니다.</span></aside>
       <header class="mobile-header">
         <button id="sidebar-open" class="icon-button" type="button" aria-label="사이드바 열기" data-tooltip="사이드바 열기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-menu"/></svg></button>
         <strong>JoripNote</strong>
@@ -546,9 +553,10 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .public-try-button:active{transform:translateY(1px)}
 .public-try-button:focus-visible{outline:3px solid rgba(47,48,55,.2);outline-offset:2px}
 @media(max-width:560px){.public-header{height:54px;padding:0 10px 0 12px}.public-brand{gap:7px}.public-brand .workspace-note-logo{width:28px;height:28px}.public-header-actions{gap:8px}.public-label{display:none}.public-try-button{min-height:34px;padding:0 12px;font-size:11px}.public-document{padding-top:46px}.public-title{font-size:36px}}
+.demo-banner{position:sticky;z-index:19;top:0;display:flex;align-items:center;justify-content:center;gap:10px;min-height:42px;padding:8px 18px;border-bottom:1px solid #cbd9ff;background:#edf3ff;color:#3d4f78;font-size:12px;line-height:1.45;text-align:center}.demo-banner strong{flex:none;padding:3px 7px;border-radius:5px;background:#4869b1;color:#fff;font-size:10px;letter-spacing:.08em}.demo-banner+ .mobile-header{top:42px}.demo-banner~.editor-view .editor-toolbar{top:42px}@media(max-width:760px){.demo-banner{position:relative;min-height:0;align-items:flex-start;justify-content:flex-start;padding:10px 12px;text-align:left}.demo-banner span{font-size:11px}.demo-banner+ .mobile-header{top:0}.demo-banner~.editor-view .editor-toolbar{top:50px}}
 `;
 
-const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,workspaceSettings:null,ipAllowlist:[]};
+const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,demoMode:false,workspaceSettings:null,ipAllowlist:[]};
 const $=(id)=>document.getElementById(id);
 function loadingMarkup(kind,count=4){const hidden='<span class="sr-only">콘텐츠를 불러오는 중</span>';if(kind==='tree')return'<div class="skeleton-tree" role="status" aria-label="문서 트리 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='document')return'<div class="skeleton-document" role="status" aria-label="문서 내용 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='member')return'<div class="skeleton-stack" role="status" aria-label="멤버 목록 불러오는 중">'+hidden+Array.from({length:count},()=>'<div class="skeleton-member-row"><span class="skeleton skeleton-avatar"></span><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('')+'</div>';const rows=Array.from({length:count},()=>'<div class="skeleton-list-row"><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('');return'<div class="'+(kind==='search'?'global-search-skeleton':'skeleton-stack')+'" role="status" aria-label="목록 불러오는 중">'+hidden+rows+'</div>'}
 function showLoading(id,kind,count){const container=$(id);container.setAttribute('aria-busy','true');container.innerHTML=loadingMarkup(kind,count)}
@@ -601,8 +609,8 @@ $('signup-form').addEventListener('submit',async(event)=>{event.preventDefault()
 $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('invite-alert','');busy(formEl,true);try{const data=await api('/api/invitations/'+encodeURIComponent(inviteToken())+'/accept',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});history.replaceState({},'', '/');enterApp(data)}catch(error){alertBox('invite-alert',error.message);busy(formEl,false)}});
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
-async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();const roleText=roleLabel[state.role];$('profile-role').textContent=roleText;$('sidebar-role').textContent=roleText;$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;state.demoMode=!!setup.demo_mode;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('demo-banner').hidden=!state.demoMode;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();const roleText=roleLabel[state.role]+(state.demoMode?' · 데모':'');$('profile-role').textContent=roleText;$('sidebar-role').textContent=roleText;$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
@@ -824,6 +832,7 @@ async function route(request, env) {
   if (request.method === 'GET' && /^\/api\/captcha\/[a-f0-9-]{36}\.svg$/.test(path)) return getCaptchaSvg(env, path.slice(13, -4));
   if (request.method === 'GET' && path === '/api/captcha') return createCaptcha(request, env);
   if (request.method === 'GET' && path === '/api/setup-status') return setupStatus(request, env);
+  if (request.method === 'POST' && path === DEMO_RESET_PATH) return resetDemoEndpoint(request, env);
   if (request.method === 'POST' && path === '/api/setup') {
     assertSameOrigin(request);
     return installAdmin(request, env);
@@ -953,13 +962,103 @@ async function bootstrapSignup(request, env) {
   throw new HttpError(403, '첫 관리자는 JoripNote 설치 화면에서만 만들 수 있습니다.');
 }
 
+function isDemoRequest(request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === DEMO_HOSTNAME || hostname === DEMO_CRON_HOSTNAME;
+}
+
 async function setupStatus(request, env) {
+  if (isDemoRequest(request)) {
+    await ensureDemoData(env);
+    const token = await ensureDemoSession(request, env);
+    return json({ installed: true, public_signup_enabled: false, demo_mode: true }, 200, token ? { 'set-cookie': sessionCookie(token) } : {});
+  }
   const db = requireDb(env);
   const [row, signup] = await Promise.all([
     db.prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first(),
     db.prepare("SELECT value FROM app_settings WHERE key='public_signup_enabled'").first()
   ]);
   return json({ installed: Number(row && row.installed) === 1, public_signup_enabled: signup?.value === '1' });
+}
+
+async function ensureDemoData(env) {
+  const db = requireDb(env);
+  const [marker, member] = await Promise.all([
+    readAppSetting(db, DEMO_MODE_SETTING, '0'),
+    db.prepare('SELECT 1 AS yes FROM project_members WHERE project_id=? AND user_id=?').bind(PROJECT_ID, DEMO_USER_ID).first()
+  ]);
+  if (marker === '1' && member) return;
+  await resetDemoData(env);
+}
+
+async function ensureDemoSession(request, env) {
+  const db = requireDb(env);
+  const current = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE];
+  if (current) {
+    const existing = await db.prepare('SELECT 1 AS yes FROM sessions WHERE token_hash=? AND user_id=? AND expires_at>?')
+      .bind(await sha256Hex(current), DEMO_USER_ID, nowSeconds()).first();
+    if (existing) return null;
+  }
+  const token = randomString(43);
+  const now = nowSeconds();
+  await db.prepare('INSERT INTO sessions (token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)')
+    .bind(await sha256Hex(token), DEMO_USER_ID, now + SESSION_TTL_SECONDS, now).run();
+  return token;
+}
+
+async function resetDemoEndpoint(request, env) {
+  if (!isDemoRequest(request)) throw new HttpError(404, '요청한 기능을 찾을 수 없습니다.');
+  await resetDemoData(env);
+  const token = await ensureDemoSession(request, env);
+  return json({ ok: true, demo_mode: true, reset_at: new Date().toISOString() }, 200, token ? { 'set-cookie': sessionCookie(token) } : {});
+}
+
+async function resetDemoData(env) {
+  const db = requireDb(env);
+  const fileRows = await db.prepare('SELECT storage_key FROM file_uploads').all();
+  const existingDemoUser = await db.prepare('SELECT id FROM users WHERE id=?').bind(DEMO_USER_ID).first();
+  const demoUser = existingDemoUser ? null : await passwordUser(DEMO_USERNAME, randomString(48));
+  if (demoUser) demoUser.id = DEMO_USER_ID;
+  const now = nowSeconds();
+  const statements = [
+    db.prepare('DELETE FROM document_grants'),
+    db.prepare('DELETE FROM file_uploads'),
+    db.prepare('DELETE FROM document_publications'),
+    db.prepare('DELETE FROM document_comments'),
+    db.prepare('DELETE FROM notifications'),
+    db.prepare('DELETE FROM activity_events'),
+    db.prepare('DELETE FROM documents'),
+    db.prepare('DELETE FROM project_invitations'),
+    db.prepare('DELETE FROM project_members'),
+    db.prepare('DELETE FROM sessions'),
+    db.prepare('DELETE FROM users WHERE id<>?').bind(DEMO_USER_ID),
+    db.prepare('DELETE FROM app_settings'),
+    db.prepare('DELETE FROM auth_rate_limits'),
+    db.prepare('DELETE FROM captcha_challenges'),
+    db.prepare('DELETE FROM workspace_templates'),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('installation_complete', '1', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind(DEMO_MODE_SETTING, '1', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_enabled', '0', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_role', 'member', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist_enabled', '0', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist', '', now)
+  ];
+  if (demoUser) statements.push(db.prepare(`INSERT INTO users
+    (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,?)`)
+    .bind(demoUser.id, demoUser.username, demoUser.password_hash, demoUser.password_salt, demoUser.password_iterations, randomString(32), now));
+  statements.push(
+    db.prepare('INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES (?,?,?,?,?)').bind(PROJECT_ID, DEMO_USER_ID, 'owner', now, now),
+    ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT INTO workspace_templates
+      (id,project_id,name,description,icon,blocks_json,created_by,is_builtin,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now)),
+    ...starterDocumentStatements(db, DEMO_USER_ID, now, 'https://' + DEMO_HOSTNAME)
+  );
+  await db.batch(statements);
+  if (env.STORAGE && typeof env.STORAGE.delete === 'function') {
+    for (const row of fileRows.results || []) {
+      try { await env.STORAGE.delete(row.storage_key); } catch (error) { console.error('demo_storage_cleanup_failed', error && error.message); }
+    }
+  }
 }
 
 function starterDocumentStatements(db, userId, now, origin) {
