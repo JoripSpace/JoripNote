@@ -69,7 +69,7 @@ const HTML = String.raw`<!doctype html>
   <meta name="theme-color" content="#f7f7f5">
   <title>JoripNote</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260820-joripnote-6">
+  <link rel="stylesheet" href="/app.css?v=20260903-joripnote-7">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -178,7 +178,10 @@ const HTML = String.raw`<!doctype html>
   </main>
 
   <main id="public-view" class="public-shell" hidden>
-    <header class="public-header"><a href="/" class="public-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong>JoripNote</strong></a><span>공개 문서</span></header>
+    <header class="public-header">
+      <a href="/" class="public-brand"><svg class="workspace-note-logo" aria-hidden="true"><use href="#brand-workspace-note"/></svg><strong>JoripNote</strong></a>
+      <div class="public-header-actions"><span class="public-label">공개 문서</span><a class="public-try-button" href="https://joripspace.com/marketplace/joripnote/">무료로 이용해보기</a></div>
+    </header>
     <article class="document-editor public-document"><h1 id="public-title" class="public-title"></h1><div id="public-block-editor" class="block-editor public-block-editor"></div></article>
   </main>
 
@@ -493,6 +496,14 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 @media(max-width:900px){.setup-shell{grid-template-columns:1fr;background:#fff}.setup-intro{min-height:auto;padding:32px 28px;background:#f5f6f8}.setup-copy{margin:56px 0 20px}.setup-copy h1{font-size:42px}.setup-benefits{display:none}.setup-panel{padding:48px 24px}}
 @media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.tree-action{opacity:1;pointer-events:auto}.tree-title{padding-right:61px}.setup-intro{padding:24px 20px}.setup-copy{margin:38px 0 4px}.setup-copy h1{font-size:34px}.setup-copy p{font-size:14px}.setup-panel{align-items:start;padding:36px 20px}.setup-card header h2{font-size:27px}}
 .db-filter-value{width:170px;min-width:140px;flex:0 1 170px;padding:0 10px}.db-toolbar>.db-select[aria-label="필터 속성"],.db-toolbar>.db-select[aria-label="필터 조건"]{min-width:108px}@media(max-width:760px){.db-filter-value{width:auto;min-width:0;flex:1}.db-toolbar>.db-select[aria-label="필터 속성"],.db-toolbar>.db-select[aria-label="필터 조건"]{min-width:0}}
+/* Public document conversion header */
+.public-header{position:sticky;z-index:20;top:0;padding:0 16px 0 24px;background:rgba(255,255,255,.94);backdrop-filter:blur(10px)}
+.public-header-actions{display:flex;align-items:center;gap:12px}
+.public-try-button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 15px;border-radius:7px;background:#2f3037;color:#fff;font-size:12px;font-weight:800;text-decoration:none;white-space:nowrap;transition:background .15s ease,transform .15s ease}
+.public-try-button:hover{background:#17181d}
+.public-try-button:active{transform:translateY(1px)}
+.public-try-button:focus-visible{outline:3px solid rgba(47,48,55,.2);outline-offset:2px}
+@media(max-width:560px){.public-header{height:54px;padding:0 10px 0 12px}.public-brand{gap:7px}.public-brand .workspace-note-logo{width:28px;height:28px}.public-header-actions{gap:8px}.public-label{display:none}.public-try-button{min-height:34px;padding:0 12px;font-size:11px}.public-document{padding-top:46px}.public-title{font-size:36px}}
 `;
 
 const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,demoMode:false,workspaceSettings:null,ipAllowlist:[]};

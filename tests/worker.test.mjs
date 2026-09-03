@@ -170,7 +170,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260820-joripnote-6/);
+  assert.match(html, /app\.css\?v=20260903-joripnote-7/);
+  assert.match(html, /class="public-try-button" href="https:\/\/joripspace\.com\/marketplace\/joripnote\/">무료로 이용해보기<\/a>/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
