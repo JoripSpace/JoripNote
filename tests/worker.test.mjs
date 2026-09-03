@@ -170,7 +170,10 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260903-joripnote-7/);
+  assert.match(html, /app\.css\?v=20260903-joripnote-8/);
+  assert.match(html, /app\.js\?v=20260903-joripnote-8/);
+  assert.match(html, /id="publication-private-option"[^>]+>.*비공개/s);
+  assert.match(html, /id="publication-public-option"[^>]+>.*웹에 공개/s);
   assert.match(html, /class="public-try-button" href="https:\/\/joripspace\.com\/marketplace\/joripnote\/">무료로 이용해보기<\/a>/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
@@ -182,7 +185,6 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260820-joripnote-6/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   assert.match(html, /id="ip-tag-editor" class="ip-tag-editor"/);
@@ -231,6 +233,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(styles, /--accent:#59647f/);
   assert.match(styles, /\.url-paste-menu\{position:fixed/);
   assert.match(styles, /\.link-dialog-card\{width:min\(92vw,460px\)/);
+  assert.match(styles, /\.publication-options\{display:grid;grid-template-columns:1fr 1fr/);
+  assert.match(styles, /@media\(max-width:520px\)\{\.publication-options\{grid-template-columns:1fr\}/);
   assert.match(styles, /\.skeleton::after\{/);
   assert.match(styles, /@keyframes skeleton-sweep/);
   assert.match(styles, /\.document-title\.skeleton-title/);
@@ -262,6 +266,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /application\/x-qwerty-blocks/);
   assert.match(source, /function openUrlPasteMenu/);
   assert.match(source, /function openLinkDialog/);
+  assert.match(source, /async function setPublication\(nextPublished\)/);
+  assert.match(source, /nextPublished\?'PUT':'DELETE'/);
   assert.match(source, /function restoreInlineSelection/);
   assert.match(source, /const BLOCK_A11Y_LABELS=/);
   assert.match(source, /el\.setAttribute\('role','textbox'\)/);
