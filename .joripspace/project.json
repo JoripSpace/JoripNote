@@ -11,17 +11,17 @@
     "rendering_default": "server_side_all_user_facing_routes",
     "user_interaction": "automatic_unless_business_or_destructive_decision_is_required"
   },
-  "project_id": "qwerty",
-  "project_slug": "qwerty",
-  "default_url": "https://qwerty.joripspace.run",
+  "project_id": "joripnote",
+  "project_slug": "joripnote",
+  "default_url": "https://joripnote.joripspace.run",
   "api_base_url": "https://api.joripspace.com",
   "mcp_url": "https://api.joripspace.com/mcp",
   "deployment": {
     "mode": "github_actions",
     "connection_status": "active",
-    "repository_id": "1330511172",
-    "repository": "dbs9456/jorip-qwerty",
+    "repository_id": "1340248262",
+    "repository": "JoripSpace/JoripNote",
     "branch": "master",
-    "workflow_path": ".github/workflows/joripspace-qwerty.yml"
+    "workflow_path": ".github/workflows/joripspace-build_connection_97e3b28b342c09245e689ac1.yml"
   }
 }

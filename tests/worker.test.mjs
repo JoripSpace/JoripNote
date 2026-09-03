@@ -477,7 +477,7 @@ test('authentication requires qwerty membership and blocks public signup after b
   assert.equal(signup.response.status, 403);
 });
 
-test('first-run setup installs exactly one owner and seeds builtin templates', async () => {
+test('first-run setup installs one owner and a complete editable starter workspace', async () => {
   const env = envWithDb();
   const before = await call(env, '/api/setup-status');
   assert.equal(before.response.status, 200);
@@ -500,6 +500,22 @@ test('first-run setup installs exactly one owner and seeds builtin templates', a
   assert.match(installed.response.headers.get('set-cookie'), /qwerty_session=/);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty' AND role='owner'").get().count, 1);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='qwerty' AND is_builtin=1").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty' AND status='active'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE parent_document_id='doc_starter_board'").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_versions WHERE project_id='qwerty'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_favorites WHERE project_id='qwerty'").get().count, 2);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM recent_documents WHERE project_id='qwerty'").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_comments WHERE project_id='qwerty'").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM activity_events WHERE project_id='qwerty'").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_publications WHERE project_id='qwerty'").get().count, 0);
+  const seededTypes = env.DB.database.prepare('SELECT DISTINCT block_type FROM document_blocks ORDER BY block_type').all().map(row => row.block_type);
+  assert.deepEqual(seededTypes, ['audio', 'bookmark', 'bullet', 'callout', 'code', 'database', 'divider', 'embed', 'file', 'heading1', 'heading2', 'heading3', 'heading4', 'image', 'math', 'numbered', 'page_link', 'quote', 'table', 'text', 'toc', 'todo', 'toggle', 'video']);
+  const boardModel = JSON.parse(env.DB.database.prepare("SELECT content FROM document_blocks WHERE id='blk_board_database'").get().content);
+  assert.deepEqual(boardModel.columns.map(column => column.type), ['text', 'select', 'person', 'number', 'date', 'checkbox', 'url']);
+  assert.equal(boardModel.view.mode, 'board');
+  assert.equal(env.DB.database.prepare("SELECT indent_level FROM document_blocks WHERE id='blk_welcome_todo2'").get().indent_level, 1);
+  assert.equal(env.DB.database.prepare("SELECT checked FROM document_blocks WHERE id='blk_welcome_toggle'").get().checked, 1);
+  assert.equal(env.DB.database.prepare("SELECT content FROM document_blocks WHERE id='blk_welcome_page'").get().content, 'https://qwerty.example/doc/doc_starter_board');
 
   const after = await call(env, '/api/setup-status');
   assert.equal(after.body.installed, true);

@@ -12,6 +12,90 @@ const BUILTIN_TEMPLATES = [
   ['tpl_daily', '업무일지', '오늘의 목표와 진행 상황을 기록합니다.', '✅', [{ type: 'heading2', content: '오늘의 목표' }, { type: 'todo', content: '가장 중요한 일을 적어 주세요.' }, { type: 'heading2', content: '진행 내용' }, { type: 'text', content: '진행한 내용을 적어 주세요.' }, { type: 'heading2', content: '내일 할 일' }, { type: 'todo', content: '다음 할 일을 적어 주세요.' }]],
   ['tpl_project', '프로젝트 계획서', '목표, 일정, 담당자와 위험 요소를 정리합니다.', '🚀', [{ type: 'heading2', content: '프로젝트 목표' }, { type: 'text', content: '달성하려는 목표를 적어 주세요.' }, { type: 'heading2', content: '주요 일정' }, { type: 'todo', content: '일정과 담당자를 적어 주세요.' }, { type: 'heading2', content: '위험 요소' }, { type: 'callout', content: '예상되는 위험과 대응 방법을 적어 주세요.' }]]
 ];
+const STARTER_DOCUMENTS = [
+  {
+    id: 'doc_starter_welcome', snapshotId: 'snap_starter_welcome', title: 'JoripNote 시작하기', parentId: null, favorite: true, recent: true,
+    blocks: [
+      ['blk_welcome_heading1', 'heading1', 'JoripNote에 오신 것을 환영합니다'],
+      ['blk_welcome_richtext', 'text', '@qwerty-rich:<strong>블록을 클릭해 바로 편집</strong>하고, <em>드래그해서 순서를 바꾸며</em>, <u>중요한 부분을 표시</u>해 보세요.'],
+      ['blk_welcome_callout', 'callout', '이 문서들은 기능을 직접 시험한 뒤 자유롭게 수정하거나 삭제해도 되는 샘플입니다.'],
+      ['blk_welcome_toc', 'toc', ''],
+      ['blk_welcome_heading2', 'heading2', '기본 블록'],
+      ['blk_welcome_bullet1', 'bullet', '문서를 블록 단위로 작성합니다.', false, 0],
+      ['blk_welcome_bullet2', 'bullet', 'Tab과 Shift+Tab으로 목록 깊이를 바꿉니다.', false, 1],
+      ['blk_welcome_number1', 'numbered', '왼쪽 사이드바에서 새 문서를 만듭니다.', false, 0],
+      ['blk_welcome_number2', 'numbered', '제목과 내용을 입력하면 자동 저장됩니다.', false, 1],
+      ['blk_welcome_todo1', 'todo', '즐겨찾기와 최근 문서를 확인하기', true, 0],
+      ['blk_welcome_todo2', 'todo', '댓글과 버전 기록을 직접 사용해 보기', false, 1],
+      ['blk_welcome_quote', 'quote', '좋은 문서 공간은 기록을 시작하는 데 망설임이 없어야 합니다.'],
+      ['blk_welcome_toggle', 'toggle', '접었다 펼치는 토글\n토글 본문에는 길어진 설명이나 참고 내용을 정리할 수 있습니다.', true],
+      ['blk_welcome_divider', 'divider', ''],
+      ['blk_welcome_heading3', 'heading3', '코드와 수식'],
+      ['blk_welcome_code', 'code', "const note = { title: '새 아이디어', saved: true };\nconsole.log(note);"],
+      ['blk_welcome_math', 'math', 'E = mc^2'],
+      ['blk_welcome_heading4', 'heading4', '간단한 표'],
+      ['blk_welcome_table', 'table', JSON.stringify([['기능', '사용 예시', '상태'], ['문서', '아이디어 정리', '준비됨'], ['댓글', '피드백 남기기', '준비됨'], ['버전', '이전 내용 복원', '준비됨']])],
+      ['blk_welcome_page', 'page_link', '{origin}/doc/doc_starter_board']
+    ]
+  },
+  {
+    id: 'doc_starter_board', snapshotId: 'snap_starter_board', title: '프로젝트 운영 보드', parentId: null, favorite: true, recent: true,
+    blocks: [
+      ['blk_board_intro', 'callout', '표·보드 전환, 검색, 필터, 정렬, 속성 추가와 카드 이동을 모두 시험해 보세요.'],
+      ['blk_board_database', 'database', JSON.stringify({
+        version: 2,
+        title: 'JoripNote 출시 준비',
+        columns: [
+          { id: 'col_task', name: '작업', type: 'text', options: [] },
+          { id: 'col_status', name: '상태', type: 'select', options: ['예정', '진행 중', '검토', '완료'] },
+          { id: 'col_owner', name: '담당자', type: 'person', options: [] },
+          { id: 'col_priority', name: '우선순위', type: 'number', options: [] },
+          { id: 'col_due', name: '마감일', type: 'date', options: [] },
+          { id: 'col_done', name: '확인', type: 'checkbox', options: [] },
+          { id: 'col_link', name: '참고 링크', type: 'url', options: [] }
+        ],
+        rows: [
+          { id: 'row_launch_copy', cells: { col_task: '소개 문구 다듬기', col_status: '완료', col_owner: 'Owner', col_priority: '1', col_due: '2026-09-05', col_done: true, col_link: 'https://joripspace.com/marketplace/joripnote/' } },
+          { id: 'row_mobile_check', cells: { col_task: '모바일 편집 점검', col_status: '진행 중', col_owner: 'Owner', col_priority: '2', col_due: '2026-09-07', col_done: false, col_link: 'https://joripnote.joripspace.run/' } },
+          { id: 'row_share_page', cells: { col_task: '공개 문서 공유하기', col_status: '검토', col_owner: '', col_priority: '3', col_due: '', col_done: false, col_link: '' } }
+        ],
+        view: { mode: 'board', groupBy: 'col_status', sortBy: 'col_priority', sortDir: 'asc', filter: { column: '', operator: 'contains', value: '' } }
+      })],
+      ['blk_board_heading', 'heading2', '함께 쓰는 방법'],
+      ['blk_board_text', 'text', '새 속성과 작업을 추가하고, 보드에서 카드를 다른 상태로 끌어보세요. 변경 내용은 문서 버전에 기록됩니다.'],
+      ['blk_board_child', 'page_link', '{origin}/doc/doc_starter_meeting']
+    ]
+  },
+  {
+    id: 'doc_starter_meeting', snapshotId: 'snap_starter_meeting', title: '주간 회의록', parentId: 'doc_starter_board', favorite: false, recent: true,
+    blocks: [
+      ['blk_meeting_heading', 'heading1', '주간 회의록'],
+      ['blk_meeting_meta1', 'bullet', '참석자: Owner'],
+      ['blk_meeting_meta2', 'bullet', '목표: 이번 주 우선순위와 담당자 확인'],
+      ['blk_meeting_agenda', 'heading2', '안건'],
+      ['blk_meeting_todo1', 'todo', '모바일에서 문서 작성 흐름 확인', true],
+      ['blk_meeting_todo2', 'todo', '공개 링크를 열어 비로그인 화면 확인', false],
+      ['blk_meeting_decision', 'heading2', '결정 사항'],
+      ['blk_meeting_text', 'text', '결정 사항을 이곳에 적고 댓글로 의견을 이어가세요.']
+    ],
+    comment: { id: 'cmt_starter_meeting', blockId: 'blk_meeting_text', body: '댓글을 남기고 해결 처리하는 흐름을 시험해 보세요.' }
+  },
+  {
+    id: 'doc_starter_media', snapshotId: 'snap_starter_media', title: '링크와 미디어 예시', parentId: null, favorite: false, recent: false,
+    blocks: [
+      ['blk_media_heading', 'heading1', '링크와 미디어 블록'],
+      ['blk_media_intro', 'text', 'URL을 바꾸면 각 블록의 미리보기가 즉시 갱신됩니다. 비어 있는 블록에는 직접 사용할 주소를 붙여넣어 보세요.'],
+      ['blk_media_bookmark', 'bookmark', 'https://github.com/JoripSpace/JoripNote'],
+      ['blk_media_image', 'image', 'https://github.com/JoripSpace.png'],
+      ['blk_media_video', 'video', ''],
+      ['blk_media_audio', 'audio', ''],
+      ['blk_media_file', 'file', 'https://raw.githubusercontent.com/JoripSpace/JoripNote/master/LICENSE'],
+      ['blk_media_embed', 'embed', ''],
+      ['blk_media_page', 'page_link', '{origin}/doc/doc_starter_welcome'],
+      ['blk_media_share', 'callout', '우상단 공유 메뉴에서 비공개 또는 웹 공개를 선택할 수 있습니다. 공개 문서는 로그인하지 않은 사람도 볼 수 있으니 민감한 내용은 공개하지 마세요.']
+    ]
+  }
+];
 const encoder = new TextEncoder();
 
 const HTML = String.raw`<!doctype html>
@@ -878,6 +962,31 @@ async function setupStatus(request, env) {
   return json({ installed: Number(row && row.installed) === 1, public_signup_enabled: signup?.value === '1' });
 }
 
+function starterDocumentStatements(db, userId, now, origin) {
+  const statements = [];
+  STARTER_DOCUMENTS.forEach((document, documentIndex) => {
+    const timestamp = now - documentIndex;
+    statements.push(db.prepare(`INSERT INTO documents
+      (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(document.id, PROJECT_ID, document.parentId, document.title, normalizeSearch(document.title), document.snapshotId, userId, userId, timestamp, timestamp));
+    document.blocks.forEach(([id, type, rawContent, checked = false, indentLevel = 0], position) => {
+      const content = String(rawContent).replaceAll('{origin}', origin);
+      statements.push(db.prepare(`INSERT INTO document_blocks
+        (id,document_id,snapshot_id,block_type,content,position,checked,indent_level,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(id, document.id, document.snapshotId, type, content, position, checked ? 1 : 0, indentLevel, timestamp, timestamp));
+    });
+    statements.push(db.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(document.id, PROJECT_ID, 'workspace', userId, timestamp));
+    statements.push(db.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + document.id, PROJECT_ID, document.id, 1, document.snapshotId, document.title, userId, timestamp));
+    if (document.favorite) statements.push(db.prepare('INSERT INTO document_favorites (project_id,user_id,document_id,created_at) VALUES (?,?,?,?)').bind(PROJECT_ID, userId, document.id, timestamp));
+    if (document.recent) statements.push(db.prepare('INSERT INTO recent_documents (project_id,user_id,document_id,opened_at) VALUES (?,?,?,?)').bind(PROJECT_ID, userId, document.id, timestamp));
+    if (document.comment) statements.push(db.prepare(`INSERT INTO document_comments
+      (id,project_id,document_id,block_id,body,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`).bind(document.comment.id, PROJECT_ID, document.id, document.comment.blockId, document.comment.body, userId, timestamp, timestamp));
+  });
+  statements.push(db.prepare('INSERT INTO activity_events (id,project_id,actor_id,document_id,kind,message,created_at) VALUES (?,?,?,?,?,?,?)')
+    .bind('act_starter_installed', PROJECT_ID, userId, 'doc_starter_welcome', 'workspace_installed', 'JoripNote 설치와 샘플 문서 준비를 완료했습니다.', now));
+  return statements;
+}
+
 async function installAdmin(request, env) {
   const db = requireDb(env);
   await enforceRateLimit(db, 'setup_ip', await requestKey(request, 'setup'), 8, 900);
@@ -891,6 +1000,7 @@ async function installAdmin(request, env) {
   if (password !== String(body.password_confirmation || '')) throw new HttpError(400, '비밀번호 확인이 일치하지 않습니다.');
   const user = await passwordUser(username, password);
   const now = nowSeconds();
+  const origin = new URL(request.url).origin;
   const statements = [
     db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('installation_complete', '1', now),
     db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_enabled', '0', now),
@@ -901,7 +1011,8 @@ async function installAdmin(request, env) {
     db.prepare('INSERT INTO project_members (project_id, user_id, role, joined_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(PROJECT_ID, user.id, 'owner', now, now),
     ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT OR IGNORE INTO workspace_templates
       (id,project_id,name,description,icon,blocks_json,created_by,is_builtin,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now))
+      VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now)),
+    ...starterDocumentStatements(db, user.id, now, origin)
   ];
   try {
     await db.batch(statements);
