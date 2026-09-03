@@ -1,12 +1,6 @@
 const PROJECT_ID = 'qwerty';
 const SESSION_COOKIE = 'qwerty_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
-const DEMO_HOSTNAME = 'joripnote.joripspace.run';
-const DEMO_CRON_HOSTNAME = 'joripspace-cron.internal';
-const DEMO_RESET_PATH = '/__joripnote_demo/reset';
-const DEMO_USER_ID = 'demo_owner';
-const DEMO_USERNAME = 'demo';
-const DEMO_MODE_SETTING = 'demo_mode';
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7;
 const PASSWORD_ITERATIONS = 100000;
 const CAPTCHA_TTL_SECONDS = 60 * 5;
@@ -17,47 +11,6 @@ const BUILTIN_TEMPLATES = [
   ['tpl_meeting', '회의록', '안건, 논의 내용과 할 일을 정리합니다.', '🗒️', [{ type: 'heading2', content: '회의 정보' }, { type: 'bullet', content: '일시: ' }, { type: 'bullet', content: '참석자: ' }, { type: 'heading2', content: '안건' }, { type: 'text', content: '논의할 안건을 입력하세요.' }, { type: 'heading2', content: '결정 및 할 일' }, { type: 'todo', content: '담당자와 기한을 적어 주세요.' }]],
   ['tpl_daily', '업무일지', '오늘의 목표와 진행 상황을 기록합니다.', '✅', [{ type: 'heading2', content: '오늘의 목표' }, { type: 'todo', content: '가장 중요한 일을 적어 주세요.' }, { type: 'heading2', content: '진행 내용' }, { type: 'text', content: '진행한 내용을 적어 주세요.' }, { type: 'heading2', content: '내일 할 일' }, { type: 'todo', content: '다음 할 일을 적어 주세요.' }]],
   ['tpl_project', '프로젝트 계획서', '목표, 일정, 담당자와 위험 요소를 정리합니다.', '🚀', [{ type: 'heading2', content: '프로젝트 목표' }, { type: 'text', content: '달성하려는 목표를 적어 주세요.' }, { type: 'heading2', content: '주요 일정' }, { type: 'todo', content: '일정과 담당자를 적어 주세요.' }, { type: 'heading2', content: '위험 요소' }, { type: 'callout', content: '예상되는 위험과 대응 방법을 적어 주세요.' }]]
-];
-const DEMO_SAMPLE_DOCUMENTS = [
-  {
-    id: 'doc_demo_start', snapshot_id: 'snap_demo_start', parent_document_id: null, title: 'JoripNote 시작하기', favorite: true,
-    blocks: [
-      { type: 'heading1', content: '반가워요 👋' },
-      { type: 'text', content: '이 문서는 JoripNote 데모를 빠르게 둘러보기 위한 샘플입니다. 마음껏 고쳐도 매일 자정에 처음 상태로 돌아옵니다.' },
-      { type: 'heading2', content: '이 데모에서 해볼 수 있는 것' },
-      { type: 'todo', content: '문서 블록을 추가하고 편집하기' },
-      { type: 'todo', content: '하위 페이지를 만들어 계층 구조 구성하기' },
-      { type: 'todo', content: '템플릿으로 새 문서 시작하기' },
-      { type: 'callout', content: '데모 공간은 누구나 편집할 수 있으며, 매일 00:00(KST)에 샘플 상태로 자동 복구됩니다.' }
-    ]
-  },
-  {
-    id: 'doc_demo_roadmap', snapshot_id: 'snap_demo_roadmap', parent_document_id: null, title: '제품 로드맵',
-    blocks: [
-      { type: 'heading1', content: 'JoripNote 제품 로드맵' },
-      { type: 'text', content: '팀이 함께 만드는 문서 공간의 다음 목표를 정리한 샘플 페이지입니다.' },
-      { type: 'heading2', content: '이번 분기 목표' },
-      { type: 'bullet', content: '문서 작성 경험을 더 빠르고 편하게 만들기' },
-      { type: 'bullet', content: '초대와 권한 관리 흐름 다듬기' },
-      { type: 'bullet', content: '모바일 화면과 접근성 품질 높이기' },
-      { type: 'heading2', content: '진행 상황' },
-      { type: 'todo', content: '편집기 블록 메뉴 정리', checked: true },
-      { type: 'todo', content: '데모 샘플 콘텐츠 구성' },
-      { type: 'todo', content: '사용자 피드백 반영' }
-    ]
-  },
-  {
-    id: 'doc_demo_meeting', snapshot_id: 'snap_demo_meeting', parent_document_id: 'doc_demo_roadmap', title: '회의록 · 데모',
-    blocks: [
-      { type: 'heading1', content: '회의록 · 데모' },
-      { type: 'bullet', content: '일시: 2026년 9월 2일' },
-      { type: 'bullet', content: '참석자: JoripNote 팀' },
-      { type: 'heading2', content: '논의 내용' },
-      { type: 'text', content: '문서 안에서 하위 페이지와 다양한 블록을 함께 사용하는 흐름을 보여줍니다.' },
-      { type: 'heading2', content: '다음 할 일' },
-      { type: 'todo', content: '데모를 둘러보고 의견 남기기' }
-    ]
-  }
 ];
 const encoder = new TextEncoder();
 
@@ -506,7 +459,7 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 @media(max-width:560px){.public-header{height:54px;padding:0 10px 0 12px}.public-brand{gap:7px}.public-brand .workspace-note-logo{width:28px;height:28px}.public-header-actions{gap:8px}.public-label{display:none}.public-try-button{min-height:34px;padding:0 12px;font-size:11px}.public-document{padding-top:46px}.public-title{font-size:36px}}
 `;
 
-const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,demoMode:false,workspaceSettings:null,ipAllowlist:[]};
+const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,workspaceSettings:null,ipAllowlist:[]};
 const $=(id)=>document.getElementById(id);
 function loadingMarkup(kind,count=4){const hidden='<span class="sr-only">콘텐츠를 불러오는 중</span>';if(kind==='tree')return'<div class="skeleton-tree" role="status" aria-label="문서 트리 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='document')return'<div class="skeleton-document" role="status" aria-label="문서 내용 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='member')return'<div class="skeleton-stack" role="status" aria-label="멤버 목록 불러오는 중">'+hidden+Array.from({length:count},()=>'<div class="skeleton-member-row"><span class="skeleton skeleton-avatar"></span><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('')+'</div>';const rows=Array.from({length:count},()=>'<div class="skeleton-list-row"><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('');return'<div class="'+(kind==='search'?'global-search-skeleton':'skeleton-stack')+'" role="status" aria-label="목록 불러오는 중">'+hidden+rows+'</div>'}
 function showLoading(id,kind,count){const container=$(id);container.setAttribute('aria-busy','true');container.innerHTML=loadingMarkup(kind,count)}
@@ -559,8 +512,8 @@ $('signup-form').addEventListener('submit',async(event)=>{event.preventDefault()
 $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('invite-alert','');busy(formEl,true);try{const data=await api('/api/invitations/'+encodeURIComponent(inviteToken())+'/accept',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});history.replaceState({},'', '/');enterApp(data)}catch(error){alertBox('invite-alert',error.message);busy(formEl,false)}});
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
-async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;state.demoMode=!!setup.demo_mode;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();const roleText=roleLabel[state.role]+(state.demoMode?' · 데모':'');$('profile-role').textContent=roleText;$('sidebar-role').textContent=roleText;$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();const roleText=roleLabel[state.role];$('profile-role').textContent=roleText;$('sidebar-role').textContent=roleText;$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
@@ -781,7 +734,6 @@ async function route(request, env) {
   if (request.method === 'GET' && /^\/api\/captcha\/[a-f0-9-]{36}\.svg$/.test(path)) return getCaptchaSvg(env, path.slice(13, -4));
   if (request.method === 'GET' && path === '/api/captcha') return createCaptcha(request, env);
   if (request.method === 'GET' && path === '/api/setup-status') return setupStatus(request, env);
-  if (request.method === 'POST' && path === DEMO_RESET_PATH) return resetDemoEndpoint(request, env);
   if (request.method === 'POST' && path === '/api/setup') {
     assertSameOrigin(request);
     return installAdmin(request, env);
@@ -911,122 +863,13 @@ async function bootstrapSignup(request, env) {
   throw new HttpError(403, '첫 관리자는 JoripNote 설치 화면에서만 만들 수 있습니다.');
 }
 
-function isDemoRequest(request) {
-  const hostname = new URL(request.url).hostname;
-  return hostname === DEMO_HOSTNAME || hostname === DEMO_CRON_HOSTNAME;
-}
-
 async function setupStatus(request, env) {
-  if (isDemoRequest(request)) {
-    await ensureDemoData(env);
-    const token = await ensureDemoSession(request, env);
-    return json({ installed: true, public_signup_enabled: false, demo_mode: true }, 200, token ? { 'set-cookie': sessionCookie(token) } : {});
-  }
   const db = requireDb(env);
   const [row, signup] = await Promise.all([
     db.prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first(),
     db.prepare("SELECT value FROM app_settings WHERE key='public_signup_enabled'").first()
   ]);
   return json({ installed: Number(row && row.installed) === 1, public_signup_enabled: signup?.value === '1' });
-}
-
-async function ensureDemoData(env) {
-  const db = requireDb(env);
-  const [marker, member] = await Promise.all([
-    readAppSetting(db, DEMO_MODE_SETTING, '0'),
-    db.prepare('SELECT 1 AS yes FROM project_members WHERE project_id=? AND user_id=?').bind(PROJECT_ID, DEMO_USER_ID).first()
-  ]);
-  if (marker === '1' && member) return;
-  await resetDemoData(env);
-}
-
-async function ensureDemoSession(request, env) {
-  const db = requireDb(env);
-  const current = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE];
-  if (current) {
-    const existing = await db.prepare('SELECT 1 AS yes FROM sessions WHERE token_hash=? AND user_id=? AND expires_at>?')
-      .bind(await sha256Hex(current), DEMO_USER_ID, nowSeconds()).first();
-    if (existing) return null;
-  }
-  const token = randomString(43);
-  const now = nowSeconds();
-  await db.prepare('INSERT INTO sessions (token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)')
-    .bind(await sha256Hex(token), DEMO_USER_ID, now + SESSION_TTL_SECONDS, now).run();
-  return token;
-}
-
-async function resetDemoEndpoint(request, env) {
-  if (!isDemoRequest(request)) throw new HttpError(404, '요청한 기능을 찾을 수 없습니다.');
-  await resetDemoData(env);
-  const token = await ensureDemoSession(request, env);
-  return json({ ok: true, demo_mode: true, reset_at: new Date().toISOString() }, 200, token ? { 'set-cookie': sessionCookie(token) } : {});
-}
-
-async function resetDemoData(env) {
-  const db = requireDb(env);
-  const fileRows = await db.prepare('SELECT storage_key FROM file_uploads').all();
-  const existingDemoUser = await db.prepare('SELECT id FROM users WHERE id=?').bind(DEMO_USER_ID).first();
-  const demoUser = existingDemoUser ? null : await passwordUser(DEMO_USERNAME, randomString(48));
-  if (demoUser) demoUser.id = DEMO_USER_ID;
-  const now = nowSeconds();
-  const statements = [
-    db.prepare('DELETE FROM document_grants'),
-    db.prepare('DELETE FROM file_uploads'),
-    db.prepare('DELETE FROM document_publications'),
-    db.prepare('DELETE FROM document_comments'),
-    db.prepare('DELETE FROM notifications'),
-    db.prepare('DELETE FROM activity_events'),
-    db.prepare('DELETE FROM document_versions'),
-    db.prepare('DELETE FROM document_blocks'),
-    db.prepare('DELETE FROM document_access'),
-    db.prepare('DELETE FROM document_favorites'),
-    db.prepare('DELETE FROM recent_documents'),
-    db.prepare('DELETE FROM documents'),
-    db.prepare('DELETE FROM project_invitations'),
-    db.prepare('DELETE FROM project_members'),
-    db.prepare('DELETE FROM sessions WHERE user_id<>?').bind(DEMO_USER_ID),
-    db.prepare('DELETE FROM users WHERE id<>?').bind(DEMO_USER_ID),
-    db.prepare('DELETE FROM app_settings'),
-    db.prepare('DELETE FROM auth_rate_limits'),
-    db.prepare('DELETE FROM captcha_challenges'),
-    db.prepare('DELETE FROM workspace_templates'),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('installation_complete', '1', now),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind(DEMO_MODE_SETTING, '1', now),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('public_signup_enabled', '0', now),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('public_signup_role', 'member', now),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('ip_allowlist_enabled', '0', now),
-    db.prepare(`INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)`).bind('ip_allowlist', '', now)
-  ];
-  if (demoUser) statements.push(
-    db.prepare('INSERT INTO users (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,?)')
-      .bind(demoUser.id, demoUser.username, demoUser.password_hash, demoUser.password_salt, demoUser.password_iterations, randomString(32), now)
-  );
-  statements.push(
-    db.prepare('INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES (?,?,?,?,?)').bind(PROJECT_ID, DEMO_USER_ID, 'owner', now, now),
-    ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT INTO workspace_templates
-      (id,project_id,name,description,icon,blocks_json,created_by,is_builtin,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now))
-  );
-  for (const document of DEMO_SAMPLE_DOCUMENTS) {
-    statements.push(db.prepare(`INSERT INTO documents
-      (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(document.id, PROJECT_ID, document.parent_document_id, document.title, normalizeSearch(document.title), document.snapshot_id, DEMO_USER_ID, DEMO_USER_ID, now, now));
-    document.blocks.forEach((block, index) => statements.push(db.prepare(`INSERT INTO document_blocks
-      (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?)`).bind('blk_' + document.id.slice(4) + '_' + index, document.id, document.snapshot_id, block.type, block.content, index, block.checked ? 1 : 0, now, now)));
-    statements.push(
-      db.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(document.id, PROJECT_ID, 'workspace', DEMO_USER_ID, now),
-      db.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + document.id.slice(4) + '_1', PROJECT_ID, document.id, 1, document.snapshot_id, document.title, DEMO_USER_ID, now),
-      db.prepare('INSERT INTO recent_documents (project_id,user_id,document_id,opened_at) VALUES (?,?,?,?)').bind(PROJECT_ID, DEMO_USER_ID, document.id, now)
-    );
-    if (document.favorite) statements.push(db.prepare('INSERT INTO document_favorites (project_id,user_id,document_id,created_at) VALUES (?,?,?,?)').bind(PROJECT_ID, DEMO_USER_ID, document.id, now));
-  }
-  await db.batch(statements);
-  if (env.STORAGE && typeof env.STORAGE.delete === 'function') {
-    for (const row of fileRows.results || []) {
-      try { await env.STORAGE.delete(row.storage_key); } catch (error) { console.error('demo_storage_cleanup_failed', error && error.message); }
-    }
-  }
 }
 
 async function installAdmin(request, env) {

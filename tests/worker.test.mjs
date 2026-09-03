@@ -505,27 +505,18 @@ test('first-run setup installs exactly one owner and seeds builtin templates', a
   assert.equal(repeated.response.status, 409);
 });
 
-test('joripnote demo host auto-signs in and restores sample workspace', async () => {
+test('release build requires first-run setup and exposes no demo reset endpoint', async () => {
   const env = envWithDb();
   const origin = 'https://joripnote.joripspace.run';
   const status = await call(env, '/api/setup-status', { origin });
   assert.equal(status.response.status, 200);
-  assert.equal(status.body.installed, true);
-  assert.equal(status.body.demo_mode, true);
-  const cookie = cookieFrom(status.response);
-  const me = await call(env, '/api/me', { origin, headers: { cookie } });
-  assert.equal(me.response.status, 200);
-  assert.equal(me.body.user.username, 'demo');
-  assert.equal(me.body.membership.role, 'owner');
-  const documents = await call(env, '/api/documents', { origin, headers: { cookie } });
-  assert.equal(documents.response.status, 200);
-  assert.equal(documents.body.documents.length, 2);
+  assert.equal(status.body.installed, false);
+  assert.equal('demo_mode' in status.body, false);
+  assert.equal(status.response.headers.get('set-cookie'), null);
   const reset = await call(env, '/__joripnote_demo/reset', { origin, method: 'POST' });
-  assert.equal(reset.response.status, 200, JSON.stringify(reset.body));
-  const cronReset = await call(env, '/__joripnote_demo/reset', { origin: 'https://joripspace-cron.internal', method: 'POST' });
-  assert.equal(cronReset.response.status, 200, JSON.stringify(cronReset.body));
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 3);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 1);
+  assert.equal(reset.response.status, 404);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 0);
 });
 
 test('Owner controls public signup roles and exact IP access without locking out the current IP', async () => {
