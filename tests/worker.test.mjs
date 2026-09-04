@@ -549,7 +549,12 @@ test('demo host auto-signs in and restores the complete sample workspace', async
   assert.equal(cronReset.response.status, 200, JSON.stringify(cronReset.body));
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 4);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 1);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_publications WHERE project_id='qwerty'").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM document_publications WHERE project_id='qwerty'").get().count, 1);
+  const publicWelcome = await call(env, '/api/public/documents/doc_starter_welcome', { origin });
+  assert.equal(publicWelcome.response.status, 200, JSON.stringify(publicWelcome.body));
+  assert.equal(publicWelcome.body.document.title, 'JoripNote 시작하기');
+  assert.equal(publicWelcome.body.document.blocks.length, 20);
+  assert.equal((await worker.fetch(request('/public/doc_starter_welcome', { origin }), env)).status, 200);
 });
 
 test('Owner controls public signup roles and exact IP access without locking out the current IP', async () => {

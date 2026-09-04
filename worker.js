@@ -1053,6 +1053,9 @@ async function resetDemoData(env) {
       VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now)),
     ...starterDocumentStatements(db, DEMO_USER_ID, now, 'https://' + DEMO_HOSTNAME)
   );
+  statements.push(db.prepare(`INSERT INTO document_publications
+    (project_id,document_id,published_by,published_at) VALUES (?,?,?,?)`)
+    .bind(PROJECT_ID, 'doc_starter_welcome', DEMO_USER_ID, now));
   await db.batch(statements);
   if (env.STORAGE && typeof env.STORAGE.delete === 'function') {
     for (const row of fileRows.results || []) {
