@@ -1,9 +1,16 @@
+import { unzipSync } from 'fflate';
+
 const PROJECT_ID = 'cf-notion-st';
 const SESSION_COOKIE = 'qwerty_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7;
 const PASSWORD_ITERATIONS = 100000;
 const CAPTCHA_TTL_SECONDS = 60 * 5;
+const NOTION_ZIP_MAX_BYTES = 50 * 1024 * 1024;
+const NOTION_UNZIPPED_MAX_BYTES = 100 * 1024 * 1024;
+const NOTION_ENTRY_MAX_BYTES = 10 * 1024 * 1024;
+const NOTION_MAX_ENTRIES = 2000;
+const NOTION_MAX_DOCUMENTS = 250;
 const BLOCK_TYPES = new Set(['text', 'heading1', 'heading2', 'heading3', 'heading4', 'bullet', 'numbered', 'todo', 'quote', 'code', 'divider', 'toggle', 'callout', 'table', 'database', 'toc', 'math', 'bookmark', 'image', 'video', 'audio', 'file', 'embed', 'page_link']);
 const EDIT_ROLES = new Set(['owner', 'admin', 'member']);
 const MANAGE_ROLES = new Set(['owner', 'admin']);
@@ -22,7 +29,7 @@ const HTML = String.raw`<!doctype html>
   <meta name="theme-color" content="#f7f7f5">
   <title>JoripNote</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260820-joripnote-6">
+  <link rel="stylesheet" href="/app.css?v=20260909-joripnote-7">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -235,8 +242,11 @@ const HTML = String.raw`<!doctype html>
         <header class="page-header settings-header"><div><p class="eyebrow">WORKSPACE</p><h1>설정</h1></div></header>
         <div class="settings-grid">
           <div class="settings-card import-card">
-            <div><h2>Markdown 업로드</h2><p>Markdown(.md) 파일을 문서와 블록으로 변환합니다.</p><small>텍스트·제목·목록·할 일·인용·코드·구분선을 지원합니다. 첨부파일, 데이터베이스, 댓글은 가져오지 않습니다.</small></div>
-            <label id="notion-import-button" class="button subtle compact import-button">Markdown 업로드<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
+            <div><h2>Notion 가져오기</h2><p>Markdown 한 파일 또는 Notion 전체 내보내기 ZIP을 가져옵니다.</p><small>ZIP은 문서 계층, CSV 데이터 표와 첨부파일을 복원합니다. 최대 50MB이며 Owner와 Admin만 사용할 수 있습니다.</small></div>
+            <div class="import-actions">
+              <label id="notion-import-button" class="button subtle compact import-button">Markdown 업로드<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
+              <label id="notion-zip-import-button" class="button primary compact import-button">Notion ZIP 업로드<input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
+            </div>
           </div>
           <div class="settings-card document-width-card">
             <div><h2>문서 너비</h2><p>집중해서 읽거나, 넓은 화면을 모두 활용할 수 있습니다.</p></div>
@@ -328,7 +338,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260820-joripnote-6" defer></script>
+  <script src="/app.js?v=20260909-joripnote-7" defer></script>
 </body>
 </html>`;
 
@@ -351,7 +361,7 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .sidebar{width:244px;transition:width .18s ease}.main-pane{margin-left:244px;transition:margin-left .18s ease}.main-nav button .nav-label{width:auto;min-width:0;flex:1;overflow:hidden;color:inherit;font-size:13px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.nav-icon{display:grid;place-items:center;flex:none}.favorite-toggle{color:#77766f}.favorite-toggle:hover{color:#484741}.favorite-toggle.active{color:#b7791f}.favorite-toggle.active .star-icon{fill:currentColor;stroke-width:1.4}.card-actions .favorite-toggle{display:grid;place-items:center;width:34px;padding:0}.document-title:not(:read-only),.block-content[contenteditable="true"]{cursor:text}.document-title:read-only,.block-content[contenteditable="false"]{cursor:default}.tree-toggle .ui-icon,.tree-add .ui-icon{width:14px;height:14px}.tree-toggle .ui-icon{transition:transform .15s}.tree-toggle.expanded .ui-icon{transform:rotate(90deg)}.block-handle .ui-icon{width:16px;height:16px}.block-handle:active{cursor:grabbing}.block-row.dragging{opacity:.38}.block-row.drop-before::before,.block-row.drop-after::after{position:absolute;right:0;left:24px;height:2px;border-radius:2px;background:#4b7bec;content:""}.block-row.drop-before::before{top:-2px}.block-row.drop-after::after{bottom:-2px}.toggle-wrap{min-width:0}.toggle-summary{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:start}.toggle-caret{display:grid;place-items:center;width:22px;height:30px;padding:0;border:0;background:transparent;color:#77766f}.toggle-caret .ui-icon{width:15px;height:15px;transition:transform .15s}.toggle-caret[aria-expanded="true"] .ui-icon{transform:rotate(90deg)}.toggle-body{margin:2px 0 5px 22px;padding:4px 10px;border-left:2px solid #e5e4df;color:#55544f}.document-tree{max-height:calc(100vh - 360px)}.document-editor{width:min(100% - 40px,900px);padding:48px 0 120px}.block-editor{margin-top:28px}.append-block{display:inline-flex;align-items:center;gap:5px}.append-block .ui-icon{width:14px;height:14px}.block-menu{position:fixed;z-index:70;display:grid;width:220px;padding:6px;border:1px solid var(--line);border-radius:9px;background:#fff;box-shadow:0 14px 44px rgba(0,0,0,.16)}.block-menu button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 9px;border:0;border-radius:5px;background:#fff;color:#4f4e49;font-size:12px;text-align:left}.block-menu button:hover,.block-menu button:focus-visible{background:var(--hover);outline:none}.block-menu button.danger-text{color:var(--danger)}.block-menu .ui-icon{width:15px;height:15px}.block-menu-separator{height:1px;margin:5px;background:var(--line)}.page-view{width:min(100% - 40px,1080px);padding:28px 0 100px}.page-header{padding-bottom:20px}.empty-state{padding:44px 20px}.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:24px}.settings-grid .settings-card{margin-top:0;min-height:126px}.import-card{justify-content:space-between}.import-card small{display:block;margin-top:10px;color:var(--muted);font-size:11px;line-height:1.55}.import-button{display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:pointer}
 .document-width-card{grid-column:1/-1;justify-content:space-between}.width-options{display:grid;grid-template-columns:repeat(3,112px);gap:8px}.width-options button{display:grid;gap:7px;justify-items:center;padding:10px 8px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#73726c;font-size:11px}.width-options button:hover{background:#f8f8f6}.width-options button.active{border-color:#6f8fbe;background:#f3f7fd;color:#255b9e;box-shadow:0 0 0 2px rgba(49,130,246,.08)}.width-preview{display:block;height:22px;border:1px solid currentColor;border-radius:3px;opacity:.7}.width-preview.narrow{width:20px}.width-preview.default{width:34px}.width-preview.full{width:48px}.app-shell.document-width-narrow .document-editor{width:min(100% - 40px,720px)}.app-shell.document-width-full .document-editor{width:min(100% - 72px,1440px)}
 .policy-card{display:grid;align-content:start;gap:18px;min-height:0!important}.policy-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.policy-card header h2{margin:0}.policy-card header p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.5}.owner-only-badge{flex:none;padding:5px 8px;border-radius:999px;background:#f1f3f6;color:#69717d;font-size:10px;font-weight:800}.setting-toggle,.setting-select,.ip-list-label{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:16px;border-top:1px solid var(--line)}.setting-toggle strong,.setting-toggle small,.setting-select strong,.setting-select small,.ip-list-label strong,.ip-list-label small{display:block}.setting-toggle strong,.setting-select strong,.ip-list-label strong{font-size:13px}.setting-toggle small,.setting-select small,.ip-list-label small{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.45}.setting-toggle input{width:42px;height:24px;flex:none;accent-color:#3182f6}.setting-select select{height:38px;padding:0 30px 0 11px;border:1px solid var(--line);border-radius:8px;background:#fff}.ip-list-label{display:grid;align-items:stretch}.ip-tag-editor{display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-height:48px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;transition:border-color .15s,box-shadow .15s}.ip-tag-editor:focus-within{border-color:#3182f6;box-shadow:0 0 0 3px rgba(49,130,246,.1)}.ip-tags{display:flex;flex-wrap:wrap;gap:6px}.ip-tag{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:5px 7px 5px 9px;border-radius:999px;background:#eef2f8;color:#34425c;font:12px/1 "SFMono-Regular",Consolas,monospace}.ip-tag>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ip-tag button{display:grid;place-items:center;width:17px;height:17px;padding:0;border:0;border-radius:50%;background:transparent;color:#65718a;font-size:15px;line-height:1}.ip-tag button:hover{background:#d9e1ef;color:#27344d}.ip-tag-input{min-width:170px;flex:1;height:30px;padding:0 3px;border:0;outline:none;background:transparent;font-size:12px}.ip-tag-input::placeholder{color:#aaa}.ip-input-hint{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-8px 0 0;color:var(--muted);font-size:11px;line-height:1.45}.ip-input-hint strong{flex:none;color:#69717d;font-size:10px}.current-ip{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:8px;background:#f6f7f9;color:#747982;font-size:11px}.current-ip strong{margin-left:5px;color:#30343a}.security-warning{margin:0;color:#9b6a20!important;font-size:11px!important}.policy-save{justify-self:end}
-.settings-page{width:min(100% - 40px,880px);padding:32px 0 96px}.settings-page .settings-header{padding-bottom:18px}.settings-page .settings-grid{grid-template-columns:minmax(0,1fr);gap:0;margin-top:14px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fff}.settings-page .settings-card{width:100%;min-height:0;margin:0;padding:22px 24px;border:0;border-bottom:1px solid var(--line);border-radius:0}.settings-page .settings-card:last-child{border-bottom:0}.settings-page .settings-card h2{font-size:15px}.settings-page .document-width-card{grid-column:auto}.settings-page .policy-card{gap:16px}
+.settings-page{width:min(100% - 40px,880px);padding:32px 0 96px}.settings-page .settings-header{padding-bottom:18px}.settings-page .settings-grid{grid-template-columns:minmax(0,1fr);gap:0;margin-top:14px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fff}.settings-page .settings-card{width:100%;min-height:0;margin:0;padding:22px 24px;border:0;border-bottom:1px solid var(--line);border-radius:0}.settings-page .settings-card:last-child{border-bottom:0}.settings-page .settings-card h2{font-size:15px}.settings-page .document-width-card{grid-column:auto}.settings-page .policy-card{gap:16px}.import-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 @media(min-width:761px){.app-shell.document-width-narrow .settings-page{width:min(100% - 40px,720px)}.app-shell.document-width-default .settings-page{width:min(100% - 40px,900px)}.app-shell.document-width-full .settings-page{width:min(100% - 72px,1440px)}}
 @media(max-width:760px){.settings-page{width:calc(100% - 24px);padding:18px 0 72px}.settings-page .settings-header{padding-bottom:14px}.settings-page .settings-grid{margin-top:10px;border-radius:10px}.settings-page .settings-card{padding:18px 16px}.settings-page .import-card,.settings-page .document-width-card{display:grid}.settings-page .width-options{grid-template-columns:repeat(3,minmax(0,1fr));width:100%}.settings-page .setting-select{align-items:stretch;flex-direction:column}.settings-page .setting-select select{width:100%}.settings-page .policy-card header{gap:10px}}
 .block-menu{max-height:min(70vh,460px);overflow:auto}.block-menu button{flex:none}.block-menu-separator{flex:none}
@@ -502,7 +512,7 @@ $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault()
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
 async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
@@ -645,6 +655,7 @@ async function showSettings(){state.current=null;markNav('settings');showPane('s
 $('workspace-access-form').onsubmit=async event=>{event.preventDefault();try{const data=await api('/api/settings',{method:'PATCH',body:{public_signup_enabled:$('public-signup-enabled').checked,public_signup_role:$('public-signup-role').value}});state.workspaceSettings=data;state.publicSignup=data.public_signup_enabled;toast('가입 정책을 저장했습니다.')}catch(error){toast(error.message)}};
 $('ip-access-form').onsubmit=async event=>{event.preventDefault();flushIpInput();try{const data=await api('/api/settings',{method:'PATCH',body:{ip_allowlist_enabled:$('ip-allowlist-enabled').checked,ip_allowlist:state.ipAllowlist.join('\n')}});state.workspaceSettings=data;setupIpTagEditor(data.ip_allowlist);toast('IP 접근 정책을 저장했습니다.')}catch(error){if(error.details?.current_ip)$('current-request-ip').textContent=error.details.current_ip;toast(error.message)}};
 $('notion-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;if(file.size>2*1024*1024){toast('Markdown 파일은 2MB 이하만 가져올 수 있습니다.');input.value='';return}try{const content=await file.text();const data=await api('/api/import/markdown',{method:'POST',body:{filename:file.name,content}});await loadTree();push('/doc/'+data.document.id);toast('Markdown 파일을 가져왔습니다.')}catch(error){toast(error.message)}finally{input.value=''}};
+$('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;if(file.size>50*1024*1024){toast('Notion ZIP은 50MB 이하만 가져올 수 있습니다.');input.value='';return}const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const form=new FormData();form.append('file',file);const response=await fetch('/api/import/notion-zip',{method:'POST',credentials:'same-origin',headers:{accept:'application/json'},body:form});const data=await response.json();if(!response.ok)throw new Error(data.error||'Notion ZIP을 가져오지 못했습니다.');await loadTree();toast('Notion 가져오기 완료: 문서 '+data.imported+', 건너뜀 '+data.skipped+', 실패 '+data.failed)}catch(error){toast(error.message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
 document.addEventListener('selectionchange',()=>{if(!canEdit())return;const selection=getSelection();const toolbar=$('inline-toolbar');if(!selection||selection.isCollapsed||!selection.rangeCount){toolbar.hidden=true;return}const origin=selection.anchorNode?.nodeType===1?selection.anchorNode:selection.anchorNode?.parentElement;const el=origin?.closest?.('.block-content[contenteditable="true"]');if(!el||!el.contains(selection.focusNode)){toolbar.hidden=true;return}state.inlineTarget=el;state.inlineRange=selection.getRangeAt(0).cloneRange();const rect=state.inlineRange.getBoundingClientRect();toolbar.style.left=Math.max(8,Math.min(rect.left,innerWidth-toolbar.offsetWidth-8))+'px';toolbar.style.top=Math.max(8,rect.top-42)+'px';toolbar.hidden=false});
 function restoreInlineSelection(target,range){if(!target?.isConnected||!range)return false;target.focus();const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return true}
 function openLinkDialog(target,range){if(!target||!range)return;state.linkTarget=target;state.linkRange=range.cloneRange();alertBox('link-alert','');const origin=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;const currentLink=origin?.closest?.('a');$('link-url').value=currentLink&&target.contains(currentLink)?currentLink.getAttribute('href')||'':'';$('inline-toolbar').hidden=true;$('link-dialog').returnValue='';$('link-dialog').showModal();requestAnimationFrame(()=>{$('link-url').focus();$('link-url').select()})}
@@ -766,6 +777,7 @@ async function route(request, env) {
     if (path === '/api/documents' && request.method === 'GET') return listDocuments(url, env, actor);
     if (path === '/api/documents' && request.method === 'POST') return createDocument(request, env, actor);
     if (path === '/api/import/markdown' && request.method === 'POST') return importMarkdown(request, env, actor);
+    if (path === '/api/import/notion-zip' && request.method === 'POST') return importNotionZip(request, env, actor);
     const documentRoute = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})$/);
     if (documentRoute && request.method === 'GET') return getDocument(env, actor, documentRoute[1]);
     if (documentRoute && request.method === 'PUT') return saveDocument(request, env, actor, documentRoute[1]);
@@ -1156,6 +1168,268 @@ async function importMarkdown(request, env, actor) {
   await env.DB.batch(statements);
   await recordActivity(env.DB, actor, id, 'document_imported', 'Markdown 문서를 가져왔습니다.');
   return json({ document: { id, title, parent_document_id: null, version: 1 }, imported_blocks: blocks.length }, 201);
+}
+
+async function importNotionZip(request, env, actor) {
+  requireRole(actor, MANAGE_ROLES, 'Owner와 Admin만 Notion 전체 가져오기를 실행할 수 있습니다.');
+  if (!env.STORAGE || typeof env.STORAGE.put !== 'function') throw new HttpError(503, '스토리지 연결을 확인해 주세요.');
+  let form;
+  try { form = await request.formData(); } catch { throw new HttpError(400, 'ZIP 업로드 형식이 올바르지 않습니다.'); }
+  const file = form.get('file');
+  if (!file || typeof file.arrayBuffer !== 'function') throw new HttpError(400, 'Notion ZIP 파일을 선택해 주세요.');
+  if (!/\.zip$/i.test(String(file.name || '')) || !file.size || file.size > NOTION_ZIP_MAX_BYTES) throw new HttpError(413, 'Notion ZIP은 50MB 이하의 .zip 파일이어야 합니다.');
+  const archiveBytes = new Uint8Array(await file.arrayBuffer());
+  const archiveHash = await sha256HexBytes(archiveBytes);
+  const now = nowSeconds();
+  let importRow = await env.DB.prepare('SELECT * FROM notion_imports WHERE project_id=? AND archive_sha256=?').bind(PROJECT_ID, archiveHash).first();
+  if (importRow?.status === 'completed') return json({ import_id: importRow.id, imported: Number(importRow.imported_items), skipped: Number(importRow.total_items), failed: 0, idempotent: true });
+
+  let entryCount = 0;
+  let unpackedBytes = 0;
+  let unpacked;
+  try {
+    unpacked = unzipSync(archiveBytes, { filter(info) {
+      entryCount += 1;
+      unpackedBytes += Number(info.originalSize || 0);
+      if (entryCount > NOTION_MAX_ENTRIES) throw new HttpError(413, 'ZIP 항목은 최대 2,000개까지 가져올 수 있습니다.');
+      if (Number(info.originalSize || 0) > NOTION_ENTRY_MAX_BYTES) throw new HttpError(413, 'ZIP 안의 개별 파일은 10MB 이하여야 합니다.');
+      if (unpackedBytes > NOTION_UNZIPPED_MAX_BYTES) throw new HttpError(413, '압축을 푼 전체 크기는 100MB 이하여야 합니다.');
+      return !String(info.name || '').endsWith('/') && !String(info.name || '').startsWith('__MACOSX/');
+    } });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, '유효한 Notion ZIP 파일을 읽을 수 없습니다.');
+  }
+
+  const entries = new Map();
+  let actualUnpackedBytes = 0;
+  for (const [rawPath, bytes] of Object.entries(unpacked)) {
+    const path = normalizeZipPath(rawPath);
+    if (!path || /^(__MACOSX\/|\.DS_Store$)/i.test(path)) continue;
+    actualUnpackedBytes += bytes.length;
+    if (bytes.length > NOTION_ENTRY_MAX_BYTES || actualUnpackedBytes > NOTION_UNZIPPED_MAX_BYTES) throw new HttpError(413, 'ZIP의 실제 압축 해제 크기가 허용 한도를 넘었습니다.');
+    if (entries.has(path)) throw new HttpError(400, 'ZIP에 중복된 파일 경로가 있습니다.');
+    entries.set(path, bytes);
+  }
+  const documents = [...entries.keys()].filter(path => /\.(md|markdown|csv)$/i.test(path) && !/(^|\/)index\.(md|markdown)$/i.test(path));
+  if (!documents.length) throw new HttpError(400, 'ZIP에서 Markdown 또는 CSV 문서를 찾지 못했습니다.');
+  if (documents.length > NOTION_MAX_DOCUMENTS) throw new HttpError(413, '한 번에 최대 250개 문서를 가져올 수 있습니다.');
+  documents.sort((left, right) => pathDepth(left) - pathDepth(right) || left.localeCompare(right, 'ko'));
+
+  if (!importRow) {
+    const id = 'nimp_' + randomString(24);
+    await env.DB.prepare(`INSERT INTO notion_imports
+      (id,project_id,archive_sha256,filename,status,total_items,imported_items,skipped_items,failed_items,created_by,created_at)
+      VALUES (?,?,?,?, 'processing',0,0,0,0,?,?)`).bind(id, PROJECT_ID, archiveHash, safeImportName(file.name), actor.id, now).run();
+    importRow = { id, imported_items: 0 };
+  } else {
+    await env.DB.prepare("UPDATE notion_imports SET status='processing',completed_at=NULL WHERE id=?").bind(importRow.id).run();
+  }
+
+  const previous = await env.DB.prepare('SELECT source_path,document_id,status FROM notion_import_items WHERE import_id=?').bind(importRow.id).all();
+  const previousByPath = new Map((previous.results || []).map(item => [item.source_path, item]));
+  const documentIdByKey = new Map();
+  for (const path of documents) {
+    const item = previousByPath.get(path);
+    documentIdByKey.set(withoutExtension(path), item?.document_id || ('doc_' + randomString(24)));
+  }
+  const assetsByDocument = new Map();
+  for (const path of entries.keys()) {
+    if (/\.(md|markdown|csv)$/i.test(path) || /(^|\/)index\.html?$/i.test(path)) continue;
+    const ownerKey = nearestDocumentKey(pathDirname(path), documentIdByKey);
+    if (ownerKey) {
+      const list = assetsByDocument.get(ownerKey) || [];
+      list.push(path);
+      assetsByDocument.set(ownerKey, list);
+    }
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  let failed = 0;
+  const failures = [];
+  const successfulKeys = new Set();
+  for (const path of documents) {
+    const key = withoutExtension(path);
+    const previousItem = previousByPath.get(path);
+    if (previousItem?.status === 'imported') {
+      successfulKeys.add(key);
+      skipped += 1;
+      continue;
+    }
+    const parentKey = nearestDocumentKey(pathDirname(path), documentIdByKey);
+    if (parentKey && !successfulKeys.has(parentKey)) {
+      failed += 1;
+      failures.push({ path, error: '상위 문서를 먼저 가져오지 못했습니다.' });
+      await upsertNotionImportItem(env.DB, importRow.id, path, documentIdByKey.get(key), 'failed', '상위 문서를 먼저 가져오지 못했습니다.');
+      continue;
+    }
+    const uploadedKeys = [];
+    try {
+      const documentId = documentIdByKey.get(key);
+      const snapshotId = 'snap_' + randomString(24);
+      const title = notionTitle(path);
+      const assetUrls = new Map();
+      const fileRows = [];
+      for (const assetPath of assetsByDocument.get(key) || []) {
+        const contentType = importContentType(assetPath);
+        if (!contentType) continue;
+        const assetBytes = entries.get(assetPath);
+        const fileId = 'fil_' + randomString(24);
+        const storageKey = 'documents/' + documentId + '/' + fileId;
+        await env.STORAGE.put(storageKey, assetBytes, { httpMetadata: { contentType } });
+        uploadedKeys.push(storageKey);
+        const filename = safeImportName(assetPath.split('/').at(-1));
+        const url = new URL(request.url).origin + '/api/files/' + fileId;
+        assetUrls.set(assetPath, { url, type: contentType.startsWith('image/') ? 'image' : contentType.startsWith('video/') ? 'video' : contentType.startsWith('audio/') ? 'audio' : 'file' });
+        fileRows.push({ fileId, storageKey, filename, contentType, size: assetBytes.length });
+      }
+
+      let blocks;
+      if (/\.csv$/i.test(path)) blocks = csvToDatabaseBlocks(decodeImportText(entries.get(path)), title);
+      else {
+        const markdown = rewriteNotionLinks(decodeImportText(entries.get(path)), path, documentIdByKey, assetUrls, new URL(request.url).origin);
+        blocks = parseMarkdownBlocks(markdown).blocks;
+      }
+      const knownUrls = new Set(blocks.map(block => block.content));
+      for (const asset of assetUrls.values()) if (!knownUrls.has(asset.url)) blocks.push({ type: asset.type, content: asset.url, checked: false });
+      blocks = blocks.slice(0, 500);
+      if (!blocks.length) blocks.push({ type: 'text', content: '', checked: false });
+      const parentId = parentKey ? documentIdByKey.get(parentKey) : null;
+      const createdAt = nowSeconds();
+      const statements = [env.DB.prepare(`INSERT INTO documents
+        (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
+        VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(documentId, PROJECT_ID, parentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt)];
+      blocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks
+        (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .bind('blk_' + randomString(24), documentId, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
+      statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(documentId, PROJECT_ID, 'workspace', actor.id, createdAt));
+      statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, documentId, 1, snapshotId, title, actor.id, createdAt));
+      for (const row of fileRows) statements.push(env.DB.prepare(`INSERT INTO file_uploads
+        (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .bind(row.fileId, PROJECT_ID, documentId, row.storageKey, row.filename, row.contentType, row.size, actor.id, createdAt));
+      statements.push(env.DB.prepare(`INSERT INTO notion_import_items (import_id,source_path,document_id,status,error,updated_at)
+        VALUES (?,?,?,'imported',NULL,?) ON CONFLICT(import_id,source_path) DO UPDATE SET document_id=excluded.document_id,status='imported',error=NULL,updated_at=excluded.updated_at`)
+        .bind(importRow.id, path, documentId, createdAt));
+      await env.DB.batch(statements);
+      successfulKeys.add(key);
+      imported += 1;
+    } catch (error) {
+      for (const storageKey of uploadedKeys) await env.STORAGE.delete(storageKey).catch(() => {});
+      failed += 1;
+      const message = safeImportError(error);
+      if (failures.length < 20) failures.push({ path, error: message });
+      await upsertNotionImportItem(env.DB, importRow.id, path, documentIdByKey.get(key), 'failed', message);
+    }
+  }
+  const total = documents.length;
+  const status = failed ? 'partial' : 'completed';
+  await env.DB.prepare(`UPDATE notion_imports SET status=?,total_items=?,imported_items=imported_items+?,skipped_items=skipped_items+?,failed_items=?,completed_at=? WHERE id=?`)
+    .bind(status, total, imported, skipped, failed, nowSeconds(), importRow.id).run();
+  await recordActivity(env.DB, actor, null, 'notion_imported', 'Notion ZIP에서 문서 ' + imported + '개를 가져왔습니다.');
+  return json({ import_id: importRow.id, status, total, imported, skipped, failed, failures, idempotent: false }, failed ? 207 : 201);
+}
+
+function normalizeZipPath(value) {
+  const path = String(value || '').replace(/\\/g, '/').normalize('NFKC').replace(/^\.\//, '');
+  if (!path || path.startsWith('/') || path.includes('\0')) return '';
+  const parts = path.split('/').filter(part => part && part !== '.');
+  if (!parts.length || parts.some(part => part === '..')) throw new HttpError(400, 'ZIP에 안전하지 않은 파일 경로가 있습니다.');
+  return parts.join('/');
+}
+
+function pathDirname(path) { const index = path.lastIndexOf('/'); return index < 0 ? '' : path.slice(0, index); }
+function withoutExtension(path) { return path.replace(/\.(md|markdown|csv)$/i, ''); }
+function pathDepth(path) { return path.split('/').length; }
+function nearestDocumentKey(directory, documentIdByKey) {
+  let current = directory;
+  while (current) {
+    if (documentIdByKey.has(current)) return current;
+    current = pathDirname(current);
+  }
+  return null;
+}
+
+function notionTitle(path) {
+  return withoutExtension(path).split('/').at(-1).replace(/\s+[0-9a-f]{32}$/i, '').normalize('NFKC').trim().slice(0, 160) || 'Notion 문서';
+}
+
+function safeImportName(value) { return String(value || 'file').normalize('NFKC').replace(/[\\/\u0000-\u001f]/g, '_').slice(0, 180); }
+function decodeImportText(bytes) { return new TextDecoder('utf-8', { fatal: false }).decode(bytes).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'); }
+function safeImportError(error) { return String(error instanceof HttpError ? error.message : '가져오기 처리 중 오류가 발생했습니다.').slice(0, 300); }
+
+function importContentType(path) {
+  const extension = path.split('.').at(-1).toLowerCase();
+  const types = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', pdf: 'application/pdf', txt: 'text/plain', json: 'application/json', csv: 'text/csv', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+  return types[extension] || (['html', 'htm', 'svg', 'xhtml', 'js', 'mjs'].includes(extension) ? '' : 'application/octet-stream');
+}
+
+function resolveImportLink(sourcePath, target) {
+  let decoded;
+  try { decoded = decodeURIComponent(String(target || '').split('#')[0].split('?')[0]); } catch { return ''; }
+  if (!decoded || /^[a-z][a-z0-9+.-]*:/i.test(decoded) || decoded.startsWith('//')) return '';
+  const parts = (pathDirname(sourcePath) + '/' + decoded).split('/');
+  const resolved = [];
+  for (const part of parts) {
+    if (!part || part === '.') continue;
+    if (part === '..') { if (!resolved.length) return ''; resolved.pop(); }
+    else resolved.push(part);
+  }
+  return resolved.join('/');
+}
+
+function rewriteNotionLinks(markdown, sourcePath, documentIdByKey, assetUrls, origin) {
+  return markdown.replace(/(!?\[[^\]\r\n]*\]\()([^)\r\n]+)(\))/g, (match, start, target, end) => {
+    const resolved = resolveImportLink(sourcePath, target);
+    if (!resolved) return match;
+    const asset = assetUrls.get(resolved);
+    if (asset) return start + asset.url + end;
+    const documentId = documentIdByKey.get(withoutExtension(resolved));
+    return documentId ? start + origin + '/doc/' + documentId + end : match;
+  });
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      if (char === '"' && text[index + 1] === '"') { cell += '"'; index += 1; }
+      else if (char === '"') quoted = false;
+      else cell += char;
+    } else if (char === '"' && !cell) quoted = true;
+    else if (char === ',') { row.push(cell); cell = ''; }
+    else if (char === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += char;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(values => values.some(value => String(value).trim()));
+}
+
+function csvToDatabaseBlocks(text, title) {
+  const table = parseCsv(text);
+  if (!table.length) return [{ type: 'text', content: '', checked: false }];
+  const width = Math.max(1, Math.min(12, ...table.map(row => row.length)));
+  const headers = Array.from({ length: width }, (_, index) => String(table[0][index] || ('속성 ' + (index + 1))).slice(0, 80));
+  const columns = headers.map((name, index) => ({ id: 'col_' + index, name, type: 'text', options: [] }));
+  const dataRows = table.slice(1, 10001);
+  const blocks = [];
+  for (let offset = 0; offset < dataRows.length || (!dataRows.length && offset === 0); offset += 200) {
+    const rows = dataRows.slice(offset, offset + 200).map((values, rowIndex) => ({ id: 'row_' + offset + '_' + rowIndex, cells: Object.fromEntries(columns.map((column, columnIndex) => [column.id, String(values[columnIndex] || '').slice(0, 500)])) }));
+    const part = offset ? ' ' + (Math.floor(offset / 200) + 1) : '';
+    blocks.push({ type: 'database', content: JSON.stringify({ version: 2, title: (title + part).slice(0, 120), columns, rows, view: { mode: 'table', groupBy: columns[0].id, sortBy: '', sortDir: 'asc', filter: { column: '', operator: 'contains', value: '' } } }), checked: false });
+    if (!dataRows.length) break;
+  }
+  return blocks;
+}
+
+async function upsertNotionImportItem(db, importId, sourcePath, documentId, status, error) {
+  await db.prepare(`INSERT INTO notion_import_items (import_id,source_path,document_id,status,error,updated_at) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(import_id,source_path) DO UPDATE SET document_id=excluded.document_id,status=excluded.status,error=excluded.error,updated_at=excluded.updated_at`)
+    .bind(importId, sourcePath, documentId, status, error, nowSeconds()).run();
 }
 
 export function parseMarkdownBlocks(markdown) {
@@ -2110,6 +2384,11 @@ async function sha256Bytes(value) {
 
 async function sha256Hex(value) {
   return Array.from(await sha256Bytes(value), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256HexBytes(value) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', value));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function constantTimeEqual(left, right) {

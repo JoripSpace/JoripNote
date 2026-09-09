@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import vm from 'node:vm';
+import { strToU8, zipSync } from 'fflate';
 
 import worker, {
   buildCaptchaSvg,
@@ -48,6 +49,7 @@ class D1Database {
     this.database.exec(readFileSync(new URL('../migrations/0005_block_indentation.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0006_workspace_collaboration.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0007_retarget_project.sql', import.meta.url), 'utf8'));
+    this.database.exec(readFileSync(new URL('../migrations/0008_notion_imports.sql', import.meta.url), 'utf8'));
   }
   prepare(sql) {
     return new D1Statement(this.database, sql);
@@ -169,7 +171,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260820-joripnote-6/);
+  assert.match(html, /app\.css\?v=20260909-joripnote-7/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -179,8 +181,9 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /워크스페이스를 여는 중<\/span>/);
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Markdown 업로드/);
+  assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260820-joripnote-6/);
+  assert.match(html, /app\.js\?v=20260909-joripnote-7/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   assert.match(html, /id="ip-tag-editor" class="ip-tag-editor"/);
@@ -444,6 +447,63 @@ test('Notion Markdown imports supported blocks and documents can be duplicated',
   const copy = await call(env, '/api/documents/' + duplicated.body.document.id, { headers: { cookie } });
   assert.match(copy.body.document.title, /복사본$/);
   assert.deepEqual(copy.body.document.blocks.map((block) => block.content), ['본문', '목록']);
+});
+
+test('Notion ZIP import restores hierarchy, CSV data, assets and remains idempotent', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  const parentKey = 'Parent 11111111111111111111111111111111';
+  const zip = zipSync({
+    [parentKey + '.md']: strToU8('# Parent\n\nWelcome\n\n![Cover](' + encodeURIComponent(parentKey) + '/cover.png)'),
+    [parentKey + '/Child 22222222222222222222222222222222.md']: strToU8('# Child\n\n- nested item'),
+    [parentKey + '/Tasks 33333333333333333333333333333333.csv']: strToU8('Task,Status\nWrite spec,Done\nShip,Doing'),
+    [parentKey + '/cover.png']: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+  });
+  const upload = async () => {
+    const form = new FormData();
+    form.append('file', new Blob([zip], { type: 'application/zip' }), 'notion-export.zip');
+    const response = await worker.fetch(new Request(ORIGIN + '/api/import/notion-zip', { method: 'POST', headers: auth(cookie), body: form }), env);
+    return { response, body: await response.json() };
+  };
+  const first = await upload();
+  assert.equal(first.response.status, 201, JSON.stringify(first.body));
+  assert.deepEqual({ imported: first.body.imported, skipped: first.body.skipped, failed: first.body.failed }, { imported: 3, skipped: 0, failed: 0 });
+  const documents = env.DB.database.prepare("SELECT id,parent_document_id,title FROM documents WHERE project_id='cf-notion-st' ORDER BY title").all();
+  assert.equal(documents.length, 3);
+  const parent = documents.find(document => document.title === 'Parent');
+  assert.equal(documents.find(document => document.title === 'Child').parent_document_id, parent.id);
+  assert.equal(documents.find(document => document.title === 'Tasks').parent_document_id, parent.id);
+  const csvBlock = env.DB.database.prepare("SELECT content FROM document_blocks b JOIN documents d ON d.id=b.document_id WHERE d.title='Tasks' AND b.block_type='database'").get();
+  assert.equal(JSON.parse(csvBlock.content).rows.length, 2);
+  const stored = env.DB.database.prepare('SELECT id,document_id,content_type FROM file_uploads').get();
+  assert.equal(stored.document_id, parent.id);
+  assert.equal(stored.content_type, 'image/png');
+  const download = await call(env, '/api/files/' + stored.id, { headers: auth(cookie) });
+  assert.equal(download.response.status, 200);
+  const second = await upload();
+  assert.equal(second.response.status, 200);
+  assert.equal(second.body.idempotent, true);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='cf-notion-st'").get().count, 3);
+
+  await addUser(env, { id: 'usr_member0001', username: 'member', role: 'member' });
+  const memberCookie = await login(env, 'member');
+  const deniedForm = new FormData();
+  deniedForm.append('file', new Blob([zip], { type: 'application/zip' }), 'other.zip');
+  const denied = await worker.fetch(new Request(ORIGIN + '/api/import/notion-zip', { method: 'POST', headers: auth(memberCookie), body: deniedForm }), env);
+  assert.equal(denied.status, 403);
+});
+
+test('Notion ZIP import rejects unsafe archive paths without recording an import', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  const zip = zipSync({ '../outside.md': strToU8('# Unsafe') });
+  const form = new FormData();
+  form.append('file', new Blob([zip], { type: 'application/zip' }), 'unsafe.zip');
+  const response = await worker.fetch(new Request(ORIGIN + '/api/import/notion-zip', { method: 'POST', headers: auth(cookie), body: form }), env);
+  assert.equal(response.status, 400);
+  assert.equal(env.DB.database.prepare('SELECT COUNT(*) AS count FROM notion_imports').get().count, 0);
 });
 
 test('authentication requires cf-notion-st membership and blocks public signup after bootstrap', async () => {

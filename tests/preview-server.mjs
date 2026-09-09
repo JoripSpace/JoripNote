@@ -54,6 +54,7 @@ DB.database.exec(readFileSync(new URL('../migrations/0004_extended_blocks_public
 DB.database.exec(readFileSync(new URL('../migrations/0005_block_indentation.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0006_workspace_collaboration.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0007_retarget_project.sql', import.meta.url), 'utf8'));
+DB.database.exec(readFileSync(new URL('../migrations/0008_notion_imports.sql', import.meta.url), 'utf8'));
 
 const emptyPreview = process.env.JORIPNOTE_PREVIEW_EMPTY === '1';
 const password = process.env.QWERTY_PREVIEW_PASSWORD;
