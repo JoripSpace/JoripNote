@@ -7,9 +7,12 @@
     "typecheck": "node --check worker.js",
     "lint": "node --check worker.js && node --check tests/worker.test.mjs",
     "test": "node --test",
-    "build": "node --check worker.js"
+    "build": "esbuild worker.js --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/worker.js && node --check dist/worker.js"
   },
   "dependencies": {
     "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }
