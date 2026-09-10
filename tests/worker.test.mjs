@@ -217,7 +217,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, />Notion API 전체 가져오기<\/button>/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-16/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-18/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -582,9 +582,11 @@ test('Notion API importer discovers accessible pages and stores page properties 
   try {
     const discovered = await call(env, '/api/import/notion-api/search', { method: 'POST', headers: auth(cookie), body: { cursor: null } });
     assert.equal(discovered.response.status, 200, JSON.stringify(discovered.body));
-    assert.deepEqual(discovered.body.items, [{ id: pageId, object: 'page' }]);
+    assert.deepEqual(discovered.body.items, [{ id: pageId, object: 'page', imported: false }]);
     const imported = await call(env, '/api/import/notion-api/pages/' + pageId, { method: 'POST', headers: auth(cookie), body: {} });
     assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
+    const rediscovered = await call(env, '/api/import/notion-api/search', { method: 'POST', headers: auth(cookie), body: { cursor: null } });
+    assert.equal(rediscovered.body.items[0].imported, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -595,6 +597,36 @@ test('Notion API importer discovers accessible pages and stores page properties 
   assert.equal(blocks[0].block_type, 'table');
   assert.match(blocks[0].content, /진행 중/);
   assert.equal(blocks[1].content, '문단');
+});
+
+test('Notion API data source import returns row page ids for complete page-body import', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  env.NOTION_API_TOKEN = 'ntn_test_secret';
+  const sourceId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const rowId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', ''))) return Response.json({
+      object: 'data_source', id: sourceId, title: [{ plain_text: '작업 목록' }], parent: { type: 'workspace', workspace: true },
+      properties: { Name: { id: 'title', type: 'title', title: {} } }
+    });
+    if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', '') + '/query')) return Response.json({
+      results: [{ object: 'page', id: rowId, properties: { Name: { id: 'title', type: 'title', title: [{ plain_text: '행 페이지' }] } } }],
+      has_more: false, next_cursor: null
+    });
+    return new Response('not found', { status: 404 });
+  };
+  try {
+    const imported = await call(env, '/api/import/notion-api/data-sources/' + sourceId, { method: 'POST', headers: auth(cookie), body: {} });
+    assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
+    assert.equal(imported.body.rows, 1);
+    assert.deepEqual(imported.body.page_ids, [rowId]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('large Notion imports register entries, upload assets in pieces and finalize document hierarchy', async () => {

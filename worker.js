@@ -347,7 +347,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260910-joripnote-16" defer></script>
+  <script src="/app.js?v=20260910-joripnote-18" defer></script>
 </body>
 </html>`;
 
@@ -744,7 +744,7 @@ async function importLargeNotionZip(file){
   const completed=await api('/api/import/notion-sessions/'+session.import_id+'/complete',{method:'POST',body:{}});return completed;
 }
 $('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const data=await importLargeNotionZip(file);await loadTree();notionProgress('가져오기 완료');toast('Notion 가져오기 완료: 문서 '+data.imported+', 실패 '+data.failed)}catch(error){const message=String(error?.message||'가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
-async function importAllFromNotionApi(){const button=$('notion-api-import-button');button.disabled=true;button.classList.add('loading-indicator');let cursor='',discovered=0,imported=0,failed=0;try{const status=await api('/api/import/notion-api/status');if(!status.configured)throw new Error('NOTION_API_TOKEN Secret을 먼저 등록해 주세요.');do{const page=await api('/api/import/notion-api/search',{method:'POST',body:{cursor:cursor||null}});cursor=page.next_cursor||'';discovered+=page.items.length;for(const item of page.items){notionProgress('API 가져오기 '+(imported+failed+1)+' / '+discovered+(cursor?' +':''));try{await api('/api/import/notion-api/'+(item.object==='page'?'pages/':'data-sources/')+encodeURIComponent(item.id),{method:'POST',body:{}});imported+=1}catch(error){failed+=1;console.warn('Notion API item import failed',item.id,error.message)}}}while(cursor);await api('/api/import/notion-api/reconcile',{method:'POST',body:{}});await loadTree();notionProgress('API 가져오기 완료 · '+imported+'개'+(failed?' · 실패 '+failed+'개':''));toast('Notion API 가져오기 완료: '+imported+'개'+(failed?', 실패 '+failed+'개':''))}catch(error){const message=String(error?.message||'Notion API 가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{button.disabled=false;button.classList.remove('loading-indicator')}}
+async function importAllFromNotionApi(){const button=$('notion-api-import-button');button.disabled=true;button.classList.add('loading-indicator');let cursor='',discovered=0,imported=0,skipped=0,failed=0;const seen=new Set();const itemKey=item=>item.object+':'+String(item.id||'').replaceAll('-','').toLowerCase();const importItem=async(item,hasMore=false)=>{const key=itemKey(item);if(seen.has(key))return;seen.add(key);discovered+=1;if(item.object==='page'&&item.imported){skipped+=1;notionProgress('API 가져오기 '+(imported+skipped+failed)+' / '+discovered+(hasMore?' +':''));return}notionProgress('API 가져오기 '+(imported+skipped+failed+1)+' / '+discovered+(hasMore?' +':''));try{const data=await api('/api/import/notion-api/'+(item.object==='page'?'pages/':'data-sources/')+encodeURIComponent(item.id),{method:'POST',body:{}});imported+=1;if(item.object==='data_source')for(const pageId of data.page_ids||[])await importItem({id:pageId,object:'page',imported:false},hasMore)}catch(error){failed+=1;console.warn('Notion API item import failed',item.id,error.message)}};try{const status=await api('/api/import/notion-api/status');if(!status.configured)throw new Error('NOTION_API_TOKEN Secret을 먼저 등록해 주세요.');do{const page=await api('/api/import/notion-api/search',{method:'POST',body:{cursor:cursor||null}});cursor=page.next_cursor||'';for(const item of page.items)await importItem(item,!!cursor)}while(cursor);await api('/api/import/notion-api/reconcile',{method:'POST',body:{}});await loadTree();notionProgress('API 가져오기 완료 · '+imported+'개 · 기존 '+skipped+'개'+(failed?' · 실패 '+failed+'개':''));toast('Notion API 가져오기 완료: '+imported+'개, 기존 '+skipped+'개'+(failed?', 실패 '+failed+'개':''))}catch(error){const message=String(error?.message||'Notion API 가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{button.disabled=false;button.classList.remove('loading-indicator')}}
 $('notion-api-import-button').onclick=importAllFromNotionApi;
 document.addEventListener('selectionchange',()=>{if(!canEdit())return;const selection=getSelection();const toolbar=$('inline-toolbar');if(!selection||selection.isCollapsed||!selection.rangeCount){toolbar.hidden=true;return}const origin=selection.anchorNode?.nodeType===1?selection.anchorNode:selection.anchorNode?.parentElement;const el=origin?.closest?.('.block-content[contenteditable="true"]');if(!el||!el.contains(selection.focusNode)){toolbar.hidden=true;return}state.inlineTarget=el;state.inlineRange=selection.getRangeAt(0).cloneRange();const rect=state.inlineRange.getBoundingClientRect();toolbar.style.left=Math.max(8,Math.min(rect.left,innerWidth-toolbar.offsetWidth-8))+'px';toolbar.style.top=Math.max(8,rect.top-42)+'px';toolbar.hidden=false});
 function restoreInlineSelection(target,range){if(!target?.isConnected||!range)return false;target.focus();const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return true}
@@ -1844,6 +1844,9 @@ async function searchNotionApi(request, env, actor) {
     if (item.object === 'page' || item.object === 'data_source') items.push({ id: item.id, object: item.object });
     if (item.object === 'database') for (const source of item.data_sources || []) items.push({ id: source.id, object: 'data_source' });
   }
+  const existing = await env.DB.prepare("SELECT source_page_id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%' AND source_page_id IS NOT NULL").bind(PROJECT_ID).all();
+  const importedIds = new Set((existing.results || []).map(row => String(row.source_page_id)));
+  for (const item of items) item.imported = importedIds.has(normalizedNotionId(item.id));
   return json({ items, next_cursor: data.has_more ? data.next_cursor : null });
 }
 
@@ -1898,7 +1901,10 @@ async function importNotionApiDataSource(request, env, actor, rawSourceId) {
   if (chunk.length || !allRows.length) blocks.push({ type: 'database', content: JSON.stringify(makeModel(chunk)), checked: false });
   const parentSourceId = source.parent?.page_id || source.parent?.database_id || null;
   const documentId = await upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title: notionRichText(source.title) || 'Notion 데이터베이스', blocks, database: true });
-  return json({ document_id: documentId, rows: allRows.length });
+  const existing = await env.DB.prepare("SELECT source_page_id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%' AND source_page_id IS NOT NULL").bind(PROJECT_ID).all();
+  const importedIds = new Set((existing.results || []).map(row => String(row.source_page_id)));
+  const pageIds = pages.map(page => page.id).filter(id => id && !importedIds.has(normalizedNotionId(id)));
+  return json({ document_id: documentId, rows: allRows.length, page_ids: pageIds });
 }
 
 async function reconcileNotionApiParents(env, actor) {
