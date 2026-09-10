@@ -51,6 +51,7 @@ class D1Database {
     this.database.exec(readFileSync(new URL('../migrations/0007_retarget_project.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0008_notion_imports.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0009_large_notion_imports.sql', import.meta.url), 'utf8'));
+    this.database.exec(readFileSync(new URL('../migrations/0010_notion_source_identity.sql', import.meta.url), 'utf8'));
   }
   prepare(sql) {
     return new D1Statement(this.database, sql);
@@ -214,7 +215,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-11/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-12/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -568,9 +569,20 @@ test('large Notion imports register entries, upload assets in pieces and finaliz
     method: 'PUT', headers: auth(cookie, { 'content-type': 'application/octet-stream' }), body: new Uint8Array([1, 2, 3])
   }), env);
   assert.equal(assetUpload.status, 200, await assetUpload.text());
+  const childAsset = await call(env, `/api/import/notion-sessions/${importId}/assets`, {
+    method: 'POST', headers: auth(cookie), body: { entries: [
+      { index: 3, path: 'Parent aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Child bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb /photo.png', size: 2, owner_document_id: child.document_id }
+    ] }
+  });
+  assert.equal(childAsset.response.status, 200, JSON.stringify(childAsset.body));
+  const childAssetUpload = await worker.fetch(new Request(`${ORIGIN}/api/import/notion-sessions/${importId}/assets/3`, {
+    method: 'PUT', headers: auth(cookie, { 'content-type': 'application/octet-stream' }), body: new Uint8Array([4, 5])
+  }), env);
+  assert.equal(childAssetUpload.status, 200, await childAssetUpload.text());
+  const database = JSON.stringify({ version: 2, title: '작업 목록', columns: [{ id: 'col_title', name: '이름', type: 'text', options: [] }], rows: [{ id: 'row_1', cells: { col_title: '첫 작업' } }], view: { mode: 'table', groupBy: '', sortBy: '', sortDir: 'asc', filter: { column: '', operator: 'contains', value: '' } } });
   const imported = await call(env, `/api/import/notion-sessions/${importId}/documents-batch`, {
     method: 'POST', headers: auth(cookie), body: { documents: [
-      { index: 0, content: '# Parent\nBody', parent_document_id: null },
+      { index: 0, content: '# Parent\nBody', parent_document_id: null, databases: [database] },
       { index: 1, content: '# Child\nBody', parent_document_id: parent.document_id }
     ] }
   });
@@ -580,6 +592,9 @@ test('large Notion imports register entries, upload assets in pieces and finaliz
   assert.equal(completed.body.imported, 2);
   assert.equal(env.DB.database.prepare('SELECT parent_document_id FROM documents WHERE id=?').get(child.document_id).parent_document_id, parent.document_id);
   assert.equal(env.DB.database.prepare('SELECT COUNT(*) count FROM file_uploads WHERE document_id=?').get(parent.document_id).count, 1);
+  assert.equal(env.DB.database.prepare('SELECT COUNT(*) count FROM file_uploads WHERE document_id=?').get(child.document_id).count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) count FROM document_blocks WHERE document_id=? AND block_type='database'").get(parent.document_id).count, 1);
+  assert.equal(env.DB.database.prepare('SELECT source_page_id FROM documents WHERE id=?').get(parent.document_id).source_page_id, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   const resumed = await call(env, `/api/import/notion-sessions/${importId}/documents-batch`, {
     method: 'POST', headers: auth(cookie), body: { documents: [
       { index: 0, content: '# Parent\nUpdated body', parent_document_id: null },
