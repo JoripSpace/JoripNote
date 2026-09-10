@@ -203,7 +203,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260910-joripnote-8/);
+  assert.match(html, /app\.css\?v=20260910-joripnote-9/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -215,7 +215,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-13/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-14/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -278,6 +278,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(styles, /\.db-footer\{padding:11px 12px;border-top:1px solid #ececf0;background:#fbfbfc\}/);
   assert.match(styles, /grid-template-areas:"name" "type"/);
   assert.match(styles, /\.db-property-head:hover \.db-property-actions/);
+  assert.match(styles, /\.db-card-footer\{position:absolute;top:6px;right:6px/);
+  assert.match(styles, /\.db-card-page-icon:hover\{background:#efefed/);
   assert.doesNotMatch(styles, /radial-gradient\(circle at 82% 3%/);
   assert.doesNotMatch(styles, /\.document-editor\{width:min\(calc\(100% - 56px\),900px\);margin:24px auto 72px/);
 
@@ -350,6 +352,9 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /const DATABASE_MAX_ROWS=500/);
   assert.match(source, /function cleanNotionDatabaseTitle/);
   assert.match(source, /function databaseStatusOptions/);
+  assert.match(source, /function openDatabaseRowPage/);
+  assert.match(source, /원본 페이지 열기/);
+  assert.match(source, /연결된 원본 페이지는 삭제되지 않습니다/);
   assert.match(source, /grouped\.length>99\?'99\+'/);
   assert.match(source, /'보드','files'.*groupColumn\.name.*'별'/);
   assert.match(source, /function renderDatabaseBoard/);
