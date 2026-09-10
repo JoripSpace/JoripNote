@@ -1286,39 +1286,51 @@ async function registerLargeNotionEntries(request, env, actor, importId, group) 
   const body = await readJson(request);
   const entries = Array.isArray(body.entries) ? body.entries : [];
   if (!entries.length || entries.length > 100) throw new HttpError(400, '한 번에 1~100개 항목을 등록해 주세요.');
-  const registered = [];
-  for (const input of entries) {
+  const normalized = entries.map(input => {
     const entryIndex = Number(input.index);
     const sourcePath = normalizeZipPath(input.path);
     const sourceSize = Number(input.size);
     if (!Number.isSafeInteger(entryIndex) || entryIndex < 0 || entryIndex > 99999 || !sourcePath) throw new HttpError(400, 'ZIP 항목 정보가 올바르지 않습니다.');
     if (!Number.isSafeInteger(sourceSize) || sourceSize < 0 || sourceSize > NOTION_LARGE_MAX_UNPACKED_BYTES) throw new HttpError(413, 'ZIP 항목 크기가 허용 범위를 넘었습니다.');
-    const existing = await env.DB.prepare('SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index=?').bind(importId, entryIndex).first();
-    if (existing) {
-      registered.push({ index: entryIndex, path: existing.source_path, document_id: existing.document_id, owner_document_id: existing.owner_document_id, file_id: existing.file_id, url: existing.file_id ? new URL(request.url).origin + '/api/files/' + existing.file_id : null, status: existing.status });
-      continue;
-    }
+    return { input, entryIndex, sourcePath, sourceSize };
+  });
+  if (new Set(normalized.map(item => item.entryIndex)).size !== normalized.length) throw new HttpError(400, '한 요청에 중복된 ZIP 항목이 있습니다.');
+  const placeholders = normalized.map(() => '?').join(',');
+  const existingRows = await env.DB.prepare('SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index IN (' + placeholders + ')').bind(importId, ...normalized.map(item => item.entryIndex)).all();
+  const existingByIndex = new Map((existingRows.results || []).map(row => [Number(row.entry_index), row]));
+  let validOwners = null;
+  if (group === 'assets') {
+    const owners = await env.DB.prepare("SELECT document_id FROM notion_import_staged_entries WHERE import_id=? AND entry_type='document'").bind(importId).all();
+    validOwners = new Set((owners.results || []).map(row => row.document_id));
+  }
+  const statements = [];
+  const pending = [];
+  for (const item of normalized) {
+    const existing = existingByIndex.get(item.entryIndex);
+    if (existing) { pending.push(existing); continue; }
+    const { input, entryIndex, sourcePath, sourceSize } = item;
     if (group === 'documents') {
       if (!/\.(md|markdown|csv)$/i.test(sourcePath) || /(^|\/)index\.(md|markdown)$/i.test(sourcePath)) throw new HttpError(400, '문서 항목 형식이 올바르지 않습니다.');
       const documentId = 'doc_' + randomString(24);
-      await env.DB.prepare(`INSERT INTO notion_import_staged_entries
+      statements.push(env.DB.prepare(`INSERT INTO notion_import_staged_entries
         (import_id,entry_index,source_path,entry_type,source_size,document_id,status,updated_at)
-        VALUES (?,?,?,?,?,?,'registered',?)`).bind(importId, entryIndex, sourcePath, 'document', sourceSize, documentId, nowSeconds()).run();
-      registered.push({ index: entryIndex, path: sourcePath, document_id: documentId, status: 'registered' });
+        VALUES (?,?,?,?,?,?,'registered',?)`).bind(importId, entryIndex, sourcePath, 'document', sourceSize, documentId, nowSeconds()));
+      pending.push({ entry_index: entryIndex, source_path: sourcePath, document_id: documentId, status: 'registered' });
     } else {
       const ownerDocumentId = String(input.owner_document_id || '');
-      const owner = await env.DB.prepare("SELECT document_id FROM notion_import_staged_entries WHERE import_id=? AND entry_type='document' AND document_id=?").bind(importId, ownerDocumentId).first();
-      if (!owner) throw new HttpError(400, '첨부파일의 상위 문서를 찾을 수 없습니다.');
+      if (!validOwners.has(ownerDocumentId)) throw new HttpError(400, '첨부파일의 상위 문서를 찾을 수 없습니다.');
       const contentType = importContentType(sourcePath);
       if (!contentType) continue;
       const fileId = 'fil_' + randomString(24);
       const storageKey = 'documents/' + ownerDocumentId + '/' + fileId;
-      await env.DB.prepare(`INSERT INTO notion_import_staged_entries
+      statements.push(env.DB.prepare(`INSERT INTO notion_import_staged_entries
         (import_id,entry_index,source_path,entry_type,source_size,owner_document_id,file_id,storage_key,content_type,status,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,'registered',?)`).bind(importId, entryIndex, sourcePath, 'asset', sourceSize, ownerDocumentId, fileId, storageKey, contentType, nowSeconds()).run();
-      registered.push({ index: entryIndex, path: sourcePath, owner_document_id: ownerDocumentId, file_id: fileId, url: new URL(request.url).origin + '/api/files/' + fileId, status: 'registered' });
+        VALUES (?,?,?,?,?,?,?,?,?,'registered',?)`).bind(importId, entryIndex, sourcePath, 'asset', sourceSize, ownerDocumentId, fileId, storageKey, contentType, nowSeconds()));
+      pending.push({ entry_index: entryIndex, source_path: sourcePath, owner_document_id: ownerDocumentId, file_id: fileId, storage_key: storageKey, content_type: contentType, status: 'registered' });
     }
   }
+  if (statements.length) await env.DB.batch(statements);
+  const registered = pending.map(row => ({ index: Number(row.entry_index), path: row.source_path, document_id: row.document_id, owner_document_id: row.owner_document_id, file_id: row.file_id, url: row.file_id ? new URL(request.url).origin + '/api/files/' + row.file_id : null, status: row.status }));
   return json({ entries: registered });
 }
 
