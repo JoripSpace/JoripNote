@@ -346,6 +346,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /openPublicationDialog/);
   assert.match(source, /structuredTableBlock/);
   assert.match(source, /function parseDatabaseModel/);
+  assert.match(source, /function clientNotionTitle/);
   assert.match(source, /function renderDatabaseBoard/);
   assert.match(source, /function renderDatabaseTable/);
   assert.match(source, /function databaseFilterControls/);
