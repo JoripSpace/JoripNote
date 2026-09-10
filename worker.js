@@ -1295,9 +1295,14 @@ async function registerLargeNotionEntries(request, env, actor, importId, group) 
     return { input, entryIndex, sourcePath, sourceSize };
   });
   if (new Set(normalized.map(item => item.entryIndex)).size !== normalized.length) throw new HttpError(400, '한 요청에 중복된 ZIP 항목이 있습니다.');
-  const placeholders = normalized.map(() => '?').join(',');
-  const existingRows = await env.DB.prepare('SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index IN (' + placeholders + ')').bind(importId, ...normalized.map(item => item.entryIndex)).all();
-  const existingByIndex = new Map((existingRows.results || []).map(row => [Number(row.entry_index), row]));
+  const existingResults = [];
+  for (let offset = 0; offset < normalized.length; offset += 90) {
+    const indexes = normalized.slice(offset, offset + 90).map(item => item.entryIndex);
+    const placeholders = indexes.map(() => '?').join(',');
+    const rows = await env.DB.prepare('SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index IN (' + placeholders + ')').bind(importId, ...indexes).all();
+    existingResults.push(...(rows.results || []));
+  }
+  const existingByIndex = new Map(existingResults.map(row => [Number(row.entry_index), row]));
   let validOwners = null;
   if (group === 'assets') {
     const owners = await env.DB.prepare("SELECT document_id FROM notion_import_staged_entries WHERE import_id=? AND entry_type='document'").bind(importId).all();
