@@ -1432,7 +1432,7 @@ async function importLargeNotionDocuments(request, env, actor, importId) {
     const assets = await env.DB.prepare("SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_type='asset' AND owner_document_id=?").bind(importId, row.document_id).all();
     const missing = (assets.results || []).find(asset => asset.status !== 'uploaded');
     if (missing) throw new HttpError(409, '문서 첨부파일 업로드가 아직 끝나지 않았습니다.');
-    const title = notionTitle(row.source_path);
+    const title = String(row.source_path || '').replace(/\.(md|markdown|csv)$/i, '').split('/').at(-1).replace(/\s+[0-9a-f]{32}$/i, '').replace(/_all$/i, '').normalize('NFKC').trim().slice(0, 160) || 'Notion 문서';
     const extraDatabases = Array.isArray(input.databases) ? input.databases.slice(0, 8).map(value => String(value || '')).filter(Boolean).map(value => { try { const parsed = JSON.parse(value); return parsed?.version === 2 && Array.isArray(parsed.columns) && Array.isArray(parsed.rows) ? JSON.stringify(parsed) : null; } catch { return null; } }).filter(Boolean) : [];
     let blocks = /\.csv$/i.test(row.source_path) ? csvToDatabaseBlocks(content, title) : parseMarkdownBlocks(content).blocks;
     for (const database of extraDatabases) blocks.push({ type: 'database', content: database, checked: false });
@@ -1594,7 +1594,7 @@ async function importNotionZip(request, env, actor) {
     try {
       const documentId = documentIdByKey.get(key);
       const snapshotId = 'snap_' + randomString(24);
-      const title = notionTitle(path);
+      const title = String(path || '').replace(/\.(md|markdown|csv)$/i, '').split('/').at(-1).replace(/\s+[0-9a-f]{32}$/i, '').replace(/_all$/i, '').normalize('NFKC').trim().slice(0, 160) || 'Notion 문서';
       const assetUrls = new Map();
       const fileRows = [];
       for (const assetPath of assetsByDocument.get(key) || []) {
