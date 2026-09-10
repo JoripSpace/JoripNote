@@ -344,7 +344,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260910-joripnote-9" defer></script>
+  <script src="/app.js?v=20260910-joripnote-10" defer></script>
 </body>
 </html>`;
 
@@ -1372,12 +1372,10 @@ async function uploadLargeNotionPart(request, env, actor, importId, entryIndex, 
   if (!uploadId || uploadId !== row.upload_id || !Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > 10000) throw new HttpError(400, '분할 업로드 정보가 올바르지 않습니다.');
   const declaredLength = Number(request.headers.get('content-length') || 0);
   if (declaredLength > NOTION_DIRECT_ASSET_MAX_BYTES) throw new HttpError(413, '업로드 조각은 8MB 이하여야 합니다.');
-  let received = 0;
-  const limitedBody = request.body.pipeThrough(new TransformStream({ transform(chunk, controller) { received += chunk.byteLength; if (received > NOTION_DIRECT_ASSET_MAX_BYTES) throw new Error('part_too_large'); controller.enqueue(chunk); } }));
-  let part;
-  try { part = await env.STORAGE.resumeMultipartUpload(row.storage_key, uploadId).uploadPart(partNumber, limitedBody); }
-  catch (error) { if (String(error?.message || error).includes('part_too_large')) throw new HttpError(413, '업로드 조각은 8MB 이하여야 합니다.'); throw error; }
-  if (!received) throw new HttpError(400, '빈 업로드 조각은 사용할 수 없습니다.');
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.byteLength > NOTION_DIRECT_ASSET_MAX_BYTES) throw new HttpError(413, '업로드 조각은 8MB 이하여야 합니다.');
+  if (!bytes.byteLength) throw new HttpError(400, '빈 업로드 조각은 사용할 수 없습니다.');
+  const part = await env.STORAGE.resumeMultipartUpload(row.storage_key, uploadId).uploadPart(partNumber, bytes);
   return json({ part_number: part.partNumber, etag: part.etag });
 }
 

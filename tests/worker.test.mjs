@@ -214,7 +214,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-9/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-10/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
