@@ -50,6 +50,7 @@ class D1Database {
     this.database.exec(readFileSync(new URL('../migrations/0006_workspace_collaboration.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0007_retarget_project.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0008_notion_imports.sql', import.meta.url), 'utf8'));
+    this.database.exec(readFileSync(new URL('../migrations/0009_large_notion_imports.sql', import.meta.url), 'utf8'));
   }
   prepare(sql) {
     return new D1Statement(this.database, sql);
@@ -122,12 +123,42 @@ function auth(cookie, extra = {}) {
 
 function envWithDb() {
   const objects = new Map();
+  const multiparts = new Map();
+  async function bytes(value) {
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    return new Uint8Array(await new Response(value).arrayBuffer());
+  }
+  function multipart(key, uploadId) {
+    return {
+      async uploadPart(partNumber, value) {
+        const upload = multiparts.get(uploadId);
+        if (!upload || upload.key !== key) throw new Error('NoSuchUpload');
+        const data = await bytes(value);
+        upload.parts.set(partNumber, data);
+        return { partNumber, etag: 'etag-' + partNumber };
+      },
+      async complete(parts) {
+        const upload = multiparts.get(uploadId);
+        const chunks = parts.map(part => upload.parts.get(part.partNumber));
+        const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const data = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
+        objects.set(key, data);
+        multiparts.delete(uploadId);
+        return { key, size: total };
+      }
+    };
+  }
   return {
     DB: new D1Database(),
     STORAGE: {
-      async put(key, value) { objects.set(key, value instanceof ArrayBuffer ? new Uint8Array(value) : value); },
+      async put(key, value) { objects.set(key, await bytes(value)); },
       async get(key) { const value = objects.get(key); return value == null ? null : { body: value }; },
-      async delete(key) { objects.delete(key); }
+      async delete(key) { objects.delete(key); },
+      async createMultipartUpload(key) { const uploadId = 'upload-' + multiparts.size; multiparts.set(uploadId, { key, parts: new Map() }); return { uploadId, ...multipart(key, uploadId) }; },
+      resumeMultipartUpload(key, uploadId) { return multipart(key, uploadId); }
     },
     EMAIL_ENCRYPTION_KEY: 'test-encryption-secret-at-least-16',
     EMAIL_BLIND_INDEX_KEY: 'test-blind-index-secret-at-least-16'
@@ -183,9 +214,11 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260909-joripnote-7/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-8/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
+  const appScript = await (await worker.fetch(request('/app.js'), {})).text();
+  assert.doesNotThrow(() => new vm.Script(appScript));
   assert.match(html, /id="ip-tag-editor" class="ip-tag-editor"/);
   assert.match(html, /id="add-current-ip"/);
   assert.match(html, /data-document-width="narrow"/);
@@ -504,6 +537,49 @@ test('Notion ZIP import rejects unsafe archive paths without recording an import
   const response = await worker.fetch(new Request(ORIGIN + '/api/import/notion-zip', { method: 'POST', headers: auth(cookie), body: form }), env);
   assert.equal(response.status, 400);
   assert.equal(env.DB.database.prepare('SELECT COUNT(*) AS count FROM notion_imports').get().count, 0);
+});
+
+test('large Notion imports register entries, upload assets in pieces and finalize document hierarchy', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  const created = await call(env, '/api/import/notion-sessions', {
+    method: 'POST', headers: auth(cookie), body: {
+      filename: 'large-export.zip', size: 400_000_000, entries: 3, unpacked_size: 800_000_000, fingerprint: 'a'.repeat(64)
+    }
+  });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  const importId = created.body.import_id;
+  const registeredDocs = await call(env, `/api/import/notion-sessions/${importId}/documents`, {
+    method: 'POST', headers: auth(cookie), body: { entries: [
+      { index: 0, path: 'Parent aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md', size: 12 },
+      { index: 1, path: 'Parent aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Child bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.md', size: 11 }
+    ] }
+  });
+  assert.equal(registeredDocs.response.status, 200, JSON.stringify(registeredDocs.body));
+  const [parent, child] = registeredDocs.body.entries;
+  const registeredAsset = await call(env, `/api/import/notion-sessions/${importId}/assets`, {
+    method: 'POST', headers: auth(cookie), body: { entries: [
+      { index: 2, path: 'Parent aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/photo.png', size: 3, owner_document_id: parent.document_id }
+    ] }
+  });
+  assert.equal(registeredAsset.response.status, 200, JSON.stringify(registeredAsset.body));
+  const assetUpload = await worker.fetch(new Request(`${ORIGIN}/api/import/notion-sessions/${importId}/assets/2`, {
+    method: 'PUT', headers: auth(cookie, { 'content-type': 'application/octet-stream' }), body: new Uint8Array([1, 2, 3])
+  }), env);
+  assert.equal(assetUpload.status, 200, await assetUpload.text());
+  const imported = await call(env, `/api/import/notion-sessions/${importId}/documents-batch`, {
+    method: 'POST', headers: auth(cookie), body: { documents: [
+      { index: 0, content: '# Parent\nBody', parent_document_id: null },
+      { index: 1, content: '# Child\nBody', parent_document_id: parent.document_id }
+    ] }
+  });
+  assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
+  const completed = await call(env, `/api/import/notion-sessions/${importId}/complete`, { method: 'POST', headers: auth(cookie), body: {} });
+  assert.equal(completed.response.status, 200, JSON.stringify(completed.body));
+  assert.equal(completed.body.imported, 2);
+  assert.equal(env.DB.database.prepare('SELECT parent_document_id FROM documents WHERE id=?').get(child.document_id).parent_document_id, parent.document_id);
+  assert.equal(env.DB.database.prepare('SELECT COUNT(*) count FROM file_uploads WHERE document_id=?').get(parent.document_id).count, 1);
 });
 
 test('authentication requires cf-notion-st membership and blocks public signup after bootstrap', async () => {

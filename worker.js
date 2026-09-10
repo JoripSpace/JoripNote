@@ -11,6 +11,12 @@ const NOTION_UNZIPPED_MAX_BYTES = 100 * 1024 * 1024;
 const NOTION_ENTRY_MAX_BYTES = 10 * 1024 * 1024;
 const NOTION_MAX_ENTRIES = 2000;
 const NOTION_MAX_DOCUMENTS = 250;
+const NOTION_LARGE_MAX_UNPACKED_BYTES = 5 * 1024 * 1024 * 1024;
+const NOTION_LARGE_MAX_ENTRIES = 10000;
+const NOTION_LARGE_MAX_DOCUMENTS = 5000;
+const NOTION_REGISTER_BATCH = 100;
+const NOTION_DOCUMENT_MAX_BYTES = 20 * 1024 * 1024;
+const NOTION_DIRECT_ASSET_MAX_BYTES = 8 * 1024 * 1024;
 const BLOCK_TYPES = new Set(['text', 'heading1', 'heading2', 'heading3', 'heading4', 'bullet', 'numbered', 'todo', 'quote', 'code', 'divider', 'toggle', 'callout', 'table', 'database', 'toc', 'math', 'bookmark', 'image', 'video', 'audio', 'file', 'embed', 'page_link']);
 const EDIT_ROLES = new Set(['owner', 'admin', 'member']);
 const MANAGE_ROLES = new Set(['owner', 'admin']);
@@ -242,10 +248,10 @@ const HTML = String.raw`<!doctype html>
         <header class="page-header settings-header"><div><p class="eyebrow">WORKSPACE</p><h1>설정</h1></div></header>
         <div class="settings-grid">
           <div class="settings-card import-card">
-            <div><h2>Notion 가져오기</h2><p>Markdown 한 파일 또는 Notion 전체 내보내기 ZIP을 가져옵니다.</p><small>ZIP은 문서 계층, CSV 데이터 표와 첨부파일을 복원합니다. 최대 50MB이며 Owner와 Admin만 사용할 수 있습니다.</small></div>
+            <div><h2>Notion 가져오기</h2><p>Markdown 한 파일 또는 Notion 전체 내보내기 ZIP을 가져옵니다.</p><small>대용량 ZIP도 자동으로 나눠 전송하며 문서 계층, CSV 데이터 표와 첨부파일을 복원합니다. Owner와 Admin만 사용할 수 있습니다.</small><small id="notion-import-progress" role="status" aria-live="polite"></small></div>
             <div class="import-actions">
               <label id="notion-import-button" class="button subtle compact import-button">Markdown 업로드<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
-              <label id="notion-zip-import-button" class="button primary compact import-button">Notion ZIP 업로드<input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
+              <label id="notion-zip-import-button" class="button primary compact import-button"><span id="notion-zip-import-label">Notion ZIP 업로드</span><input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
             </div>
           </div>
           <div class="settings-card document-width-card">
@@ -338,7 +344,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260909-joripnote-7" defer></script>
+  <script src="/app.js?v=20260910-joripnote-8" defer></script>
 </body>
 </html>`;
 
@@ -655,7 +661,67 @@ async function showSettings(){state.current=null;markNav('settings');showPane('s
 $('workspace-access-form').onsubmit=async event=>{event.preventDefault();try{const data=await api('/api/settings',{method:'PATCH',body:{public_signup_enabled:$('public-signup-enabled').checked,public_signup_role:$('public-signup-role').value}});state.workspaceSettings=data;state.publicSignup=data.public_signup_enabled;toast('가입 정책을 저장했습니다.')}catch(error){toast(error.message)}};
 $('ip-access-form').onsubmit=async event=>{event.preventDefault();flushIpInput();try{const data=await api('/api/settings',{method:'PATCH',body:{ip_allowlist_enabled:$('ip-allowlist-enabled').checked,ip_allowlist:state.ipAllowlist.join('\n')}});state.workspaceSettings=data;setupIpTagEditor(data.ip_allowlist);toast('IP 접근 정책을 저장했습니다.')}catch(error){if(error.details?.current_ip)$('current-request-ip').textContent=error.details.current_ip;toast(error.message)}};
 $('notion-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;if(file.size>2*1024*1024){toast('Markdown 파일은 2MB 이하만 가져올 수 있습니다.');input.value='';return}try{const content=await file.text();const data=await api('/api/import/markdown',{method:'POST',body:{filename:file.name,content}});await loadTree();push('/doc/'+data.document.id);toast('Markdown 파일을 가져왔습니다.')}catch(error){toast(error.message)}finally{input.value=''}};
-$('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;if(file.size>50*1024*1024){toast('Notion ZIP은 50MB 이하만 가져올 수 있습니다.');input.value='';return}const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const form=new FormData();form.append('file',file);const response=await fetch('/api/import/notion-zip',{method:'POST',credentials:'same-origin',headers:{accept:'application/json'},body:form});const data=await response.json();if(!response.ok)throw new Error(data.error||'Notion ZIP을 가져오지 못했습니다.');await loadTree();toast('Notion 가져오기 완료: 문서 '+data.imported+', 건너뜀 '+data.skipped+', 실패 '+data.failed)}catch(error){toast(error.message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
+function notionProgress(message){$('notion-import-progress').textContent=message;$('notion-zip-import-label').textContent=message||'Notion ZIP 업로드'}
+function zipU16(view,offset){return view.getUint16(offset,true)}
+function zipU32(view,offset){return view.getUint32(offset,true)}
+function normalizeClientZipPath(value){const path=String(value||'').replace(/\\/g,'/').normalize('NFKC').replace(/^\.\//,'');const parts=path.split('/').filter(part=>part&&part!=='.');if(!parts.length||parts.some(part=>part==='..'))throw new Error('ZIP에 안전하지 않은 파일 경로가 있습니다.');return parts.join('/')}
+function clientPathDirname(path){const index=path.lastIndexOf('/');return index<0?'':path.slice(0,index)}
+function clientWithoutExtension(path){return path.replace(/\.(md|markdown|csv)$/i,'')}
+function nearestClientDocument(directory,documentMap){let current=directory;while(current){if(documentMap.has(current))return current;current=clientPathDirname(current)}return null}
+async function readZipDirectory(file){
+  const tailStart=Math.max(0,file.size-65557);const tail=new Uint8Array(await file.slice(tailStart).arrayBuffer());const tailView=new DataView(tail.buffer,tail.byteOffset,tail.byteLength);let eocd=-1;
+  for(let index=tail.length-22;index>=0;index-=1){if(zipU32(tailView,index)===0x06054b50){eocd=index;break}}
+  if(eocd<0)throw new Error('ZIP 중앙 디렉터리를 찾지 못했습니다.');
+  const count=zipU16(tailView,eocd+10),directorySize=zipU32(tailView,eocd+12),directoryOffset=zipU32(tailView,eocd+16);
+  if(count===0xffff||directorySize===0xffffffff||directoryOffset===0xffffffff)throw new Error('ZIP64 형식은 아직 지원하지 않습니다. 5GB 이하의 일반 ZIP을 사용해 주세요.');
+  if(count<1||count>10000||directoryOffset+directorySize>file.size)throw new Error('ZIP 항목 수 또는 디렉터리 정보가 올바르지 않습니다.');
+  const bytes=new Uint8Array(await file.slice(directoryOffset,directoryOffset+directorySize).arrayBuffer());const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);const decoder=new TextDecoder('utf-8',{fatal:false});const entries=[];let offset=0,total=0;
+  for(let index=0;index<count;index+=1){
+    if(offset+46>bytes.length||zipU32(view,offset)!==0x02014b50)throw new Error('ZIP 항목 목록이 손상되었습니다.');
+    const flags=zipU16(view,offset+8),method=zipU16(view,offset+10),compressedSize=zipU32(view,offset+20),size=zipU32(view,offset+24),nameLength=zipU16(view,offset+28),extraLength=zipU16(view,offset+30),commentLength=zipU16(view,offset+32),localOffset=zipU32(view,offset+42);
+    if(flags&1)throw new Error('암호화된 ZIP은 가져올 수 없습니다.');
+    if(compressedSize===0xffffffff||size===0xffffffff||localOffset===0xffffffff)throw new Error('ZIP64 항목은 아직 지원하지 않습니다.');
+    const rawName=bytes.subarray(offset+46,offset+46+nameLength);const rawPath=decoder.decode(rawName);offset+=46+nameLength+extraLength+commentLength;
+    if(rawPath.endsWith('/')||rawPath.startsWith('__MACOSX/'))continue;
+    const path=normalizeClientZipPath(rawPath);if(/(^|\/)\.DS_Store$/i.test(path))continue;
+    if(method!==0&&method!==8)throw new Error('지원하지 않는 ZIP 압축 방식이 포함되어 있습니다: '+path);
+    entries.push({index:entries.length,path,size,compressedSize,method,localOffset});total+=size;
+  }
+  return {entries,total};
+}
+async function zipEntryStream(file,entry){const header=new Uint8Array(await file.slice(entry.localOffset,entry.localOffset+30).arrayBuffer());const view=new DataView(header.buffer,header.byteOffset,header.byteLength);if(header.length<30||zipU32(view,0)!==0x04034b50)throw new Error('ZIP 파일 헤더가 손상되었습니다: '+entry.path);const start=entry.localOffset+30+zipU16(view,26)+zipU16(view,28);const stream=file.slice(start,start+entry.compressedSize).stream();if(entry.method===0)return stream;if(typeof DecompressionStream!=='function')throw new Error('이 브라우저는 대용량 ZIP 압축 해제를 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.');return stream.pipeThrough(new DecompressionStream('deflate-raw'))}
+async function sha256Text(value){const bytes=new TextEncoder().encode(value);const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));return Array.from(hash,byte=>byte.toString(16).padStart(2,'0')).join('')}
+async function rawJson(path,options={},attempts=3){let last;for(let attempt=0;attempt<attempts;attempt+=1){const response=await fetch(path,{credentials:'same-origin',headers:{accept:'application/json',...(options.headers||{})},...options});let data={};try{data=await response.json()}catch{}if(response.ok)return data;last=new Error(data.error||'요청을 처리하지 못했습니다.');last.status=response.status;if(![429,500,502,503,504].includes(response.status))throw last}throw last}
+async function registerEntryBatches(importId,kind,entries){const output=[];for(let offset=0;offset<entries.length;offset+=100){const data=await api('/api/import/notion-sessions/'+importId+'/'+kind,{method:'POST',body:{entries:entries.slice(offset,offset+100)}});output.push(...data.entries)}return output}
+async function readZipEntryBytes(file,entry,maxBytes){if(entry.size>maxBytes)throw new Error('문서가 너무 큽니다: '+entry.path);const bytes=new Uint8Array(await new Response(await zipEntryStream(file,entry)).arrayBuffer());if(bytes.length!==entry.size)throw new Error('압축 해제 크기가 일치하지 않습니다: '+entry.path);return bytes}
+async function uploadNotionAsset(file,importId,entry,registered){
+  const base='/api/import/notion-sessions/'+importId+'/assets/'+entry.index;const stream=await zipEntryStream(file,entry);
+  if(entry.size<=8*1024*1024){const bytes=new Uint8Array(await new Response(stream).arrayBuffer());if(bytes.length!==entry.size)throw new Error('첨부파일 압축 해제 크기가 일치하지 않습니다: '+entry.path);await rawJson(base,{method:'PUT',headers:{'content-type':'application/octet-stream'},body:bytes});return}
+  const created=await api(base+'/multipart',{method:'POST',body:{}});const reader=stream.getReader();const partSize=8*1024*1024;let buffer=new Uint8Array(partSize),used=0,partNumber=1,total=0;const parts=[];
+  async function sendPart(bytes){const result=await rawJson(base+'/multipart/'+partNumber+'?upload_id='+encodeURIComponent(created.upload_id),{method:'PUT',headers:{'content-type':'application/octet-stream'},body:bytes});parts.push(result);partNumber+=1}
+  while(true){const result=await reader.read();if(result.done)break;let source=result.value,offset=0;total+=source.length;while(offset<source.length){const length=Math.min(buffer.length-used,source.length-offset);buffer.set(source.subarray(offset,offset+length),used);used+=length;offset+=length;if(used===buffer.length){await sendPart(buffer);buffer=new Uint8Array(partSize);used=0}}}
+  if(used)await sendPart(buffer.slice(0,used));if(total!==entry.size)throw new Error('첨부파일 압축 해제 크기가 일치하지 않습니다: '+entry.path);
+  await api(base+'/multipart-complete',{method:'POST',body:{upload_id:created.upload_id,parts}});
+}
+function resolveClientImportLink(sourcePath,target){let decoded;try{decoded=decodeURIComponent(String(target||'').split('#')[0].split('?')[0])}catch{return''}if(!decoded||/^[a-z][a-z0-9+.-]*:/i.test(decoded)||decoded.startsWith('//'))return'';const parts=(clientPathDirname(sourcePath)+'/'+decoded).split('/');const resolved=[];for(const part of parts){if(!part||part==='.')continue;if(part==='..'){if(!resolved.length)return'';resolved.pop()}else resolved.push(part)}return resolved.join('/')}
+function rewriteClientNotionLinks(markdown,sourcePath,documentMap,assetMap){return markdown.replace(/(!?\[[^\]\r\n]*\]\()([^)\r\n]+)(\))/g,(match,start,target,end)=>{const resolved=resolveClientImportLink(sourcePath,target);if(!resolved)return match;const asset=assetMap.get(resolved);if(asset)return start+asset.url+end;const documentId=documentMap.get(clientWithoutExtension(resolved));return documentId?start+location.origin+'/doc/'+documentId+end:match})}
+async function importLargeNotionZip(file){
+  notionProgress('ZIP 분석 중…');const directory=await readZipDirectory(file);const entries=directory.entries;const documents=entries.filter(entry=>/\.(md|markdown|csv)$/i.test(entry.path)&&!/(^|\/)index\.(md|markdown)$/i.test(entry.path));
+  if(!documents.length)throw new Error('ZIP에서 Markdown 또는 CSV 문서를 찾지 못했습니다.');
+  const fingerprint=await sha256Text([file.name,file.size,file.lastModified,entries.length,directory.total,entries.map(entry=>entry.path+':'+entry.size+':'+entry.compressedSize).join('|')].join('\n'));
+  const session=await api('/api/import/notion-sessions',{method:'POST',body:{filename:file.name,size:file.size,entries:entries.length,unpacked_size:directory.total,fingerprint}});if(session.status==='completed'){notionProgress('이미 가져온 ZIP');return {imported:documents.length,failed:0}}
+  notionProgress('문서 목록 등록 중…');const registeredDocuments=await registerEntryBatches(session.import_id,'documents',documents.map(entry=>({index:entry.index,path:entry.path,size:entry.size})));
+  const documentMap=new Map();const registeredDocByIndex=new Map();for(const item of registeredDocuments){documentMap.set(clientWithoutExtension(item.path),item.document_id);registeredDocByIndex.set(item.index,item)}
+  const documentIndexes=new Set(documents.map(entry=>entry.index));const entryByIndex=new Map(entries.map(entry=>[entry.index,entry]));const assets=[];for(const entry of entries){if(documentIndexes.has(entry.index)||/(^|\/)index\.html?$/i.test(entry.path))continue;const ownerKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);if(ownerKey)assets.push({index:entry.index,path:entry.path,size:entry.size,owner_document_id:documentMap.get(ownerKey)})}
+  notionProgress('첨부파일 목록 등록 중…');const registeredAssets=await registerEntryBatches(session.import_id,'assets',assets);const assetByIndex=new Map(registeredAssets.map(item=>[item.index,item]));const assetMap=new Map(registeredAssets.map(item=>[item.path,item]));
+  let nextAsset=0;async function assetWorker(){while(nextAsset<assets.length){const position=nextAsset++;const entry=entryByIndex.get(assets[position].index);const registered=assetByIndex.get(entry.index);if(!registered||registered.status==='uploaded')continue;notionProgress('첨부파일 '+(position+1)+' / '+assets.length);await uploadNotionAsset(file,session.import_id,entry,registered)}}
+  await Promise.all(Array.from({length:Math.min(3,assets.length||1)},()=>assetWorker()));
+  documents.sort((left,right)=>left.path.split('/').length-right.path.split('/').length||left.path.localeCompare(right.path,'ko'));const decoder=new TextDecoder('utf-8',{fatal:false});let batch=[],batchBytes=0,processed=0;
+  async function flushDocuments(){if(!batch.length)return;await api('/api/import/notion-sessions/'+session.import_id+'/documents-batch',{method:'POST',body:{documents:batch}});processed+=batch.length;notionProgress('문서 '+processed+' / '+documents.length);batch=[];batchBytes=0}
+  for(const entry of documents){const registered=registeredDocByIndex.get(entry.index);if(registered.status==='imported'){processed+=1;continue}const bytes=await readZipEntryBytes(file,entry,4*1024*1024);let content=decoder.decode(bytes).replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n');content=rewriteClientNotionLinks(content,entry.path,documentMap,assetMap);const parentKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);const item={index:entry.index,content,parent_document_id:parentKey?documentMap.get(parentKey):null};const size=new TextEncoder().encode(content).length;if(batch.length&&(batch.length>=20||batchBytes+size>3*1024*1024))await flushDocuments();batch.push(item);batchBytes+=size}await flushDocuments();
+  const completed=await api('/api/import/notion-sessions/'+session.import_id+'/complete',{method:'POST',body:{}});return completed;
+}
+$('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const data=await importLargeNotionZip(file);await loadTree();notionProgress('가져오기 완료');toast('Notion 가져오기 완료: 문서 '+data.imported+', 실패 '+data.failed)}catch(error){notionProgress('다시 시도');toast(error.message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
 document.addEventListener('selectionchange',()=>{if(!canEdit())return;const selection=getSelection();const toolbar=$('inline-toolbar');if(!selection||selection.isCollapsed||!selection.rangeCount){toolbar.hidden=true;return}const origin=selection.anchorNode?.nodeType===1?selection.anchorNode:selection.anchorNode?.parentElement;const el=origin?.closest?.('.block-content[contenteditable="true"]');if(!el||!el.contains(selection.focusNode)){toolbar.hidden=true;return}state.inlineTarget=el;state.inlineRange=selection.getRangeAt(0).cloneRange();const rect=state.inlineRange.getBoundingClientRect();toolbar.style.left=Math.max(8,Math.min(rect.left,innerWidth-toolbar.offsetWidth-8))+'px';toolbar.style.top=Math.max(8,rect.top-42)+'px';toolbar.hidden=false});
 function restoreInlineSelection(target,range){if(!target?.isConnected||!range)return false;target.focus();const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return true}
 function openLinkDialog(target,range){if(!target||!range)return;state.linkTarget=target;state.linkRange=range.cloneRange();alertBox('link-alert','');const origin=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;const currentLink=origin?.closest?.('a');$('link-url').value=currentLink&&target.contains(currentLink)?currentLink.getAttribute('href')||'':'';$('inline-toolbar').hidden=true;$('link-dialog').returnValue='';$('link-dialog').showModal();requestAnimationFrame(()=>{$('link-url').focus();$('link-url').select()})}
@@ -778,6 +844,21 @@ async function route(request, env) {
     if (path === '/api/documents' && request.method === 'POST') return createDocument(request, env, actor);
     if (path === '/api/import/markdown' && request.method === 'POST') return importMarkdown(request, env, actor);
     if (path === '/api/import/notion-zip' && request.method === 'POST') return importNotionZip(request, env, actor);
+    if (path === '/api/import/notion-sessions' && request.method === 'POST') return createLargeNotionImport(request, env, actor);
+    const notionRegisterRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/(documents|assets)$/);
+    if (notionRegisterRoute && request.method === 'POST') return registerLargeNotionEntries(request, env, actor, notionRegisterRoute[1], notionRegisterRoute[2]);
+    const notionAssetRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/assets\/(\d+)$/);
+    if (notionAssetRoute && request.method === 'PUT') return uploadLargeNotionAsset(request, env, actor, notionAssetRoute[1], Number(notionAssetRoute[2]));
+    const notionMultipartCreateRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/assets\/(\d+)\/multipart$/);
+    if (notionMultipartCreateRoute && request.method === 'POST') return createLargeNotionMultipart(env, actor, notionMultipartCreateRoute[1], Number(notionMultipartCreateRoute[2]));
+    const notionMultipartPartRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/assets\/(\d+)\/multipart\/(\d+)$/);
+    if (notionMultipartPartRoute && request.method === 'PUT') return uploadLargeNotionPart(request, env, actor, notionMultipartPartRoute[1], Number(notionMultipartPartRoute[2]), Number(notionMultipartPartRoute[3]));
+    const notionMultipartCompleteRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/assets\/(\d+)\/multipart-complete$/);
+    if (notionMultipartCompleteRoute && request.method === 'POST') return completeLargeNotionMultipart(request, env, actor, notionMultipartCompleteRoute[1], Number(notionMultipartCompleteRoute[2]));
+    const notionDocumentsBatchRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/documents-batch$/);
+    if (notionDocumentsBatchRoute && request.method === 'POST') return importLargeNotionDocuments(request, env, actor, notionDocumentsBatchRoute[1]);
+    const notionCompleteRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/complete$/);
+    if (notionCompleteRoute && request.method === 'POST') return completeLargeNotionImport(env, actor, notionCompleteRoute[1]);
     const documentRoute = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})$/);
     if (documentRoute && request.method === 'GET') return getDocument(env, actor, documentRoute[1]);
     if (documentRoute && request.method === 'PUT') return saveDocument(request, env, actor, documentRoute[1]);
@@ -1168,6 +1249,200 @@ async function importMarkdown(request, env, actor) {
   await env.DB.batch(statements);
   await recordActivity(env.DB, actor, id, 'document_imported', 'Markdown 문서를 가져왔습니다.');
   return json({ document: { id, title, parent_document_id: null, version: 1 }, imported_blocks: blocks.length }, 201);
+}
+
+async function requireLargeNotionImport(env, actor, importId) {
+  requireRole(actor, MANAGE_ROLES, 'Owner와 Admin만 Notion 전체 가져오기를 실행할 수 있습니다.');
+  if (!env.STORAGE || typeof env.STORAGE.put !== 'function') throw new HttpError(503, '스토리지 연결을 확인해 주세요.');
+  const row = await env.DB.prepare('SELECT * FROM notion_imports WHERE id=? AND project_id=?').bind(importId, PROJECT_ID).first();
+  if (!row) throw new HttpError(404, 'Notion 가져오기 작업을 찾을 수 없습니다.');
+  return row;
+}
+
+async function createLargeNotionImport(request, env, actor) {
+  requireRole(actor, MANAGE_ROLES, 'Owner와 Admin만 Notion 전체 가져오기를 실행할 수 있습니다.');
+  if (!env.STORAGE || typeof env.STORAGE.createMultipartUpload !== 'function') throw new HttpError(503, '대용량 스토리지 연결을 확인해 주세요.');
+  const body = await readJson(request);
+  const filename = safeImportName(body.filename || 'notion-export.zip');
+  const size = Number(body.size || 0);
+  const entryCount = Number(body.entries || 0);
+  const unpackedSize = Number(body.unpacked_size || 0);
+  const fingerprint = String(body.fingerprint || '').toLowerCase();
+  if (!/\.zip$/i.test(filename) || !Number.isSafeInteger(size) || size <= 0 || size > NOTION_LARGE_MAX_UNPACKED_BYTES) throw new HttpError(413, 'Notion ZIP은 5GB 이하의 .zip 파일이어야 합니다.');
+  if (!Number.isSafeInteger(entryCount) || entryCount < 1 || entryCount > NOTION_LARGE_MAX_ENTRIES) throw new HttpError(413, 'ZIP 항목은 최대 10,000개까지 가져올 수 있습니다.');
+  if (!Number.isSafeInteger(unpackedSize) || unpackedSize < 1 || unpackedSize > NOTION_LARGE_MAX_UNPACKED_BYTES) throw new HttpError(413, 'ZIP 압축 해제 크기는 5GB 이하여야 합니다.');
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) throw new HttpError(400, 'ZIP 식별 정보가 올바르지 않습니다.');
+  const existing = await env.DB.prepare('SELECT * FROM notion_imports WHERE project_id=? AND archive_sha256=?').bind(PROJECT_ID, fingerprint).first();
+  if (existing) return json({ import_id: existing.id, resumed: true, status: existing.status });
+  const id = 'nimp_' + randomString(24);
+  await env.DB.prepare(`INSERT INTO notion_imports
+    (id,project_id,archive_sha256,filename,status,total_items,imported_items,skipped_items,failed_items,created_by,created_at)
+    VALUES (?,?,?,?, 'processing',0,0,0,0,?,?)`).bind(id, PROJECT_ID, fingerprint, filename, actor.id, nowSeconds()).run();
+  return json({ import_id: id, resumed: false, status: 'processing' }, 201);
+}
+
+async function registerLargeNotionEntries(request, env, actor, importId, group) {
+  await requireLargeNotionImport(env, actor, importId);
+  const body = await readJson(request);
+  const entries = Array.isArray(body.entries) ? body.entries : [];
+  if (!entries.length || entries.length > 100) throw new HttpError(400, '한 번에 1~100개 항목을 등록해 주세요.');
+  const registered = [];
+  for (const input of entries) {
+    const entryIndex = Number(input.index);
+    const sourcePath = normalizeZipPath(input.path);
+    const sourceSize = Number(input.size);
+    if (!Number.isSafeInteger(entryIndex) || entryIndex < 0 || entryIndex > 99999 || !sourcePath) throw new HttpError(400, 'ZIP 항목 정보가 올바르지 않습니다.');
+    if (!Number.isSafeInteger(sourceSize) || sourceSize < 0 || sourceSize > NOTION_LARGE_MAX_UNPACKED_BYTES) throw new HttpError(413, 'ZIP 항목 크기가 허용 범위를 넘었습니다.');
+    const existing = await env.DB.prepare('SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index=?').bind(importId, entryIndex).first();
+    if (existing) {
+      registered.push({ index: entryIndex, path: existing.source_path, document_id: existing.document_id, owner_document_id: existing.owner_document_id, file_id: existing.file_id, url: existing.file_id ? new URL(request.url).origin + '/api/files/' + existing.file_id : null, status: existing.status });
+      continue;
+    }
+    if (group === 'documents') {
+      if (!/\.(md|markdown|csv)$/i.test(sourcePath) || /(^|\/)index\.(md|markdown)$/i.test(sourcePath)) throw new HttpError(400, '문서 항목 형식이 올바르지 않습니다.');
+      const documentId = 'doc_' + randomString(24);
+      await env.DB.prepare(`INSERT INTO notion_import_staged_entries
+        (import_id,entry_index,source_path,entry_type,source_size,document_id,status,updated_at)
+        VALUES (?,?,?,?,?,?,'registered',?)`).bind(importId, entryIndex, sourcePath, 'document', sourceSize, documentId, nowSeconds()).run();
+      registered.push({ index: entryIndex, path: sourcePath, document_id: documentId, status: 'registered' });
+    } else {
+      const ownerDocumentId = String(input.owner_document_id || '');
+      const owner = await env.DB.prepare("SELECT document_id FROM notion_import_staged_entries WHERE import_id=? AND entry_type='document' AND document_id=?").bind(importId, ownerDocumentId).first();
+      if (!owner) throw new HttpError(400, '첨부파일의 상위 문서를 찾을 수 없습니다.');
+      const contentType = importContentType(sourcePath);
+      if (!contentType) continue;
+      const fileId = 'fil_' + randomString(24);
+      const storageKey = 'documents/' + ownerDocumentId + '/' + fileId;
+      await env.DB.prepare(`INSERT INTO notion_import_staged_entries
+        (import_id,entry_index,source_path,entry_type,source_size,owner_document_id,file_id,storage_key,content_type,status,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,'registered',?)`).bind(importId, entryIndex, sourcePath, 'asset', sourceSize, ownerDocumentId, fileId, storageKey, contentType, nowSeconds()).run();
+      registered.push({ index: entryIndex, path: sourcePath, owner_document_id: ownerDocumentId, file_id: fileId, url: new URL(request.url).origin + '/api/files/' + fileId, status: 'registered' });
+    }
+  }
+  return json({ entries: registered });
+}
+
+async function requireLargeNotionAsset(env, importId, entryIndex) {
+  const row = await env.DB.prepare("SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index=? AND entry_type='asset'").bind(importId, entryIndex).first();
+  if (!row) throw new HttpError(404, '첨부파일 항목을 찾을 수 없습니다.');
+  return row;
+}
+
+async function uploadLargeNotionAsset(request, env, actor, importId, entryIndex) {
+  await requireLargeNotionImport(env, actor, importId);
+  const row = await requireLargeNotionAsset(env, importId, entryIndex);
+  if (Number(row.source_size) > NOTION_DIRECT_ASSET_MAX_BYTES) throw new HttpError(413, '큰 첨부파일은 분할 업로드가 필요합니다.');
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.length !== Number(row.source_size)) throw new HttpError(400, '첨부파일 크기가 일치하지 않습니다.');
+  await env.STORAGE.put(row.storage_key, bytes, { httpMetadata: { contentType: row.content_type } });
+  await env.DB.prepare("UPDATE notion_import_staged_entries SET status='uploaded',updated_at=? WHERE import_id=? AND entry_index=?").bind(nowSeconds(), importId, entryIndex).run();
+  return json({ uploaded: true, file_id: row.file_id });
+}
+
+async function createLargeNotionMultipart(env, actor, importId, entryIndex) {
+  await requireLargeNotionImport(env, actor, importId);
+  const row = await requireLargeNotionAsset(env, importId, entryIndex);
+  const upload = await env.STORAGE.createMultipartUpload(row.storage_key, { httpMetadata: { contentType: row.content_type } });
+  await env.DB.prepare("UPDATE notion_import_staged_entries SET status='uploading',upload_id=?,updated_at=? WHERE import_id=? AND entry_index=?").bind(upload.uploadId, nowSeconds(), importId, entryIndex).run();
+  return json({ upload_id: upload.uploadId });
+}
+
+async function uploadLargeNotionPart(request, env, actor, importId, entryIndex, partNumber) {
+  await requireLargeNotionImport(env, actor, importId);
+  const row = await requireLargeNotionAsset(env, importId, entryIndex);
+  const uploadId = String(new URL(request.url).searchParams.get('upload_id') || '');
+  if (!uploadId || uploadId !== row.upload_id || !Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > 10000) throw new HttpError(400, '분할 업로드 정보가 올바르지 않습니다.');
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (declaredLength > NOTION_DIRECT_ASSET_MAX_BYTES) throw new HttpError(413, '업로드 조각은 8MB 이하여야 합니다.');
+  let received = 0;
+  const limitedBody = request.body.pipeThrough(new TransformStream({ transform(chunk, controller) { received += chunk.byteLength; if (received > NOTION_DIRECT_ASSET_MAX_BYTES) throw new Error('part_too_large'); controller.enqueue(chunk); } }));
+  let part;
+  try { part = await env.STORAGE.resumeMultipartUpload(row.storage_key, uploadId).uploadPart(partNumber, limitedBody); }
+  catch (error) { if (String(error?.message || error).includes('part_too_large')) throw new HttpError(413, '업로드 조각은 8MB 이하여야 합니다.'); throw error; }
+  if (!received) throw new HttpError(400, '빈 업로드 조각은 사용할 수 없습니다.');
+  return json({ part_number: part.partNumber, etag: part.etag });
+}
+
+async function completeLargeNotionMultipart(request, env, actor, importId, entryIndex) {
+  await requireLargeNotionImport(env, actor, importId);
+  const row = await requireLargeNotionAsset(env, importId, entryIndex);
+  const body = await readJson(request);
+  const uploadId = String(body.upload_id || '');
+  const parts = Array.isArray(body.parts) ? body.parts.map(part => ({ partNumber: Number(part.part_number), etag: String(part.etag || '') })) : [];
+  if (!uploadId || uploadId !== row.upload_id || !parts.length || parts.length > 10000 || parts.some(part => !Number.isSafeInteger(part.partNumber) || part.partNumber < 1 || !part.etag)) throw new HttpError(400, '분할 업로드 완료 정보가 올바르지 않습니다.');
+  await env.STORAGE.resumeMultipartUpload(row.storage_key, uploadId).complete(parts);
+  await env.DB.prepare("UPDATE notion_import_staged_entries SET status='uploaded',updated_at=? WHERE import_id=? AND entry_index=?").bind(nowSeconds(), importId, entryIndex).run();
+  return json({ uploaded: true, file_id: row.file_id });
+}
+
+async function importLargeNotionDocuments(request, env, actor, importId) {
+  await requireLargeNotionImport(env, actor, importId);
+  const body = await readJson(request);
+  const documents = Array.isArray(body.documents) ? body.documents : [];
+  if (!documents.length || documents.length > 20) throw new HttpError(400, '한 번에 1~20개 문서를 처리해 주세요.');
+  const results = [];
+  for (const input of documents) {
+    const entryIndex = Number(input.index);
+    const content = String(input.content || '').replace(/\r\n?/g, '\n');
+    if (encoder.encode(content).length > NOTION_DOCUMENT_MAX_BYTES) throw new HttpError(413, '개별 Notion 문서는 20MB 이하로 가져올 수 있습니다.');
+    const row = await env.DB.prepare("SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index=? AND entry_type='document'").bind(importId, entryIndex).first();
+    if (!row) throw new HttpError(404, 'Notion 문서 항목을 찾을 수 없습니다.');
+    if (row.status === 'imported') { results.push({ index: entryIndex, document_id: row.document_id, skipped: true }); continue; }
+    const parentDocumentId = input.parent_document_id ? String(input.parent_document_id) : null;
+    if (parentDocumentId) {
+      const parent = await env.DB.prepare("SELECT document_id,status FROM notion_import_staged_entries WHERE import_id=? AND entry_type='document' AND document_id=?").bind(importId, parentDocumentId).first();
+      if (!parent || parent.status !== 'imported') throw new HttpError(409, '상위 문서를 먼저 가져와야 합니다.');
+    }
+    const assets = await env.DB.prepare("SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_type='asset' AND owner_document_id=?").bind(importId, row.document_id).all();
+    const missing = (assets.results || []).find(asset => asset.status !== 'uploaded');
+    if (missing) throw new HttpError(409, '문서 첨부파일 업로드가 아직 끝나지 않았습니다.');
+    const title = notionTitle(row.source_path);
+    let blocks = /\.csv$/i.test(row.source_path) ? csvToDatabaseBlocks(content, title) : parseMarkdownBlocks(content).blocks;
+    const knownUrls = new Set(blocks.map(block => block.content));
+    for (const asset of assets.results || []) {
+      const url = new URL(request.url).origin + '/api/files/' + asset.file_id;
+      if (!knownUrls.has(url)) blocks.push({ type: asset.content_type.startsWith('image/') ? 'image' : asset.content_type.startsWith('video/') ? 'video' : asset.content_type.startsWith('audio/') ? 'audio' : 'file', content: url, checked: false });
+    }
+    blocks = blocks.slice(0, 500);
+    if (!blocks.length) blocks.push({ type: 'text', content: '', checked: false });
+    const snapshotId = 'snap_' + randomString(24);
+    const createdAt = nowSeconds();
+    const statements = [env.DB.prepare(`INSERT INTO documents
+      (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(row.document_id, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt)];
+    blocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks
+      (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .bind('blk_' + randomString(24), row.document_id, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
+    statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(row.document_id, PROJECT_ID, 'workspace', actor.id, createdAt));
+    statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, row.document_id, 1, snapshotId, title, actor.id, createdAt));
+    for (const asset of assets.results || []) statements.push(env.DB.prepare(`INSERT INTO file_uploads
+      (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .bind(asset.file_id, PROJECT_ID, row.document_id, asset.storage_key, safeImportName(asset.source_path.split('/').at(-1)), asset.content_type, asset.source_size, actor.id, createdAt));
+    statements.push(env.DB.prepare("UPDATE notion_import_staged_entries SET status='imported',parent_document_id=?,updated_at=? WHERE import_id=? AND entry_index=?").bind(parentDocumentId, createdAt, importId, entryIndex));
+    statements.push(env.DB.prepare(`INSERT INTO notion_import_items (import_id,source_path,document_id,status,error,updated_at)
+      VALUES (?,?,?,'imported',NULL,?) ON CONFLICT(import_id,source_path) DO UPDATE SET document_id=excluded.document_id,status='imported',error=NULL,updated_at=excluded.updated_at`)
+      .bind(importId, row.source_path, row.document_id, createdAt));
+    await env.DB.batch(statements);
+    results.push({ index: entryIndex, document_id: row.document_id, skipped: false });
+  }
+  return json({ documents: results });
+}
+
+async function completeLargeNotionImport(env, actor, importId) {
+  await requireLargeNotionImport(env, actor, importId);
+  const counts = await env.DB.prepare(`SELECT
+    SUM(CASE WHEN entry_type='document' THEN 1 ELSE 0 END) total,
+    SUM(CASE WHEN entry_type='document' AND status='imported' THEN 1 ELSE 0 END) imported,
+    SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed
+    FROM notion_import_staged_entries WHERE import_id=?`).bind(importId).first();
+  const total = Number(counts?.total || 0);
+  const imported = Number(counts?.imported || 0);
+  const failed = Number(counts?.failed || 0);
+  if (!total || imported + failed < total) throw new HttpError(409, '아직 처리하지 않은 Notion 문서가 있습니다.');
+  const status = failed ? 'partial' : 'completed';
+  await env.DB.prepare('UPDATE notion_imports SET status=?,total_items=?,imported_items=?,failed_items=?,completed_at=? WHERE id=?').bind(status, total, imported, failed, nowSeconds(), importId).run();
+  await recordActivity(env.DB, actor, null, 'notion_imported', 'Notion ZIP에서 문서 ' + imported + '개를 가져왔습니다.');
+  return json({ import_id: importId, status, total, imported, failed });
 }
 
 async function importNotionZip(request, env, actor) {
