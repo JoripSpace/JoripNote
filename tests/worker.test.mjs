@@ -203,7 +203,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260909-joripnote-7/);
+  assert.match(html, /app\.css\?v=20260910-joripnote-8/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -215,7 +215,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-12/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-13/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -347,6 +347,11 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /structuredTableBlock/);
   assert.match(source, /function parseDatabaseModel/);
   assert.match(source, /function clientNotionTitle/);
+  assert.match(source, /const DATABASE_MAX_ROWS=500/);
+  assert.match(source, /function cleanNotionDatabaseTitle/);
+  assert.match(source, /function databaseStatusOptions/);
+  assert.match(source, /grouped\.length>99\?'99\+'/);
+  assert.match(source, /'보드','files'.*groupColumn\.name.*'별'/);
   assert.match(source, /function renderDatabaseBoard/);
   assert.match(source, /function renderDatabaseTable/);
   assert.match(source, /function databaseFilterControls/);
@@ -864,6 +869,27 @@ test('database cells enforce typed values and persist safe filters', async () =>
   assert.equal(persisted.rows[0].cells.col_text, '  공백 보존  ');
   assert.equal(persisted.rows[0].cells.col_done, false);
   assert.deepEqual(persisted.view.filter, { column: 'col_status', operator: 'equals', value: '진행 중' });
+
+  const largeDatabase = structuredClone(database);
+  largeDatabase.rows = Array.from({ length: 404 }, (_, index) => ({
+    id: 'row_' + String(index).padStart(4, '0'),
+    cells: {
+      col_text: '작업 ' + (index + 1),
+      col_num: String(index + 1),
+      col_date: '2026-09-10',
+      col_url: 'https://example.com/' + (index + 1),
+      col_done: false,
+      col_status: index % 2 ? '진행 중' : '완료'
+    }
+  }));
+  const largeSaved = await call(env, '/api/documents/' + id, {
+    method: 'PUT',
+    headers: auth(cookie),
+    body: { title: '404개 보드', version: 2, save_id: 'snap_valid_database_404', blocks: [{ id: 'blk_database1', type: 'database', content: JSON.stringify(largeDatabase) }] }
+  });
+  assert.equal(largeSaved.response.status, 200, JSON.stringify(largeSaved.body));
+  const largeReloaded = await call(env, '/api/documents/' + id, { headers: { cookie } });
+  assert.equal(JSON.parse(largeReloaded.body.document.blocks[0].content).rows.length, 404);
 });
 
 test('Owner and Admin can publish documents while anonymous readers only see published content', async () => {
