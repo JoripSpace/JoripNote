@@ -215,7 +215,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /Markdown 업로드/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-14/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-15/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -335,6 +335,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /addEventListener\('resize',resizeDocumentTitle\)/);
   assert.match(source, /visibleRoles=allowed\.includes\(member\.role\)/);
   assert.match(source, /notion-import-input/);
+  assert.match(source, /notion-api-import-button/);
+  assert.match(source, /function importAllFromNotionApi/);
   assert.match(source, /function setSidebarCollapsed/);
   assert.match(source, /qwerty_sidebar_collapsed/);
   assert.match(source, /function setDocumentWidth/);
@@ -549,6 +551,48 @@ test('Notion ZIP import rejects unsafe archive paths without recording an import
   const response = await worker.fetch(new Request(ORIGIN + '/api/import/notion-zip', { method: 'POST', headers: auth(cookie), body: form }), env);
   assert.equal(response.status, 400);
   assert.equal(env.DB.database.prepare('SELECT COUNT(*) AS count FROM notion_imports').get().count, 0);
+});
+
+test('Notion API importer discovers accessible pages and stores page properties and body', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  const missing = await call(env, '/api/import/notion-api/status', { headers: { cookie } });
+  assert.equal(missing.body.configured, false);
+  env.NOTION_API_TOKEN = 'ntn_test_secret';
+  const pageId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    assert.equal(init.headers.authorization, 'Bearer ntn_test_secret');
+    assert.equal(init.headers['notion-version'], '2026-03-11');
+    if (url.endsWith('/v1/search')) return Response.json({ results: [{ object: 'page', id: pageId }], has_more: false, next_cursor: null });
+    if (url.endsWith('/v1/pages/' + pageId.replaceAll('-', '') + '/markdown')) return Response.json({ markdown: '# API 본문\n문단', truncated: false, unknown_block_ids: [] });
+    if (url.endsWith('/v1/pages/' + pageId.replaceAll('-', ''))) return Response.json({
+      object: 'page', id: pageId, parent: { type: 'workspace', workspace: true },
+      properties: {
+        Name: { id: 'title', type: 'title', title: [{ plain_text: 'API 문서' }] },
+        Status: { id: 'status', type: 'status', status: { name: '진행 중' } }
+      }
+    });
+    return new Response('not found', { status: 404 });
+  };
+  try {
+    const discovered = await call(env, '/api/import/notion-api/search', { method: 'POST', headers: auth(cookie), body: { cursor: null } });
+    assert.equal(discovered.response.status, 200, JSON.stringify(discovered.body));
+    assert.deepEqual(discovered.body.items, [{ id: pageId, object: 'page' }]);
+    const imported = await call(env, '/api/import/notion-api/pages/' + pageId, { method: 'POST', headers: auth(cookie), body: {} });
+    assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const document = env.DB.database.prepare("SELECT id,title,source_page_id,source_path FROM documents WHERE title='API 문서'").get();
+  assert.equal(document.source_page_id, pageId.replaceAll('-', ''));
+  assert.match(document.source_path, /^notion-api\//);
+  const blocks = env.DB.database.prepare('SELECT block_type,content FROM document_blocks WHERE document_id=? ORDER BY position').all(document.id);
+  assert.equal(blocks[0].block_type, 'table');
+  assert.match(blocks[0].content, /진행 중/);
+  assert.equal(blocks[1].content, '문단');
 });
 
 test('large Notion imports register entries, upload assets in pieces and finalize document hierarchy', async () => {

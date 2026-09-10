@@ -252,7 +252,9 @@ const HTML = String.raw`<!doctype html>
             <div><h2>Notion 가져오기</h2><p>Markdown 한 파일 또는 Notion 전체 내보내기 ZIP을 가져옵니다.</p><small>대용량 ZIP도 자동으로 나눠 전송하며 문서 계층, CSV 데이터 표와 첨부파일을 복원합니다. Owner와 Admin만 사용할 수 있습니다.</small><small id="notion-import-progress" role="status" aria-live="polite"></small></div>
             <div class="import-actions">
               <label id="notion-import-button" class="button subtle compact import-button">Markdown 업로드<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
-              <label id="notion-zip-import-button" class="button primary compact import-button"><span id="notion-zip-import-label">Notion ZIP 업로드</span><input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
+              <label id="notion-zip-import-button" class="button subtle compact import-button"><span id="notion-zip-import-label">Notion ZIP 업로드</span><input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
+              <button id="notion-api-import-button" class="button primary compact" type="button">Notion API 전체 가져오기</button>
+              <small id="notion-api-status">JoripSpace Secret의 NOTION_API_TOKEN을 사용합니다.</small>
               <label class="import-repair-toggle"><input id="notion-import-repair" type="checkbox"><span><strong>기존 가져오기 교정</strong><small>같은 ZIP을 다시 선택해 링크·파일·데이터베이스 연결을 점검합니다.</small></span></label>
             </div>
           </div>
@@ -346,7 +348,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260910-joripnote-14" defer></script>
+  <script src="/app.js?v=20260910-joripnote-15" defer></script>
 </body>
 </html>`;
 
@@ -525,7 +527,7 @@ $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault()
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
 async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('notion-api-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
@@ -743,6 +745,8 @@ async function importLargeNotionZip(file){
   const completed=await api('/api/import/notion-sessions/'+session.import_id+'/complete',{method:'POST',body:{}});return completed;
 }
 $('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const data=await importLargeNotionZip(file);await loadTree();notionProgress('가져오기 완료');toast('Notion 가져오기 완료: 문서 '+data.imported+', 실패 '+data.failed)}catch(error){const message=String(error?.message||'가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
+async function importAllFromNotionApi(){const button=$('notion-api-import-button');button.disabled=true;button.classList.add('loading-indicator');let cursor='',discovered=0,imported=0,failed=0;try{const status=await api('/api/import/notion-api/status');if(!status.configured)throw new Error('NOTION_API_TOKEN Secret을 먼저 등록해 주세요.');do{const page=await api('/api/import/notion-api/search',{method:'POST',body:{cursor:cursor||null}});cursor=page.next_cursor||'';discovered+=page.items.length;for(const item of page.items){notionProgress('API 가져오기 '+(imported+failed+1)+' / '+discovered+(cursor?' +':''));try{await api('/api/import/notion-api/'+(item.object==='page'?'pages/':'data-sources/')+encodeURIComponent(item.id),{method:'POST',body:{}});imported+=1}catch(error){failed+=1;console.warn('Notion API item import failed',item.id,error.message)}}}while(cursor);await api('/api/import/notion-api/reconcile',{method:'POST',body:{}});await loadTree();notionProgress('API 가져오기 완료 · '+imported+'개'+(failed?' · 실패 '+failed+'개':''));toast('Notion API 가져오기 완료: '+imported+'개'+(failed?', 실패 '+failed+'개':''))}catch(error){const message=String(error?.message||'Notion API 가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{button.disabled=false;button.classList.remove('loading-indicator')}}
+$('notion-api-import-button').onclick=importAllFromNotionApi;
 document.addEventListener('selectionchange',()=>{if(!canEdit())return;const selection=getSelection();const toolbar=$('inline-toolbar');if(!selection||selection.isCollapsed||!selection.rangeCount){toolbar.hidden=true;return}const origin=selection.anchorNode?.nodeType===1?selection.anchorNode:selection.anchorNode?.parentElement;const el=origin?.closest?.('.block-content[contenteditable="true"]');if(!el||!el.contains(selection.focusNode)){toolbar.hidden=true;return}state.inlineTarget=el;state.inlineRange=selection.getRangeAt(0).cloneRange();const rect=state.inlineRange.getBoundingClientRect();toolbar.style.left=Math.max(8,Math.min(rect.left,innerWidth-toolbar.offsetWidth-8))+'px';toolbar.style.top=Math.max(8,rect.top-42)+'px';toolbar.hidden=false});
 function restoreInlineSelection(target,range){if(!target?.isConnected||!range)return false;target.focus();const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return true}
 function openLinkDialog(target,range){if(!target||!range)return;state.linkTarget=target;state.linkRange=range.cloneRange();alertBox('link-alert','');const origin=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;const currentLink=origin?.closest?.('a');$('link-url').value=currentLink&&target.contains(currentLink)?currentLink.getAttribute('href')||'':'';$('inline-toolbar').hidden=true;$('link-dialog').returnValue='';$('link-dialog').showModal();requestAnimationFrame(()=>{$('link-url').focus();$('link-url').select()})}
@@ -864,6 +868,13 @@ async function route(request, env) {
     if (path === '/api/documents' && request.method === 'GET') return listDocuments(url, env, actor);
     if (path === '/api/documents' && request.method === 'POST') return createDocument(request, env, actor);
     if (path === '/api/import/markdown' && request.method === 'POST') return importMarkdown(request, env, actor);
+    if (path === '/api/import/notion-api/status' && request.method === 'GET') return notionApiStatus(env, actor);
+    if (path === '/api/import/notion-api/search' && request.method === 'POST') return searchNotionApi(request, env, actor);
+    const notionApiPageRoute = path.match(/^\/api\/import\/notion-api\/pages\/([0-9a-f-]{32,36})$/i);
+    if (notionApiPageRoute && request.method === 'POST') return importNotionApiPage(request, env, actor, notionApiPageRoute[1]);
+    const notionApiDataSourceRoute = path.match(/^\/api\/import\/notion-api\/data-sources\/([0-9a-f-]{32,36})$/i);
+    if (notionApiDataSourceRoute && request.method === 'POST') return importNotionApiDataSource(request, env, actor, notionApiDataSourceRoute[1]);
+    if (path === '/api/import/notion-api/reconcile' && request.method === 'POST') return reconcileNotionApiParents(env, actor);
     if (path === '/api/import/notion-zip' && request.method === 'POST') return importNotionZip(request, env, actor);
     if (path === '/api/import/notion-sessions' && request.method === 'POST') return createLargeNotionImport(request, env, actor);
     const notionRegisterRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/(documents|assets)$/);
@@ -1696,6 +1707,214 @@ function notionSourceKey(path) { return String(path || '').split('/').map(part =
 function safeImportName(value) { return String(value || 'file').normalize('NFKC').replace(/[\\/\u0000-\u001f]/g, '_').slice(0, 180); }
 function decodeImportText(bytes) { return new TextDecoder('utf-8', { fatal: false }).decode(bytes).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'); }
 function safeImportError(error) { return String(error instanceof HttpError ? error.message : '가져오기 처리 중 오류가 발생했습니다.').slice(0, 300); }
+
+function normalizedNotionId(value) {
+  const id = String(value || '').replaceAll('-', '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(id)) throw new HttpError(400, 'Notion 항목 ID가 올바르지 않습니다.');
+  return id;
+}
+
+function notionDocumentId(value, database = false) {
+  return (database ? 'doc_notiondb_' : 'doc_notion_') + normalizedNotionId(value);
+}
+
+async function notionApiRequest(env, path, options = {}, attempt = 0) {
+  if (!env.NOTION_API_TOKEN) throw new HttpError(409, 'NOTION_API_TOKEN Secret이 등록되지 않았습니다.');
+  const response = await fetch('https://api.notion.com/v1' + path, {
+    ...options,
+    headers: {
+      authorization: 'Bearer ' + env.NOTION_API_TOKEN,
+      'notion-version': '2026-03-11',
+      'content-type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  if ((response.status === 429 || response.status >= 500) && attempt < 5) {
+    const retryAfter = Math.min(6, Math.max(1, Number(response.headers.get('retry-after')) || attempt + 1));
+    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+    return notionApiRequest(env, path, options, attempt + 1);
+  }
+  let data = {};
+  try { data = await response.json(); } catch {}
+  if (!response.ok) throw new HttpError(response.status === 401 ? 409 : response.status, data.message || 'Notion API 요청에 실패했습니다.');
+  return data;
+}
+
+function notionRichText(value) {
+  return (Array.isArray(value) ? value : []).map(item => String(item?.plain_text ?? item?.text?.content ?? '')).join('');
+}
+
+function notionPageTitle(page) {
+  const title = Object.values(page?.properties || {}).find(property => property?.type === 'title');
+  return notionRichText(title?.title).normalize('NFKC').trim().slice(0, 160) || '제목 없음';
+}
+
+function notionPropertyText(property) {
+  if (!property || typeof property !== 'object') return '';
+  const value = property[property.type];
+  if (property.type === 'title' || property.type === 'rich_text') return notionRichText(value);
+  if (property.type === 'number') return value == null ? '' : String(value);
+  if (property.type === 'select' || property.type === 'status') return String(value?.name || '');
+  if (property.type === 'multi_select') return (value || []).map(item => item.name).join(', ');
+  if (property.type === 'date') return value ? String(value.start || '') + (value.end ? ' → ' + value.end : '') : '';
+  if (property.type === 'people' || property.type === 'created_by' || property.type === 'last_edited_by') return (Array.isArray(value) ? value : [value]).filter(Boolean).map(item => item.name || item.id).join(', ');
+  if (property.type === 'files') return (value || []).map(item => item.name || item.file?.url || item.external?.url || '').filter(Boolean).join(', ');
+  if (property.type === 'checkbox') return value ? 'true' : 'false';
+  if (['url', 'email', 'phone_number', 'created_time', 'last_edited_time'].includes(property.type)) return String(value || '');
+  if (property.type === 'relation') return (value || []).map(item => item.id).join(', ');
+  if (property.type === 'formula') return notionPropertyText({ type: value?.type, [value?.type]: value?.[value?.type] });
+  if (property.type === 'unique_id') return String(value?.prefix || '') + String(value?.number ?? '');
+  if (property.type === 'rollup') {
+    if (value?.type === 'array') return (value.array || []).map(item => notionPropertyText(item)).join(', ');
+    return String(value?.[value?.type] ?? '');
+  }
+  try { return JSON.stringify(value ?? '').slice(0, 500); } catch { return ''; }
+}
+
+function notionPropertyColumn(name, property, index) {
+  const sourceType = String(property?.type || 'rich_text');
+  const type = sourceType === 'number' ? 'number' : sourceType === 'date' ? 'date' : sourceType === 'people' ? 'person' : sourceType === 'url' ? 'url' : ['select', 'status', 'multi_select'].includes(sourceType) ? 'select' : 'text';
+  let options = [];
+  if (sourceType === 'select' || sourceType === 'multi_select') options = property[sourceType]?.options?.map(item => item.name) || [];
+  if (sourceType === 'status') options = property.status?.options?.map(item => item.name) || [];
+  return { id: 'col_' + index, sourceId: property?.id, name: String(name).slice(0, 80), type, options: [...new Set(options)].slice(0, 30) };
+}
+
+async function persistNotionMarkdownFiles(env, markdown, pageId, origin) {
+  if (!env.STORAGE || !markdown) return { markdown, files: [] };
+  const candidates = [...new Set([...markdown.matchAll(/https:\/\/[^\s)"'<>]+/g)].map(match => match[0].replaceAll('&amp;', '&')))];
+  const urls = candidates.filter(value => { try { const host = new URL(value).hostname; return /(?:notion-static\.com|notionusercontent\.com|amazonaws\.com)$/.test(host); } catch { return false; } }).slice(0, 50);
+  const files = [];
+  let rewritten = markdown;
+  for (let index = 0; index < urls.length; index += 1) {
+    const url = urls[index];
+    const response = await fetch(url);
+    if (!response.ok) continue;
+    const size = Number(response.headers.get('content-length')) || 0;
+    if (size > NOTION_DOCUMENT_MAX_BYTES) continue;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > NOTION_DOCUMENT_MAX_BYTES) continue;
+    const fileId = 'fil_notion_' + normalizedNotionId(pageId).slice(0, 20) + '_' + String(index).padStart(2, '0');
+    const storageKey = 'documents/' + notionDocumentId(pageId) + '/' + fileId;
+    const contentType = String(response.headers.get('content-type') || 'application/octet-stream').split(';')[0];
+    let filename = 'notion-file-' + (index + 1);
+    try { filename = decodeURIComponent(new URL(url).pathname.split('/').at(-1) || filename).slice(0, 180); } catch {}
+    await env.STORAGE.put(storageKey, bytes);
+    const localUrl = origin + '/api/files/' + fileId;
+    rewritten = rewritten.split(url).join(localUrl).split(url.replaceAll('&', '&amp;')).join(localUrl);
+    files.push({ id: fileId, storageKey, filename: safeImportName(filename), contentType, size: bytes.length });
+  }
+  return { markdown: rewritten, files };
+}
+
+async function upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title, blocks, files = [], database = false }) {
+  const normalizedSourceId = normalizedNotionId(sourceId);
+  const existing = await env.DB.prepare('SELECT id,version FROM documents WHERE project_id=? AND source_page_id=?').bind(PROJECT_ID, normalizedSourceId).first();
+  const documentId = existing?.id || notionDocumentId(sourceId, database);
+  let parentDocumentId = null;
+  if (parentSourceId) parentDocumentId = (await env.DB.prepare("SELECT id FROM documents WHERE project_id=? AND source_page_id=? AND status='active'").bind(PROJECT_ID, normalizedNotionId(parentSourceId)).first())?.id || null;
+  const version = existing ? Number(existing.version) + 1 : 1;
+  const snapshotId = 'snap_' + randomString(24);
+  const createdAt = nowSeconds();
+  const sourcePath = 'notion-api/' + normalizedSourceId + '/' + (parentSourceId ? normalizedNotionId(parentSourceId) : 'root');
+  const normalizedBlocks = (blocks.length ? blocks : [{ type: 'text', content: '', checked: false }]).slice(0, 500);
+  const statements = existing
+    ? [env.DB.prepare(`UPDATE documents SET parent_document_id=?,title=?,title_search=?,status='active',version=?,active_snapshot_id=?,updated_by=?,updated_at=?,source_path=?,import_transform_version=? WHERE id=? AND project_id=?`).bind(parentDocumentId, title, normalizeSearch(title), version, snapshotId, actor.id, createdAt, sourcePath, 3, documentId, PROJECT_ID)]
+    : [env.DB.prepare(`INSERT INTO documents (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at,source_page_id,source_path,import_transform_version) VALUES (?,?,?,?,?,'active',1,?,?,?,?,?,?,?,?)`).bind(documentId, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt, normalizedSourceId, sourcePath, 3)];
+  normalizedBlocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`).bind('blk_' + randomString(24), documentId, snapshotId, BLOCK_TYPES.has(block.type) ? block.type : 'text', String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
+  if (!existing) statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(documentId, PROJECT_ID, 'workspace', actor.id, createdAt));
+  statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, documentId, version, snapshotId, title, actor.id, createdAt));
+  for (const file of files) statements.push(env.DB.prepare(`INSERT INTO file_uploads (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET document_id=excluded.document_id,storage_key=excluded.storage_key,filename=excluded.filename,content_type=excluded.content_type,size=excluded.size`).bind(file.id, PROJECT_ID, documentId, file.storageKey, file.filename, file.contentType, file.size, actor.id, createdAt));
+  await env.DB.batch(statements);
+  return documentId;
+}
+
+async function notionApiStatus(env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  return json({ configured: !!env.NOTION_API_TOKEN });
+}
+
+async function searchNotionApi(request, env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  const body = await readJson(request);
+  const payload = { page_size: 100, sort: { direction: 'ascending', timestamp: 'last_edited_time' } };
+  if (body.cursor) payload.start_cursor = String(body.cursor).slice(0, 200);
+  const data = await notionApiRequest(env, '/search', { method: 'POST', body: JSON.stringify(payload) });
+  const items = [];
+  for (const item of data.results || []) {
+    if (item.object === 'page' || item.object === 'data_source') items.push({ id: item.id, object: item.object });
+    if (item.object === 'database') for (const source of item.data_sources || []) items.push({ id: source.id, object: 'data_source' });
+  }
+  return json({ items, next_cursor: data.has_more ? data.next_cursor : null });
+}
+
+async function importNotionApiPage(request, env, actor, rawPageId) {
+  requireRole(actor, MANAGE_ROLES);
+  const pageId = normalizedNotionId(rawPageId);
+  const page = await notionApiRequest(env, '/pages/' + pageId);
+  const markdownResult = await notionApiRequest(env, '/pages/' + pageId + '/markdown');
+  let markdown = String(markdownResult.markdown || '');
+  for (const unknownId of (markdownResult.unknown_block_ids || []).slice(0, 100)) {
+    try { const recovered = await notionApiRequest(env, '/pages/' + normalizedNotionId(unknownId) + '/markdown'); markdown += '\n\n' + String(recovered.markdown || ''); } catch {}
+  }
+  const media = [page.icon, page.cover, ...Object.values(page.properties || {}).filter(property => property?.type === 'files').flatMap(property => property.files || [])].filter(Boolean);
+  for (const item of media) { const url = item.file?.url || item.external?.url; if (url) markdown += '\n\n[' + String(item.name || 'Notion 파일').replace(/[\[\]]/g, '') + '](' + url + ')'; }
+  const persisted = await persistNotionMarkdownFiles(env, markdown, pageId, new URL(request.url).origin);
+  const parsed = parseMarkdownBlocks(persisted.markdown);
+  const propertyRows = Object.entries(page.properties || {}).filter(([, property]) => property?.type !== 'title').map(([name, property]) => [name, notionPropertyText(property)]);
+  const blocks = [];
+  for (let offset = 0; offset < propertyRows.length; offset += 25) blocks.push({ type: 'table', content: JSON.stringify([['속성', '값'], ...propertyRows.slice(offset, offset + 25)]), checked: false });
+  blocks.push(...parsed.blocks);
+  const parentSourceId = page.parent?.page_id || page.parent?.data_source_id || page.parent?.database_id || null;
+  const documentId = await upsertNotionApiDocument(env, actor, { sourceId: pageId, parentSourceId, title: notionPageTitle(page), blocks, files: persisted.files });
+  return json({ document_id: documentId, truncated: !!markdownResult.truncated, unknown_blocks: markdownResult.unknown_block_ids || [] });
+}
+
+async function importNotionApiDataSource(request, env, actor, rawSourceId) {
+  requireRole(actor, MANAGE_ROLES);
+  const sourceId = normalizedNotionId(rawSourceId);
+  const source = await notionApiRequest(env, '/data_sources/' + sourceId);
+  const entries = Object.entries(source.properties || {});
+  entries.sort((left, right) => Number(right[1]?.type === 'title') - Number(left[1]?.type === 'title'));
+  const columns = entries.slice(0, 12).map(([name, property], index) => notionPropertyColumn(name, property, index));
+  const pages = [];
+  let cursor = null;
+  do {
+    const payload = { page_size: 100 };
+    if (cursor) payload.start_cursor = cursor;
+    const result = await notionApiRequest(env, '/data_sources/' + sourceId + '/query', { method: 'POST', body: JSON.stringify(payload) });
+    pages.push(...(result.results || []));
+    cursor = result.has_more ? result.next_cursor : null;
+  } while (cursor && pages.length < 5000);
+  const allRows = pages.map(page => ({ id: 'row_' + normalizedNotionId(page.id), cells: Object.fromEntries(columns.map(column => { const property = Object.values(page.properties || {}).find(item => item?.id === column.sourceId); let value = notionPropertyText(property); if (column.type === 'date') value = value.split(' → ')[0].slice(0, 10); return [column.id, value.slice(0, 500)]; })) }));
+  const group = columns.find(column => /상태|status/i.test(column.name)) || columns.find(column => column.type === 'select') || columns[0];
+  const blocks = [], cleanColumns = columns.map(({ sourceId: ignored, ...column }) => column);
+  const makeModel = rows => ({ version: 2, title: notionRichText(source.title) || 'Notion 데이터베이스', columns: cleanColumns, rows, view: { mode: group ? 'board' : 'table', groupBy: group?.id || columns[0]?.id || '', sortBy: '', sortDir: 'asc', filter: { column: '', operator: 'contains', value: '' } } });
+  let chunk = [];
+  for (const row of allRows) {
+    const candidate = [...chunk, row];
+    if (chunk.length && JSON.stringify(makeModel(candidate)).length > 90000) { blocks.push({ type: 'database', content: JSON.stringify(makeModel(chunk)), checked: false }); chunk = [row]; }
+    else chunk = candidate;
+  }
+  if (chunk.length || !allRows.length) blocks.push({ type: 'database', content: JSON.stringify(makeModel(chunk)), checked: false });
+  const parentSourceId = source.parent?.page_id || source.parent?.database_id || null;
+  const documentId = await upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title: notionRichText(source.title) || 'Notion 데이터베이스', blocks, database: true });
+  return json({ document_id: documentId, rows: allRows.length });
+}
+
+async function reconcileNotionApiParents(env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  const result = await env.DB.prepare("SELECT id,source_path FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%'").bind(PROJECT_ID).all();
+  const sourceIds = new Map((result.results || []).map(row => [String(row.source_path).split('/')[1], row.id]));
+  const statements = [];
+  for (const row of result.results || []) {
+    const parentSourceId = String(row.source_path).split('/')[2];
+    const parentId = parentSourceId && parentSourceId !== 'root' ? sourceIds.get(parentSourceId) || null : null;
+    statements.push(env.DB.prepare('UPDATE documents SET parent_document_id=? WHERE id=? AND project_id=?').bind(parentId, row.id, PROJECT_ID));
+  }
+  for (let offset = 0; offset < statements.length; offset += 100) await env.DB.batch(statements.slice(offset, offset + 100));
+  return json({ reconciled: statements.length });
+}
 
 function importContentType(path) {
   const extension = path.split('.').at(-1).toLowerCase();
