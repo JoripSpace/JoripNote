@@ -344,7 +344,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260910-joripnote-8" defer></script>
+  <script src="/app.js?v=20260910-joripnote-9" defer></script>
 </body>
 </html>`;
 
@@ -716,7 +716,7 @@ async function importLargeNotionZip(file){
   const documentIndexes=new Set(documents.map(entry=>entry.index));const entryByIndex=new Map(entries.map(entry=>[entry.index,entry]));const assets=[];for(const entry of entries){if(documentIndexes.has(entry.index)||/(^|\/)index\.html?$/i.test(entry.path))continue;const ownerKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);if(ownerKey)assets.push({index:entry.index,path:entry.path,size:entry.size,owner_document_id:documentMap.get(ownerKey)})}
   notionProgress('첨부파일 목록 등록 중…');const registeredAssets=await registerEntryBatches(session.import_id,'assets',assets);const assetByIndex=new Map(registeredAssets.map(item=>[item.index,item]));const assetMap=new Map(registeredAssets.map(item=>[item.path,item]));
   let nextAsset=0;async function assetWorker(){while(nextAsset<assets.length){const position=nextAsset++;const entry=entryByIndex.get(assets[position].index);const registered=assetByIndex.get(entry.index);if(!registered||registered.status==='uploaded')continue;notionProgress('첨부파일 '+(position+1)+' / '+assets.length);await uploadNotionAsset(file,session.import_id,entry,registered)}}
-  await Promise.all(Array.from({length:Math.min(3,assets.length||1)},()=>assetWorker()));
+  await Promise.all(Array.from({length:Math.min(8,assets.length||1)},()=>assetWorker()));
   documents.sort((left,right)=>left.path.split('/').length-right.path.split('/').length||left.path.localeCompare(right.path,'ko'));const decoder=new TextDecoder('utf-8',{fatal:false});let batch=[],batchBytes=0,processed=0;
   async function flushDocuments(){if(!batch.length)return;await api('/api/import/notion-sessions/'+session.import_id+'/documents-batch',{method:'POST',body:{documents:batch}});processed+=batch.length;notionProgress('문서 '+processed+' / '+documents.length);batch=[];batchBytes=0}
   for(const entry of documents){const bytes=await readZipEntryBytes(file,entry,4*1024*1024);let content=decoder.decode(bytes).replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n');content=rewriteClientNotionLinks(content,entry.path,documentMap,assetMap);const parentKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);const item={index:entry.index,content,parent_document_id:parentKey?documentMap.get(parentKey):null};const size=new TextEncoder().encode(content).length;if(batch.length&&(batch.length>=20||batchBytes+size>3*1024*1024))await flushDocuments();batch.push(item);batchBytes+=size}await flushDocuments();
