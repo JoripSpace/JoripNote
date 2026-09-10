@@ -213,9 +213,11 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /워크스페이스를 여는 중<\/span>/);
   assert.doesNotMatch(html, /boot-mark|워크스페이스를 여는 중…/);
   assert.match(html, /Markdown 업로드/);
+  assert.match(html, /notion-api-import-button[^>]+hidden/);
+  assert.doesNotMatch(html, />Notion API 전체 가져오기<\/button>/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-15/);
+  assert.match(html, /app\.js\?v=20260910-joripnote-16/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -335,7 +337,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /addEventListener\('resize',resizeDocumentTitle\)/);
   assert.match(source, /visibleRoles=allowed\.includes\(member\.role\)/);
   assert.match(source, /notion-import-input/);
-  assert.match(source, /notion-api-import-button/);
+  assert.match(source, /agent_action.*notion-import/);
   assert.match(source, /function importAllFromNotionApi/);
   assert.match(source, /function setSidebarCollapsed/);
   assert.match(source, /qwerty_sidebar_collapsed/);
