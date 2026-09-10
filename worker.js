@@ -667,6 +667,7 @@ function zipU32(view,offset){return view.getUint32(offset,true)}
 function normalizeClientZipPath(value){const path=String(value||'').replace(/\\/g,'/').normalize('NFKC').replace(/^\.\//,'');const parts=path.split('/').filter(part=>part&&part!=='.');if(!parts.length||parts.some(part=>part==='..'))throw new Error('ZIP에 안전하지 않은 파일 경로가 있습니다.');return parts.join('/')}
 function clientPathDirname(path){const index=path.lastIndexOf('/');return index<0?'':path.slice(0,index)}
 function clientWithoutExtension(path){return path.replace(/\.(md|markdown|csv)$/i,'')}
+function clientDocumentFolderKey(path){return clientWithoutExtension(path).replace(/\s+[0-9a-f]{32}$/i,'')}
 function nearestClientDocument(directory,documentMap){let current=directory;while(current){if(documentMap.has(current))return current;current=clientPathDirname(current)}return null}
 async function readZipDirectory(file){
   const tailStart=Math.max(0,file.size-65557);const tail=new Uint8Array(await file.slice(tailStart).arrayBuffer());const tailView=new DataView(tail.buffer,tail.byteOffset,tail.byteLength);let eocd=-1;
@@ -711,14 +712,14 @@ async function importLargeNotionZip(file){
   const fingerprint=await sha256Text([file.name,file.size,file.lastModified,entries.length,directory.total,entries.map(entry=>entry.path+':'+entry.size+':'+entry.compressedSize).join('|')].join('\n'));
   const session=await api('/api/import/notion-sessions',{method:'POST',body:{filename:file.name,size:file.size,entries:entries.length,unpacked_size:directory.total,fingerprint}});if(session.status==='completed'){notionProgress('이미 가져온 ZIP');return {imported:documents.length,failed:0}}
   notionProgress('문서 목록 등록 중…');const registeredDocuments=await registerEntryBatches(session.import_id,'documents',documents.map(entry=>({index:entry.index,path:entry.path,size:entry.size})));
-  const documentMap=new Map();const registeredDocByIndex=new Map();for(const item of registeredDocuments){documentMap.set(clientWithoutExtension(item.path),item.document_id);registeredDocByIndex.set(item.index,item)}
+  const documentMap=new Map();const registeredDocByIndex=new Map();for(const item of registeredDocuments){documentMap.set(clientWithoutExtension(item.path),item.document_id);documentMap.set(clientDocumentFolderKey(item.path),item.document_id);registeredDocByIndex.set(item.index,item)}
   const documentIndexes=new Set(documents.map(entry=>entry.index));const entryByIndex=new Map(entries.map(entry=>[entry.index,entry]));const assets=[];for(const entry of entries){if(documentIndexes.has(entry.index)||/(^|\/)index\.html?$/i.test(entry.path))continue;const ownerKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);if(ownerKey)assets.push({index:entry.index,path:entry.path,size:entry.size,owner_document_id:documentMap.get(ownerKey)})}
   notionProgress('첨부파일 목록 등록 중…');const registeredAssets=await registerEntryBatches(session.import_id,'assets',assets);const assetByIndex=new Map(registeredAssets.map(item=>[item.index,item]));const assetMap=new Map(registeredAssets.map(item=>[item.path,item]));
   let nextAsset=0;async function assetWorker(){while(nextAsset<assets.length){const position=nextAsset++;const entry=entryByIndex.get(assets[position].index);const registered=assetByIndex.get(entry.index);if(!registered||registered.status==='uploaded')continue;notionProgress('첨부파일 '+(position+1)+' / '+assets.length);await uploadNotionAsset(file,session.import_id,entry,registered)}}
   await Promise.all(Array.from({length:Math.min(3,assets.length||1)},()=>assetWorker()));
   documents.sort((left,right)=>left.path.split('/').length-right.path.split('/').length||left.path.localeCompare(right.path,'ko'));const decoder=new TextDecoder('utf-8',{fatal:false});let batch=[],batchBytes=0,processed=0;
   async function flushDocuments(){if(!batch.length)return;await api('/api/import/notion-sessions/'+session.import_id+'/documents-batch',{method:'POST',body:{documents:batch}});processed+=batch.length;notionProgress('문서 '+processed+' / '+documents.length);batch=[];batchBytes=0}
-  for(const entry of documents){const registered=registeredDocByIndex.get(entry.index);if(registered.status==='imported'){processed+=1;continue}const bytes=await readZipEntryBytes(file,entry,4*1024*1024);let content=decoder.decode(bytes).replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n');content=rewriteClientNotionLinks(content,entry.path,documentMap,assetMap);const parentKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);const item={index:entry.index,content,parent_document_id:parentKey?documentMap.get(parentKey):null};const size=new TextEncoder().encode(content).length;if(batch.length&&(batch.length>=20||batchBytes+size>3*1024*1024))await flushDocuments();batch.push(item);batchBytes+=size}await flushDocuments();
+  for(const entry of documents){const bytes=await readZipEntryBytes(file,entry,4*1024*1024);let content=decoder.decode(bytes).replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n');content=rewriteClientNotionLinks(content,entry.path,documentMap,assetMap);const parentKey=nearestClientDocument(clientPathDirname(entry.path),documentMap);const item={index:entry.index,content,parent_document_id:parentKey?documentMap.get(parentKey):null};const size=new TextEncoder().encode(content).length;if(batch.length&&(batch.length>=20||batchBytes+size>3*1024*1024))await flushDocuments();batch.push(item);batchBytes+=size}await flushDocuments();
   const completed=await api('/api/import/notion-sessions/'+session.import_id+'/complete',{method:'POST',body:{}});return completed;
 }
 $('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const data=await importLargeNotionZip(file);await loadTree();notionProgress('가져오기 완료');toast('Notion 가져오기 완료: 문서 '+data.imported+', 실패 '+data.failed)}catch(error){notionProgress('다시 시도');toast(error.message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
@@ -1404,7 +1405,6 @@ async function importLargeNotionDocuments(request, env, actor, importId) {
     if (encoder.encode(content).length > NOTION_DOCUMENT_MAX_BYTES) throw new HttpError(413, '개별 Notion 문서는 20MB 이하로 가져올 수 있습니다.');
     const row = await env.DB.prepare("SELECT * FROM notion_import_staged_entries WHERE import_id=? AND entry_index=? AND entry_type='document'").bind(importId, entryIndex).first();
     if (!row) throw new HttpError(404, 'Notion 문서 항목을 찾을 수 없습니다.');
-    if (row.status === 'imported') { results.push({ index: entryIndex, document_id: row.document_id, skipped: true }); continue; }
     const parentDocumentId = input.parent_document_id ? String(input.parent_document_id) : null;
     if (parentDocumentId) {
       const parent = await env.DB.prepare("SELECT document_id,status FROM notion_import_staged_entries WHERE import_id=? AND entry_type='document' AND document_id=?").bind(importId, parentDocumentId).first();
@@ -1424,15 +1424,19 @@ async function importLargeNotionDocuments(request, env, actor, importId) {
     if (!blocks.length) blocks.push({ type: 'text', content: '', checked: false });
     const snapshotId = 'snap_' + randomString(24);
     const createdAt = nowSeconds();
-    const statements = [env.DB.prepare(`INSERT INTO documents
-      (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(row.document_id, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt)];
+    const existingDocument = row.status === 'imported' ? await env.DB.prepare('SELECT version FROM documents WHERE id=? AND project_id=?').bind(row.document_id, PROJECT_ID).first() : null;
+    const version = existingDocument ? Number(existingDocument.version) + 1 : 1;
+    const statements = existingDocument
+      ? [env.DB.prepare(`UPDATE documents SET parent_document_id=?,title=?,title_search=?,version=?,active_snapshot_id=?,updated_by=?,updated_at=? WHERE id=? AND project_id=?`).bind(parentDocumentId, title, normalizeSearch(title), version, snapshotId, actor.id, createdAt, row.document_id, PROJECT_ID)]
+      : [env.DB.prepare(`INSERT INTO documents
+        (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
+        VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(row.document_id, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt)];
     blocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks
       (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
       .bind('blk_' + randomString(24), row.document_id, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
-    statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(row.document_id, PROJECT_ID, 'workspace', actor.id, createdAt));
-    statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, row.document_id, 1, snapshotId, title, actor.id, createdAt));
-    for (const asset of assets.results || []) statements.push(env.DB.prepare(`INSERT INTO file_uploads
+    if (!existingDocument) statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(row.document_id, PROJECT_ID, 'workspace', actor.id, createdAt));
+    statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, row.document_id, version, snapshotId, title, actor.id, createdAt));
+    for (const asset of assets.results || []) statements.push(env.DB.prepare(`INSERT OR IGNORE INTO file_uploads
       (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
       .bind(asset.file_id, PROJECT_ID, row.document_id, asset.storage_key, safeImportName(asset.source_path.split('/').at(-1)), asset.content_type, asset.source_size, actor.id, createdAt));
     statements.push(env.DB.prepare("UPDATE notion_import_staged_entries SET status='imported',parent_document_id=?,updated_at=? WHERE import_id=? AND entry_index=?").bind(parentDocumentId, createdAt, importId, entryIndex));
@@ -1440,7 +1444,7 @@ async function importLargeNotionDocuments(request, env, actor, importId) {
       VALUES (?,?,?,'imported',NULL,?) ON CONFLICT(import_id,source_path) DO UPDATE SET document_id=excluded.document_id,status='imported',error=NULL,updated_at=excluded.updated_at`)
       .bind(importId, row.source_path, row.document_id, createdAt));
     await env.DB.batch(statements);
-    results.push({ index: entryIndex, document_id: row.document_id, skipped: false });
+    results.push({ index: entryIndex, document_id: row.document_id, updated: !!existingDocument });
   }
   return json({ documents: results });
 }

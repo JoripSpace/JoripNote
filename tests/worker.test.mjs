@@ -580,6 +580,15 @@ test('large Notion imports register entries, upload assets in pieces and finaliz
   assert.equal(completed.body.imported, 2);
   assert.equal(env.DB.database.prepare('SELECT parent_document_id FROM documents WHERE id=?').get(child.document_id).parent_document_id, parent.document_id);
   assert.equal(env.DB.database.prepare('SELECT COUNT(*) count FROM file_uploads WHERE document_id=?').get(parent.document_id).count, 1);
+  const resumed = await call(env, `/api/import/notion-sessions/${importId}/documents-batch`, {
+    method: 'POST', headers: auth(cookie), body: { documents: [
+      { index: 0, content: '# Parent\nUpdated body', parent_document_id: null },
+      { index: 1, content: '# Child\nUpdated body', parent_document_id: parent.document_id }
+    ] }
+  });
+  assert.equal(resumed.response.status, 200, JSON.stringify(resumed.body));
+  assert.equal(env.DB.database.prepare('SELECT version FROM documents WHERE id=?').get(child.document_id).version, 2);
+  assert.equal(env.DB.database.prepare('SELECT COUNT(*) count FROM file_uploads WHERE document_id=?').get(parent.document_id).count, 1);
 });
 
 test('authentication requires cf-notion-st membership and blocks public signup after bootstrap', async () => {
