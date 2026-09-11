@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-09-11T00:00:00+09:00",
+  "project": "cf-notion-st",
+  "deployment": {
+    "id": "dep_mtwcnk5pts5bq94j",
+    "version": 24,
+    "url": "https://cf-notion-st.joripspace.run",
+    "status": "success"
+  },
+  "method": {
+    "local_snapshot": "read-only production DB query",
+    "remote_views_endpoint": "/api/import/notion-api/audit?deep=0|1",
+    "remote_audit_status": "requires_authenticated_admin_session",
+    "unauthenticated_probe": 401
+  },
+  "local_snapshot": {
+    "active_documents": 1787,
+    "active_blocks": 64006,
+    "database_blocks": 73,
+    "database_models": {
+      "version_2": 73,
+      "version_3": 0
+    },
+    "imported_rows_observed": 2219,
+    "legacy_forced_board_observation": "72/73",
+    "calendar_candidates_minimum": 12
+  },
+  "findings": [
+    {
+      "scope": "existing database snapshots",
+      "status": "WARN",
+      "reason": "All 73 stored models are version 2; an authenticated incremental re-import is required to persist real Notion views."
+    },
+    {
+      "scope": "Views API integration",
+      "status": "PASS",
+      "reason": "Paginated list/detail calls, normalized view types, order, filters, sorts, groups and configuration are implemented and covered by tests."
+    },
+    {
+      "scope": "calendar renderer",
+      "status": "PASS",
+      "reason": "Month navigation, date ranges, no-date items, stable ordering and source-page links are implemented."
+    },
+    {
+      "scope": "semantic properties",
+      "status": "PASS",
+      "reason": "Version 3 validation and rendering preserve supported Notion property types without the former 12-column truncation."
+    },
+    {
+      "scope": "people permissions",
+      "status": "WARN",
+      "reason": "Names require Notion user visibility; missing permission is shown explicitly and is not changed automatically."
+    },
+    {
+      "scope": "remote data-source counts and view fidelity",
+      "status": "WARN",
+      "reason": "Awaiting one authenticated admin audit run; no remote token or credential was read or logged."
+    }
+  ],
+  "next_action": {
+    "type": "authenticated_incremental_import",
+    "url": "https://cf-notion-st.joripspace.run/?agent_action=notion-import",
+    "preserves_existing_documents": true,
+    "deletes_existing_documents": false
+  }
+}
