@@ -1836,7 +1836,13 @@ async function listNotionApiViews(env, dataSourceId) {
     let detail = ref;
     if (ref?.id) {
       try { detail = await notionApiRequest(env, '/views/' + normalizedNotionId(ref.id)); } catch (error) {
-        if (!(error instanceof HttpError) || ![403, 404].includes(error.status)) throw error;
+        // Notion can list newer/unsupported view kinds (for example `feed`) but
+        // reject their detail endpoint. Keep the list response so importing the
+        // data source and its rows still succeeds; the original type is retained
+        // for the fidelity audit and is rendered as a safe table fallback.
+        const unsupported = error instanceof HttpError && error.status === 400 && /unsupported view type/i.test(String(error.message || ''));
+        if (!(error instanceof HttpError) || (![403, 404].includes(error.status) && !unsupported)) throw error;
+        detail = ref;
       }
     }
     views.push(normalizeNotionView({ ...ref, ...detail }, index, dataSourceId));

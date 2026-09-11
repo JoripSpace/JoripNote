@@ -685,6 +685,41 @@ test('Notion API data source import preserves paginated views, calendar ranges a
   }
 });
 
+test('Notion API importer keeps data sources when an unsupported view detail returns 400', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  env.NOTION_API_TOKEN = 'ntn_test_secret';
+  const sourceId = 'abababab-abab-abab-abab-abababababab';
+  const rowId = 'cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd';
+  const viewId = 'efefefef-efef-efef-efef-efefefefefef';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', ''))) return Response.json({
+      object: 'data_source', id: sourceId, title: [{ plain_text: '피드 데이터' }], parent: { type: 'workspace', workspace: true },
+      properties: { Name: { id: 'title', type: 'title', title: {} } }
+    });
+    if (url.includes('/v1/views?')) return Response.json({ results: [{ object: 'view', id: viewId, name: '피드', type: 'feed' }], has_more: false, next_cursor: null });
+    if (url.endsWith('/v1/views/' + viewId.replaceAll('-', ''))) return Response.json({ object: 'error', message: 'Unsupported view type: feed' }, { status: 400 });
+    if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', '') + '/query')) return Response.json({
+      results: [{ object: 'page', id: rowId, properties: { Name: { id: 'title', type: 'title', title: [{ plain_text: '피드 항목' }] } } }], has_more: false, next_cursor: null
+    });
+    return new Response('not found', { status: 404 });
+  };
+  try {
+    const imported = await call(env, '/api/import/notion-api/data-sources/' + sourceId, { method: 'POST', headers: auth(cookie), body: {} });
+    assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
+    const block = env.DB.database.prepare("SELECT content FROM document_blocks WHERE block_type='database'").get();
+    const model = JSON.parse(block.content);
+    assert.equal(model.version, 3);
+    assert.equal(model.views[0].type, 'feed');
+    assert.equal(model.rows[0].source_id, rowId.replaceAll('-', ''));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('large Notion imports register entries, upload assets in pieces and finalize document hierarchy', async () => {
   const env = envWithDb();
   await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
