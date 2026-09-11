@@ -203,7 +203,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260910-joripnote-9/);
+  assert.match(html, /app\.css\?v=20260911-joripnote-10/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -217,7 +217,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, />Notion API 전체 가져오기<\/button>/);
   assert.match(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
-  assert.match(html, /app\.js\?v=20260910-joripnote-18/);
+  assert.match(html, /app\.js\?v=20260911-joripnote-19/);
   assert.match(html, /id="workspace-access-form"/);
   assert.match(html, /id="ip-access-form"/);
   const appScript = await (await worker.fetch(request('/app.js'), {})).text();
@@ -624,6 +624,62 @@ test('Notion API data source import returns row page ids for complete page-body 
     assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
     assert.equal(imported.body.rows, 1);
     assert.deepEqual(imported.body.page_ids, [rowId]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Notion API data source import preserves paginated views, calendar ranges and property semantics', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  const cookie = await login(env, 'owner');
+  env.NOTION_API_TOKEN = 'ntn_test_secret';
+  const sourceId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  const rowId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  const viewCalendar = '11111111-1111-1111-1111-111111111111';
+  const viewBoard = '22222222-2222-2222-2222-222222222222';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', ''))) return Response.json({
+      object: 'data_source', id: sourceId, title: [{ plain_text: '작업 목록' }], parent: { type: 'workspace', workspace: true },
+      properties: {
+        Name: { id: 'title', type: 'title', title: {} },
+        Date: { id: 'date', type: 'date', date: {} },
+        Status: { id: 'status', type: 'status', status: { options: [{ name: '진행 중' }] } },
+        Owner: { id: 'person', type: 'people', people: {} }
+      }
+    });
+    if (url.includes('/v1/views?')) return Response.json(url.includes('start_cursor=next')
+      ? { results: [{ object: 'view', id: viewBoard }], has_more: false, next_cursor: null }
+      : { results: [{ object: 'view', id: viewCalendar }], has_more: true, next_cursor: 'next' });
+    if (url.endsWith('/v1/views/' + viewCalendar.replaceAll('-', ''))) return Response.json({ id: viewCalendar, name: '캘린더', type: 'calendar', is_default: true, configuration: { date_property_id: 'date' } });
+    if (url.endsWith('/v1/views/' + viewBoard.replaceAll('-', ''))) return Response.json({ id: viewBoard, name: '보드', type: 'board', configuration: { group_by: { property_id: 'status' } } });
+    if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', '') + '/query')) return Response.json({
+      results: [{ object: 'page', id: rowId, properties: {
+        Name: { id: 'title', type: 'title', title: [{ plain_text: '김태윤 주간 목표' }] },
+        Date: { id: 'date', type: 'date', date: { start: '2026-09-01', end: '2026-09-07', time_zone: 'Asia/Seoul' } },
+        Status: { id: 'status', type: 'status', status: { name: '진행 중' } },
+        Owner: { id: 'person', type: 'people', people: [{ id: 'ffffffff-ffff-ffff-ffff-ffffffffffff' }] }
+      } }], has_more: false, next_cursor: null
+    });
+    return new Response('not found', { status: 404 });
+  };
+  try {
+    const imported = await call(env, '/api/import/notion-api/data-sources/' + sourceId, { method: 'POST', headers: auth(cookie), body: {} });
+    assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
+    const block = env.DB.database.prepare("SELECT content FROM document_blocks WHERE block_type='database'").get();
+    const model = JSON.parse(block.content);
+    assert.equal(model.version, 3);
+    assert.equal(model.views.length, 2);
+    assert.equal(model.views[0].type, 'calendar');
+    assert.equal(model.view.mode, 'calendar');
+    assert.equal(model.view.datePropertyId, 'col_1');
+    assert.equal(model.rows[0].cells.col_1, '2026-09-01 → 2026-09-07');
+    assert.equal(model.columns.find(column => column.name === 'Owner').type, 'people');
+    const paginated = await call(env, '/api/import/notion-api/views?data_source_id=' + sourceId, { headers: { cookie } });
+    assert.equal(paginated.response.status, 200, JSON.stringify(paginated.body));
+    assert.equal(paginated.body.views.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
