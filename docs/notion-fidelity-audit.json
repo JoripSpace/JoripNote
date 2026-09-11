@@ -1,50 +1,90 @@
 {
-  "generated_at": "2026-09-11T00:00:00+09:00",
+  "generated_at": "2026-09-11T03:23:49+09:00",
   "project": "cf-notion-st",
   "deployment": {
-    "id": "dep_mtwcnk5pts5bq94j",
-    "version": 24,
+    "id": "dep_mtwdzmcvtrab2y2y",
     "url": "https://cf-notion-st.joripspace.run",
-    "status": "success"
+    "status": "success",
+    "label": "DB 청크 병합·활성 스냅샷 감사 보강"
   },
   "method": {
-    "local_snapshot": "read-only production DB query",
-    "remote_views_endpoint": "/api/import/notion-api/audit?deep=0|1",
-    "remote_audit_status": "requires_authenticated_admin_session",
-    "unauthenticated_probe": 401
+    "local_snapshot": "read-only production DB queries against active_snapshot_id",
+    "remote_audit_endpoint": "/api/import/notion-api/audit?deep=1",
+    "remote_audit_auth": "authenticated administrator session",
+    "credentials_logged": false
   },
-  "local_snapshot": {
-    "active_documents": 1787,
-    "active_blocks": 64006,
-    "database_blocks": 73,
-    "database_models": {
-      "version_2": 73,
-      "version_3": 0
+  "snapshot": {
+    "active_documents": 2079,
+    "active_data_sources": 37,
+    "active_database_blocks": 39,
+    "active_database_models": {
+      "version_3": 39,
+      "version_2": 0
     },
-    "imported_rows_observed": 2219,
-    "legacy_forced_board_observation": "72/73",
-    "calendar_candidates_minimum": 12
+    "active_imported_rows": 1070,
+    "notable_sources": [
+      {
+        "data_source_id": "5d8aeb7a0c754fb6b83b2ebec617607a",
+        "title": "작업 목록",
+        "rows": 513,
+        "chunks": 2,
+        "views": [
+          "timeline",
+          "프로젝트",
+          "캘린더",
+          "board"
+        ]
+      },
+      {
+        "data_source_id": "061026bd2fef4fb6acf23666a4b990b9",
+        "title": "팀 작업",
+        "rows": 404,
+        "chunks": 2,
+        "views": [
+          "내 작업",
+          "table",
+          "보드 · 상태별",
+          "모든 작업",
+          "보드 · 담당자별",
+          "테이블 보기"
+        ]
+      }
+    ]
+  },
+  "remote_audit": {
+    "deep": true,
+    "data_sources": 37,
+    "remote_rows": 1070,
+    "imported_rows": 1070,
+    "pass": 37,
+    "warn": 0,
+    "fail": 0,
+    "comparison": "행 수·속성 수·뷰 ID/이름/순서/종류가 저장된 version 3 모델과 일치"
+  },
+  "import_run": {
+    "mode": "incremental",
+    "new_or_updated_items": 149,
+    "existing_items_skipped": 1603,
+    "failed_items": 0,
+    "deletes": 0,
+    "dedupe_key": "original Notion ID",
+    "change_key": "last_edited_time"
   },
   "findings": [
     {
-      "scope": "existing database snapshots",
-      "status": "WARN",
-      "reason": "All 73 stored models are version 2; an authenticated incremental re-import is required to persist real Notion views."
+      "scope": "views and database models",
+      "status": "PASS",
+      "reason": "37 data sources and 1070 remote rows match active version 3 imports; original view order and types are preserved."
     },
     {
-      "scope": "Views API integration",
+      "scope": "calendar fidelity",
       "status": "PASS",
-      "reason": "Paginated list/detail calls, normalized view types, order, filters, sorts, groups and configuration are implemented and covered by tests."
+      "reason": "작업 목록 renders 2026년 9월, range events, no-date items, and source-page links."
     },
     {
-      "scope": "calendar renderer",
+      "scope": "chunked database display",
       "status": "PASS",
-      "reason": "Month navigation, date ranges, no-date items, stable ordering and source-page links are implemented."
-    },
-    {
-      "scope": "semantic properties",
-      "status": "PASS",
-      "reason": "Version 3 validation and rendering preserve supported Notion property types without the former 12-column truncation."
+      "reason": "513-row 작업 목록 is displayed as one database while retaining two storage chunks."
     },
     {
       "scope": "people permissions",
@@ -52,15 +92,15 @@
       "reason": "Names require Notion user visibility; missing permission is shown explicitly and is not changed automatically."
     },
     {
-      "scope": "remote data-source counts and view fidelity",
+      "scope": "advanced Notion behaviors",
       "status": "WARN",
-      "reason": "Awaiting one authenticated admin audit run; no remote token or credential was read or logged."
+      "reason": "Timeline zoom/drag, rollup recalculation, and permanent external attachment hosting depend on API and storage limits."
     }
   ],
-  "next_action": {
-    "type": "authenticated_incremental_import",
-    "url": "https://cf-notion-st.joripspace.run/?agent_action=notion-import",
-    "preserves_existing_documents": true,
-    "deletes_existing_documents": false
+  "preservation": {
+    "existing_documents_deleted": false,
+    "administrator_deleted": false,
+    "source_id_upsert": true,
+    "active_snapshot_only_audit": true
   }
 }
