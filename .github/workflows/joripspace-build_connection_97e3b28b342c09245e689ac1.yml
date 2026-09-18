@@ -26,9 +26,9 @@ jobs:
           npm run build
           rm -rf .joripspace-artifact
           mkdir -p .joripspace-artifact
-          # worker.js is the self-contained JoripNote runtime entrypoint.
-          # Copy it explicitly so personal/dev files can never enter the deploy archive.
-          cp worker.js .joripspace-artifact/worker.js
+          # Bundle the editor engine into the standalone Worker artifact.
+          # Copy only the verified build output so personal/dev files never enter the archive.
+          cp dist/worker.js .joripspace-artifact/worker.js
           echo "Deploy artifact files:"
           find .joripspace-artifact -type f -print
       - name: Deploy to JoripSpace
