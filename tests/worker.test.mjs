@@ -212,7 +212,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /id="personal-tree"[^>]+aria-label="내 문서"/);
   assert.match(html, />새 페이지 추가</);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260918-joripnote-55/);
+  assert.match(html, /app\.css\?v=20260918-joripnote-56/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -316,7 +316,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appCss, /\.settings-save-bar\{grid-column:1\/-1;display:flex/);
   assert.match(appCss, /\.settings-save-bar\{[^}]*padding:18px/);
   assert.match(appCss, /\.settings-save-bar\{[^}]*border-top:1px solid var\(--toss-line\);background:transparent/);
-  assert.doesNotMatch(appCss, /\.settings-save-bar\{[^}]*box-shadow/);
+  assert.match(appCss, /\.settings-page \.settings-save-bar\{[^}]*box-shadow:var\(--apple-shadow-md\)/);
   assert.match(appCss, /\.document-title\{font-size:40px;font-weight:800/);
   assert.match(appCss, /\.editor-view:not\(\.database-page\) \.document-title\{font-size:38px/);
   assert.match(appCss, /\.notion-property-table\{margin:4px 0 14px;padding:8px 14px/);
