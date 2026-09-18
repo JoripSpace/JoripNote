@@ -916,6 +916,7 @@ dialog::backdrop{background:rgba(0,0,0,.24);-webkit-backdrop-filter:blur(3px);ba
 /* Loading feedback uses neutral Apple fills without placeholder icons. */
 .skeleton{background:linear-gradient(90deg,#ededf0 20%,#f7f7f9 45%,#ededf0 70%);background-size:220% 100%}
 .boot-shell{background:#fff;color:#86868b}.boot-spinner{border-color:#e5e5ea;border-top-color:#8e8e93}
+.button.loading-indicator::after{top:50%;left:50%;border-top-color:#0071e3;transform:translate(-50%,-50%)}
 
 @media(max-width:1000px) and (min-width:761px){
   .sidebar{width:244px}.main-pane{margin-left:244px}.page-view{width:min(100% - 44px,1040px)}.document-editor{width:min(100% - 48px,860px)}

@@ -393,6 +393,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(styles, /@keyframes skeleton-sweep/);
   assert.match(styles, /\.document-title\.skeleton-title/);
   assert.match(styles, /\.document-title\.skeleton-title::placeholder\{color:transparent!important\}/);
+  assert.match(styles, /\.button\.loading-indicator::after\{top:50%;left:50%;border-top-color:#0071e3;transform:translate\(-50%,-50%\)\}/);
   assert.match(styles, /\.document-title:focus-visible,\.block-content\[contenteditable="true"\]:focus-visible\{outline:none;box-shadow:none\}/);
   assert.match(styles, /\.db-board\{display:flex/);
   assert.match(styles, /\.db-property-head\{display:grid/);
