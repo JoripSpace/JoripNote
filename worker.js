@@ -1985,6 +1985,10 @@ async function resetDemoData(env) {
   const demoUser = existingDemoUser ? null : await passwordUser(DEMO_USERNAME, randomString(48));
   if (demoUser) demoUser.id = DEMO_USER_ID;
   const now = nowSeconds();
+  const tableRows = await db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all();
+  const optionalCleanup = ['notion_import_staged_entries', 'notion_import_items', 'notion_imports', 'notion_people']
+    .filter((name) => (tableRows.results || []).some((row) => row.name === name))
+    .map((name) => db.prepare(`DELETE FROM ${name}`));
   const statements = [
     db.prepare('DELETE FROM document_grants'),
     db.prepare('DELETE FROM document_favorites'),
@@ -1996,10 +2000,7 @@ async function resetDemoData(env) {
     db.prepare('DELETE FROM document_comments'),
     db.prepare('DELETE FROM notifications'),
     db.prepare('DELETE FROM activity_events'),
-    db.prepare('DELETE FROM notion_import_staged_entries'),
-    db.prepare('DELETE FROM notion_import_items'),
-    db.prepare('DELETE FROM notion_imports'),
-    db.prepare('DELETE FROM notion_people'),
+    ...optionalCleanup,
     db.prepare('DELETE FROM documents'),
     db.prepare('DELETE FROM project_invitations'),
     db.prepare('DELETE FROM project_members'),
