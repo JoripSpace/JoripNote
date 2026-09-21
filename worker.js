@@ -3905,6 +3905,7 @@ async function resetNotionMigration(request, env, actor) {
   if (actor.role !== 'owner') throw new HttpError(403, 'Owner만 마이그레이션 데이터를 초기화할 수 있습니다.');
   const body = await readJson(request);
   if (body.confirm !== PROJECT_ID) throw new HttpError(400, '프로젝트 확인 문자열이 일치하지 않습니다.');
+  const documentsOnly = body.scope === 'documents';
   const files = await env.DB.prepare('SELECT id,storage_key FROM file_uploads WHERE project_id=? ORDER BY id LIMIT 50').bind(PROJECT_ID).all();
   if (env.STORAGE && typeof env.STORAGE.delete === 'function') await Promise.all((files.results || []).map(file => env.STORAGE.delete(file.storage_key)));
   if ((files.results || []).length) {
@@ -3913,6 +3914,13 @@ async function resetNotionMigration(request, env, actor) {
     return json({ done: false, phase: 'files', deleted_files: files.results.length, remaining_files: Number(remaining?.count || 0) });
   }
   const before = await env.DB.prepare('SELECT COUNT(*) AS count FROM documents WHERE project_id=?').bind(PROJECT_ID).first();
+  if (documentsOnly) {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM notion_imports WHERE project_id=?').bind(PROJECT_ID),
+      env.DB.prepare('DELETE FROM documents WHERE project_id=?').bind(PROJECT_ID)
+    ]);
+    return json({ done: true, phase: 'complete', scope: 'documents', deleted_documents: Number(before?.count || 0), preserved_workspace: true });
+  }
   await env.DB.batch([
     env.DB.prepare('DELETE FROM project_invitations WHERE project_id=?').bind(PROJECT_ID),
     env.DB.prepare('DELETE FROM notion_people WHERE project_id=?').bind(PROJECT_ID),

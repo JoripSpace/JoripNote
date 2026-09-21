@@ -1117,6 +1117,19 @@ test('owner migration reset removes documents, files and non-admin accounts in b
   assert.deepEqual(env.DB.database.prepare("SELECT username FROM users ORDER BY username").all().map(row => row.username), ['owner']);
 });
 
+test('document-only Notion reset preserves workspace members', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  await addUser(env, { id: 'usr_member0001', username: 'member', role: 'member' });
+  const cookie = await login(env, 'owner');
+  await call(env, '/api/documents', { method: 'POST', headers: auth(cookie), body: { title: '가져온 문서' } });
+  const reset = await call(env, '/api/admin/reset-notion-migration', { method: 'POST', headers: auth(cookie), body: { confirm: 'qwerty', scope: 'documents' } });
+  assert.equal(reset.body.done, true);
+  assert.equal(reset.body.scope, 'documents');
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 0);
+  assert.deepEqual(env.DB.database.prepare("SELECT username FROM users ORDER BY username").all().map(row => row.username), ['member', 'owner']);
+});
+
 test('Notion API data source import preserves paginated views, calendar ranges and property semantics', async () => {
   const env = envWithDb();
   await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
