@@ -765,6 +765,7 @@ button{-webkit-tap-highlight-color:transparent}
 .document-editor{width:min(100% - 64px,900px);padding:84px 0 180px}
 .document-title{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Pretendard,"Noto Sans KR",system-ui,sans-serif;font-size:42px;font-weight:720;line-height:1.14;letter-spacing:-.045em;color:#1d1d1f}
 .document-title::placeholder{color:#c7c7cc}.document-page-icon{color:#8e8e93}
+.document-title-line{display:block}.document-title-line .document-page-icon{display:none!important}
 .block-editor{margin-top:36px}.block-content{color:#2c2c2e;line-height:1.68;letter-spacing:-.012em}
 .block-content:empty::before{color:#aeaeb2}
 .editor-view:not(.database-page) .block-content[data-type=heading1]{font-size:30px;font-weight:720;letter-spacing:-.035em}

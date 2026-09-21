@@ -319,6 +319,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appCss, /\.settings-page \.settings-save-bar\{[^}]*box-shadow:var\(--apple-shadow-md\)/);
   assert.match(appCss, /\.document-title\{font-size:40px;font-weight:800/);
   assert.match(appCss, /\.editor-view:not\(\.database-page\) \.document-title\{font-size:38px/);
+  assert.match(appCss, /\.document-title-line\{display:block\}\.document-title-line \.document-page-icon\{display:none!important\}/);
   assert.match(appCss, /\.notion-property-table\{margin:4px 0 14px;padding:8px 14px/);
   assert.match(appCss, /\.notion-page-link \.media-preview a\{display:flex;width:max-content;max-width:100%;min-height:30px/);
   assert.match(appCss, /\.notion-page-link \.media-preview\{display:block;min-height:30px;border:0;background:transparent;border-radius:0\}/);
