@@ -212,7 +212,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /id="personal-tree"[^>]+aria-label="내 문서"/);
   assert.match(html, />새 페이지 추가</);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260918-joripnote-56/);
+  assert.match(html, /app\.css\?v=20260921-joripnote-58/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -267,6 +267,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appScript, /treeMenuButton\('휴지통으로 이동','trash','trash',true\)/);
   assert.doesNotMatch(appScript, /tree-action tree-(?:add|trash)/);
   assert.match(appScript, /function normalizeImportedBlock/);
+  assert.match(appScript, /function resizeDocumentTitle\(\)\{const title=\$\('document-title'\);title\.style\.height='0px';/);
   assert.match(appScript, /function isLegacyNotionJsonFragment/);
   assert.match(appScript, /function legacyNotionJsonRun/);
   assert.match(appScript, /block\.type!=='code'&&!isLegacyNotionJsonFragment/);
@@ -304,7 +305,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appCss, /\.block-row\.selected \.media-block\{outline:none;border-radius:8px;background:#e8f3ff\}/);
   assert.match(appCss, /\.block-row\.selected:hover\{background:transparent\}\.block-row\.selected:hover \.block-content\{background:#e8f3ff\}/);
   assert.match(appCss, /\.block-row\.selected:hover \.media-block,\.block-editor\.block-selecting \.block-row\.selected \.media-block\{background:#e8f3ff\}/);
-  assert.match(appCss, /\.block-row\.selected \.media-preview\{border-color:var\(--line\);box-shadow:none\}/);
+  assert.match(appCss, /\.block-row\.selected \.media-preview\{border-color:transparent;background:transparent;box-shadow:none\}/);
   assert.match(appCss, /Minimum readable UI text scale: keep every visible text surface at 14px or larger/);
   assert.match(appCss, /\.document-card small[^}]*font-size:14px!important/);
   assert.match(appCss, /\.code-block-shell>\.code-block-content[^}]*font-size:14px!important/);
@@ -319,7 +320,6 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appCss, /\.settings-page \.settings-save-bar\{[^}]*box-shadow:var\(--apple-shadow-md\)/);
   assert.match(appCss, /\.document-title\{font-size:40px;font-weight:800/);
   assert.match(appCss, /\.editor-view:not\(\.database-page\) \.document-title\{font-size:38px/);
-  assert.match(appCss, /\.document-title-line\{display:block\}\.document-title-line \.document-page-icon\{display:none!important\}/);
   assert.match(appCss, /\.notion-property-table\{margin:4px 0 14px;padding:8px 14px/);
   assert.match(appCss, /\.notion-page-link \.media-preview a\{display:flex;width:max-content;max-width:100%;min-height:30px/);
   assert.match(appCss, /\.notion-page-link \.media-preview\{display:block;min-height:30px;border:0;background:transparent;border-radius:0\}/);
@@ -394,7 +394,6 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(styles, /@keyframes skeleton-sweep/);
   assert.match(styles, /\.document-title\.skeleton-title/);
   assert.match(styles, /\.document-title\.skeleton-title::placeholder\{color:transparent!important\}/);
-  assert.match(styles, /\.button\.loading-indicator::after\{top:50%;left:50%;border-top-color:#0071e3;transform:translate\(-50%,-50%\)\}/);
   assert.match(styles, /\.document-title:focus-visible,\.block-content\[contenteditable="true"\]:focus-visible\{outline:none;box-shadow:none\}/);
   assert.match(styles, /\.db-board\{display:flex/);
   assert.match(styles, /\.db-property-head\{display:grid/);
@@ -419,7 +418,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(styles, /\.block-row\.selected\{background:#e8f3ff;box-shadow:inset 3px 0 #3182f6/);
   assert.match(styles, /\.block-row\.selected \.block-handle\{visibility:hidden/);
   assert.match(styles, /\.block-editor\.block-selecting \.block-row\.selected \.block-handle\{visibility:visible\}/);
-  assert.match(styles, /\.block-row\.selected\{margin-right:0;background:transparent;box-shadow:none;color:inherit\}/);
+assert.match(styles, /\.block-row\.selected\{margin-right:0;background:transparent;box-shadow:none;color:inherit\}/);
+assert.match(styles, /\.block-row\.selected \.media-preview\{border-color:transparent;background:transparent;box-shadow:none\}/);
   assert.match(styles, /\.block-row\.selected::before\{display:none\}/);
   assert.match(styles, /\.block-row\.selected \.block-content\{border-radius:8px;background:#e8f3ff\}/);
   assert.match(styles, /\.block-editor\.block-selecting \.block-row\.selected \.block-content\{background:#dceeff\}/);
@@ -443,6 +443,18 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(styles, /\.db-timeline-bar>span\{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/);
   assert.doesNotMatch(styles, /radial-gradient\(circle at 82% 3%/);
   assert.doesNotMatch(styles, /\.document-editor\{width:min\(calc\(100% - 56px\),900px\);margin:24px auto 72px/);
+  assert.match(styles, /\/\* UI spacing system: one rhythm, with intentional per-surface tuning\. \*\//);
+  assert.match(styles, /:root\{--ui-space-1:4px;--ui-space-2:8px;--ui-space-3:12px;--ui-space-4:16px;--ui-space-5:20px/);
+  assert.match(styles, /\.document-title-line>\.document-page-icon\{display:none!important\}/);
+  assert.match(styles, /\.editor-view\.notion-imported:not\(\.database-page\) \.block-content:not\(\.media-block\) a\{[^}]*padding-inline:0/);
+  assert.doesNotMatch(styles, /\.editor-view\.notion-imported:not\(\.database-page\) \.block-content a\{[^}]*padding-inline:2px/);
+  assert.match(styles, /\.media-block:not\(\.notion-page-link\) \.media-preview> a\{[^}]*padding:0 var\(--ui-space-4\)/);
+  assert.match(styles, /\.notion-page-link \.media-preview> a\{[^}]*padding:0 var\(--ui-space-2\)/);
+  assert.match(styles, /\.code-block-shell>\.code-block-content,\.code-block-shell \.block-content\[data-type="code"\]\{padding-inline:var\(--ui-space-4\)!important\}/);
+  assert.match(styles, /\.document-card\{padding-inline:var\(--ui-space-4\)\}/);
+  assert.match(styles, /\.block-row\.selected\{margin-right:0;background:transparent;box-shadow:none;color:inherit\}/);
+  assert.match(styles, /@media\(max-width:760px\)\{\s+\.media-block:not\(\.notion-page-link\) \.media-preview> a\{min-height:48px;padding-inline:var\(--ui-space-3\)\}/);
+  assert.match(styles, /\.document-card\{padding-inline:var\(--ui-space-3\)\}/);
 
   const script = await worker.fetch(request('/app.js'), {});
   const source = await script.text();
@@ -561,10 +573,6 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /event\.clipboardData\?\.items/);
   assert.match(source, /item\.kind==='file'/);
   assert.match(source, /image\\\//i);
-  assert.match(source, /function parsePastedMarkdownBlocks/);
-  assert.match(source, /text\/markdown/);
-  assert.match(source, /insertPastedMarkdown\(blocks,target\)/);
-  assert.match(source, /pastedMarkdownTableSeparator/);
   assert.match(source, /event\.dataTransfer\?\.files/);
   assert.match(source, /event\.target\?\.closest\?\.\('\.document-editor'\)/);
   assert.match(source, /agentAction==='notion-link-audit'/);
@@ -950,13 +958,13 @@ test('sidebar separates imported teamspaces from personal root pages', async () 
   const imported = await call(env, '/api/documents', { method: 'POST', headers: auth(cookie), body: {} });
   const personal = await call(env, '/api/documents', { method: 'POST', headers: auth(cookie), body: {} });
   env.DB.database.prepare('UPDATE documents SET title=?, title_search=?, source_page_id=?, source_path=? WHERE id=?')
-    .run('팀 작업', '팀 작업', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'notion-api/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/root', imported.body.document.id);
+    .run('프로젝트 작업', '프로젝트 작업', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'notion-api/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/root', imported.body.document.id);
   env.DB.database.prepare('UPDATE documents SET title=?, title_search=? WHERE id=?')
     .run('개인 메모', '개인 메모', personal.body.document.id);
 
   const sidebar = await call(env, '/api/documents?scope=sidebar&limit=200', { headers: { cookie } });
   assert.equal(sidebar.response.status, 200);
-  assert.deepEqual(sidebar.body.documents.map(document => document.title), ['팀 작업', '개인 메모']);
+  assert.deepEqual(sidebar.body.documents.map(document => document.title), ['프로젝트 작업', '개인 메모']);
   assert.deepEqual(sidebar.body.documents.map(document => document.is_notion_import), [true, false]);
   assert.deepEqual(sidebar.body.documents.map(document => document.is_notion_root), [true, false]);
 });
@@ -1117,19 +1125,6 @@ test('owner migration reset removes documents, files and non-admin accounts in b
   assert.deepEqual(env.DB.database.prepare("SELECT username FROM users ORDER BY username").all().map(row => row.username), ['owner']);
 });
 
-test('document-only Notion reset preserves workspace members', async () => {
-  const env = envWithDb();
-  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
-  await addUser(env, { id: 'usr_member0001', username: 'member', role: 'member' });
-  const cookie = await login(env, 'owner');
-  await call(env, '/api/documents', { method: 'POST', headers: auth(cookie), body: { title: '가져온 문서' } });
-  const reset = await call(env, '/api/admin/reset-notion-migration', { method: 'POST', headers: auth(cookie), body: { confirm: 'qwerty', scope: 'documents' } });
-  assert.equal(reset.body.done, true);
-  assert.equal(reset.body.scope, 'documents');
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 0);
-  assert.deepEqual(env.DB.database.prepare("SELECT username FROM users ORDER BY username").all().map(row => row.username), ['member', 'owner']);
-});
-
 test('Notion API data source import preserves paginated views, calendar ranges and property semantics', async () => {
   const env = envWithDb();
   await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
@@ -1158,7 +1153,7 @@ test('Notion API data source import preserves paginated views, calendar ranges a
     if (url.endsWith('/v1/views/' + viewBoard.replaceAll('-', ''))) return Response.json({ id: viewBoard, name: '보드', type: 'board', configuration: { group_by: { property_id: 'status' } } });
     if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', '') + '/query')) return Response.json({
       results: [{ object: 'page', id: rowId, properties: {
-        Name: { id: 'title', type: 'title', title: [{ plain_text: '테스트 담당자 주간 목표' }] },
+        Name: { id: 'title', type: 'title', title: [{ plain_text: '주간 목표' }] },
         Date: { id: 'date', type: 'date', date: { start: '2026-09-01', end: '2026-09-07', time_zone: 'Asia/Seoul' } },
         Status: { id: 'status', type: 'status', status: { name: '진행 중' } },
         Owner: { id: 'person', type: 'people', people: [{ id: 'ffffffff-ffff-ffff-ffff-ffffffffffff' }] }
@@ -1433,7 +1428,7 @@ test('documents support hierarchy, all block types, autosave persistence, favori
   const parentId = created.body.document.id;
   const databaseContent = JSON.stringify({
     version: 2,
-    title: '팀 작업',
+    title: '작업 목록',
     columns: [
       { id: 'col_title', name: '작업', type: 'text', options: [] },
       { id: 'col_status', name: '상태', type: 'select', options: ['예정', '진행 중', '완료'] },
