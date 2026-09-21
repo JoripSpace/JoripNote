@@ -74,15 +74,18 @@ class D1Database {
 }
 
 const ORIGIN = 'https://qwerty.example';
+const DEMO_ORIGIN = 'https://joripnote.joripspace.run';
+const CRON_ORIGIN = 'https://joripspace-cron.internal';
 const ORIGIN_HEADERS = { origin: ORIGIN, 'cf-connecting-ip': '203.0.113.10' };
 
 function request(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (options.body && typeof options.body !== 'string') {
+  const { origin = ORIGIN, ...requestOptions } = options;
+  const headers = new Headers(requestOptions.headers || {});
+  if (requestOptions.body && typeof requestOptions.body !== 'string') {
     headers.set('content-type', 'application/json');
-    options = { ...options, body: JSON.stringify(options.body) };
+    requestOptions.body = JSON.stringify(requestOptions.body);
   }
-  return new Request(ORIGIN + path, { ...options, headers });
+  return new Request(origin + path, { ...requestOptions, headers });
 }
 
 function cookieFrom(response) {
@@ -198,6 +201,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /<title>JoripNote<\/title>/);
   assert.match(html, /<link rel="icon" href="data:image\/svg\+xml,/);
   assert.match(html, /id="document-editor" class="document-editor"/);
+  assert.match(html, /id="demo-banner" class="demo-banner"/);
   assert.match(html, /멤버 관리/);
   assert.match(html, /id="auth-view" class="auth-shell" hidden/);
   assert.match(html, /class="wordmark">JoripNote</);
@@ -1328,6 +1332,7 @@ test('first-run setup installs exactly one owner and seeds builtin templates', a
   assert.match(installed.response.headers.get('set-cookie'), /qwerty_session=/);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty' AND role='owner'").get().count, 1);
   assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='qwerty' AND is_builtin=1").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 0);
 
   const after = await call(env, '/api/setup-status');
   assert.equal(after.body.installed, true);
@@ -1337,6 +1342,81 @@ test('first-run setup installs exactly one owner and seeds builtin templates', a
     body: { username: 'second_owner', password: 'secure-password', password_confirmation: 'secure-password' }
   });
   assert.equal(repeated.response.status, 409);
+});
+
+test('JoripNote demo auto-login seeds the preview and cron reset is isolated and idempotent', async () => {
+  const env = envWithDb();
+  const demoHeaders = { origin: DEMO_ORIGIN, 'cf-connecting-ip': '203.0.113.10' };
+  const started = await call(env, '/api/setup-status', { origin: DEMO_ORIGIN, headers: demoHeaders });
+  assert.equal(started.response.status, 200, JSON.stringify(started.body));
+  assert.deepEqual(started.body, { installed: true, public_signup_enabled: false, demo_mode: true });
+  const demoCookie = cookieFrom(started.response);
+
+  const me = await call(env, '/api/me', { origin: DEMO_ORIGIN, headers: { ...demoHeaders, cookie: demoCookie } });
+  assert.equal(me.response.status, 200, JSON.stringify(me.body));
+  assert.equal(me.body.user.id, 'demo_owner');
+  assert.equal(me.body.user.username, 'demo');
+  assert.equal(me.body.membership.role, 'owner');
+  assert.equal(me.body.workspace.space_mode, 'team');
+  assert.equal(me.body.workspace.space_name, 'JoripNote');
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='qwerty'").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(DISTINCT block_type) AS count FROM document_blocks").get().count, 24);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty'").get().count, 1);
+
+  const extra = await call(env, '/api/documents', {
+    origin: DEMO_ORIGIN,
+    method: 'POST',
+    headers: { ...demoHeaders, cookie: demoCookie },
+    body: {}
+  });
+  assert.equal(extra.response.status, 201, JSON.stringify(extra.body));
+  const extraDocumentId = extra.body.document.id;
+  await addUser(env, { id: 'usr_demo_temp', username: 'temporary', role: 'member' });
+  const now = Math.floor(Date.now() / 1000);
+  env.DB.database.prepare(`INSERT INTO notion_imports
+    (id,project_id,archive_sha256,filename,status,total_items,imported_items,skipped_items,failed_items,created_by,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run('nimp_demo_temp', 'qwerty', 'demo-sha', 'demo.zip', 'processing', 1, 0, 0, 0, 'usr_demo_temp', now);
+  env.DB.database.prepare(`INSERT INTO notion_import_items
+    (import_id,source_path,document_id,status,updated_at) VALUES (?,?,?,?,?)`).run('nimp_demo_temp', 'demo.txt', extraDocumentId, 'imported', now);
+  env.DB.database.prepare(`INSERT INTO notion_import_staged_entries
+    (import_id,entry_index,source_path,entry_type,source_size,status,updated_at) VALUES (?,?,?,?,?,?,?)`).run('nimp_demo_temp', 0, 'demo.txt', 'document', 4, 'registered', now);
+  env.DB.database.prepare(`INSERT INTO notion_people
+    (project_id,notion_user_id,user_type,name,last_seen_at,synced_at) VALUES (?,?,?,?,?,?)`).run('qwerty', 'notion-temp', 'person', 'Temporary', now, now);
+  await env.STORAGE.put('uploads/demo-temp', new Uint8Array([1, 2, 3]));
+  env.DB.database.prepare(`INSERT INTO file_uploads
+    (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)`).run('fil_demo_temp', 'qwerty', extraDocumentId, 'uploads/demo-temp', 'demo.txt', 'text/plain', 3, 'demo_owner', now);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 5);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM notion_imports").get().count, 1);
+
+  const wrongHost = await call(env, '/__joripnote_demo/reset', { method: 'POST' });
+  assert.equal(wrongHost.response.status, 404);
+
+  const reset = await call(env, '/__joripnote_demo/reset', { origin: CRON_ORIGIN, method: 'POST' });
+  assert.equal(reset.response.status, 200, JSON.stringify(reset.body));
+  assert.equal(reset.body.ok, true);
+  assert.equal(reset.body.demo_mode, true);
+  const resetCookie = cookieFrom(reset.response);
+  assert.match(resetCookie, /^qwerty_session=/);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='qwerty'").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(DISTINCT block_type) AS count FROM document_blocks").get().count, 24);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM notion_imports").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM notion_import_staged_entries").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM notion_people").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM file_uploads").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT id FROM users").get().id, 'demo_owner');
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty' AND user_id='demo_owner' AND role='owner'").get().count, 1);
+  assert.deepEqual(Object.fromEntries(env.DB.database.prepare("SELECT key,value FROM app_settings WHERE key IN ('demo_mode','space_mode','space_name')").all().map(row => [row.key, row.value])), {
+    demo_mode: '1', space_mode: 'team', space_name: 'JoripNote'
+  });
+
+  const repeated = await call(env, '/__joripnote_demo/reset', { origin: CRON_ORIGIN, method: 'POST', headers: { cookie: resetCookie } });
+  assert.equal(repeated.response.status, 200, JSON.stringify(repeated.body));
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 4);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
 });
 
 test('Owner controls public signup roles and exact IP access without locking out the current IP', async () => {
