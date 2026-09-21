@@ -560,6 +560,10 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(source, /event\.clipboardData\?\.items/);
   assert.match(source, /item\.kind==='file'/);
   assert.match(source, /image\\\//i);
+  assert.match(source, /function parsePastedMarkdownBlocks/);
+  assert.match(source, /text\/markdown/);
+  assert.match(source, /insertPastedMarkdown\(blocks,target\)/);
+  assert.match(source, /pastedMarkdownTableSeparator/);
   assert.match(source, /event\.dataTransfer\?\.files/);
   assert.match(source, /event\.target\?\.closest\?\.\('\.document-editor'\)/);
   assert.match(source, /agentAction==='notion-link-audit'/);
