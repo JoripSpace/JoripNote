@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { normalizeBlockSnapshot } from './engine/document-model.js';
 
 const PROJECT_ID = 'cf-notion-st';
 const SESSION_COOKIE = 'qwerty_session';
@@ -19,7 +20,7 @@ const NOTION_DOCUMENT_MAX_BYTES = 20 * 1024 * 1024;
 const NOTION_DIRECT_ASSET_MAX_BYTES = 8 * 1024 * 1024;
 const DATABASE_MAX_ROWS = 5000;
 const DATABASE_MAX_COLUMNS = 100;
-const BLOCK_TYPES = new Set(['text', 'heading1', 'heading2', 'heading3', 'heading4', 'bullet', 'numbered', 'todo', 'quote', 'code', 'divider', 'toggle', 'callout', 'table', 'database', 'toc', 'math', 'bookmark', 'image', 'video', 'audio', 'file', 'embed', 'page_link']);
+const BLOCK_TYPES = new Set(['text', 'heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'heading6', 'bullet', 'numbered', 'todo', 'quote', 'code', 'divider', 'toggle', 'callout', 'table', 'database', 'toc', 'math', 'bookmark', 'image', 'video', 'audio', 'file', 'embed', 'page_link']);
 const EDIT_ROLES = new Set(['owner', 'admin', 'member']);
 const MANAGE_ROLES = new Set(['owner', 'admin']);
 const BUILTIN_TEMPLATES = [
@@ -36,8 +37,9 @@ const HTML = String.raw`<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f7f5">
   <title>JoripNote</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232d2d2a'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='38' font-family='serif' fill='white'%3EJ%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260911-joripnote-10">
+  <link rel="stylesheet" href="/app.css?v=20260921-joripnote-58">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -64,6 +66,8 @@ const HTML = String.raw`<!doctype html>
     <symbol id="icon-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
     <symbol id="icon-type" viewBox="0 0 24 24"><path d="M5 5h14M12 5v14M8 19h8"/></symbol>
     <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></symbol>
+    <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="icon-preview" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9h5M13 13h5M13 17h3"/></symbol>
     <symbol id="icon-list-ordered" viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10M4 4h2v4M4 11h2l-2 3h2M4 17h2v3H4"/></symbol>
     <symbol id="icon-check-square" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m7 12 3 3 7-7"/></symbol>
     <symbol id="icon-quote" viewBox="0 0 24 24"><path d="M7 17H4v-5a5 5 0 0 1 5-5v3a2 2 0 0 0-2 2ZM17 17h-3v-5a5 5 0 0 1 5-5v3a2 2 0 0 0-2 2Z"/></symbol>
@@ -157,26 +161,31 @@ const HTML = String.raw`<!doctype html>
     <aside id="sidebar" class="sidebar">
       <header class="workspace-header">
         <button id="workspace-home" class="workspace-button" type="button">
-          <span class="workspace-avatar">J</span><span><strong>JoripNote</strong><small id="sidebar-role"></small></span>
+          <span id="workspace-avatar" class="workspace-avatar">J</span><span><strong id="workspace-display-name">JoripNote</strong><small id="sidebar-role"></small></span>
         </button>
-        <button id="sidebar-collapse" class="icon-button desktop-only" type="button" aria-label="사이드바 축소" data-tooltip="사이드바 축소"><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-left"/></svg></button>
-        <button id="sidebar-close" class="icon-button mobile-only" type="button" aria-label="사이드바 닫기" data-tooltip="사이드바 닫기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
+        <span class="workspace-header-actions">
+          <button class="icon-button header-notification" data-view="notifications" type="button" aria-label="알림과 활동" data-tooltip="알림과 활동"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"/></svg><span id="notification-badge" class="notification-badge" hidden></span></button>
+          <button id="sidebar-collapse" class="icon-button desktop-only" type="button" aria-label="사이드바 축소" data-tooltip="사이드바 축소"><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-left"/></svg></button>
+          <button id="sidebar-close" class="icon-button mobile-only" type="button" aria-label="사이드바 닫기" data-tooltip="사이드바 닫기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
+        </span>
       </header>
-      <nav class="main-nav" aria-label="워크스페이스">
-        <button data-view="search" type="button" aria-label="검색" data-tooltip="문서 검색"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"/></svg></span><span class="nav-label">검색</span></button>
-        <button data-view="recent" type="button" aria-label="최근 문서" data-tooltip="최근 문서"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"/></svg></span><span class="nav-label">최근 문서</span></button>
-        <button data-view="favorites" type="button" aria-label="즐겨찾기" data-tooltip="즐겨찾기"><span class="nav-icon"><svg class="star-icon" aria-hidden="true"><use href="#icon-star"/></svg></span><span class="nav-label">즐겨찾기</span></button>
-        <button data-view="all" class="active" type="button" aria-label="전체 문서" data-tooltip="전체 문서"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-files"/></svg></span><span class="nav-label">전체 문서</span></button>
-        <button data-view="trash" type="button" aria-label="휴지통" data-tooltip="휴지통"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"/></svg></span><span class="nav-label">휴지통</span></button>
-        <button data-view="notifications" type="button" aria-label="알림과 활동" data-tooltip="알림과 활동"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"/></svg></span><span class="nav-label">알림·활동</span><span id="notification-badge" class="notification-badge" hidden></span></button>
-        <button data-view="templates" type="button" aria-label="문서 템플릿" data-tooltip="문서 템플릿"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-template"/></svg></span><span class="nav-label">템플릿</span></button>
+      <nav class="main-nav sidebar-primary-nav" aria-label="공간 빠른 메뉴">
+        <button data-view="search" type="button" aria-label="검색" data-tooltip="문서 검색"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"/></svg></span></button>
+        <button data-view="recent" type="button" aria-label="최근 문서" data-tooltip="최근 문서"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clock"/></svg></span></button>
+        <button data-view="favorites" type="button" aria-label="즐겨찾기" data-tooltip="즐겨찾기"><span class="nav-icon"><svg class="star-icon" aria-hidden="true"><use href="#icon-star"/></svg></span></button>
+        <button data-view="trash" type="button" aria-label="휴지통" data-tooltip="휴지통"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"/></svg></span></button>
+        <button data-view="templates" type="button" aria-label="문서 템플릿" data-tooltip="문서 템플릿"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-template"/></svg></span></button>
+        <button data-view="members" type="button" aria-label="멤버 관리" data-tooltip="멤버 관리"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-users"/></svg></span></button>
+        <button data-view="settings" type="button" aria-label="설정" data-tooltip="설정"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"/></svg></span></button>
       </nav>
-      <div class="tree-heading"><span class="nav-label">문서</span><button id="new-root-document" class="icon-button" type="button" aria-label="새 문서" data-tooltip="새 문서"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg></button></div>
-      <div id="document-tree" class="document-tree"></div>
-      <nav class="main-nav bottom-nav" aria-label="워크스페이스 관리">
-        <button data-view="members" type="button" aria-label="멤버 관리" data-tooltip="멤버 관리"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-users"/></svg></span><span class="nav-label">멤버 관리</span></button>
-        <button data-view="settings" type="button" aria-label="설정" data-tooltip="설정"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"/></svg></span><span class="nav-label">설정</span></button>
-      </nav>
+      <div class="sidebar-document-scroll">
+        <div class="tree-heading shared-space-only"><span class="nav-label">공용 문서</span></div>
+        <button class="sidebar-all active shared-space-only" data-view="all" type="button" aria-label="모든 문서"><span class="sidebar-glyph workspace-glyph" aria-hidden="true">✣</span><span class="nav-label">모든 문서</span></button>
+        <div id="document-tree" class="document-tree teamspace-tree shared-space-only" aria-label="공용 문서"></div>
+        <div class="tree-heading personal-heading"><span class="nav-label">내 문서</span></div>
+        <div id="personal-tree" class="document-tree personal-tree" aria-label="내 문서"></div>
+        <button id="new-root-document" class="sidebar-new-page" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg><span class="nav-label">새 페이지 추가</span></button>
+      </div>
       <footer class="profile-footer">
         <span id="profile-avatar" class="avatar"></span>
         <span class="profile-copy"><strong id="profile-name"></strong><small id="profile-role"></small></span>
@@ -187,7 +196,7 @@ const HTML = String.raw`<!doctype html>
     <section id="main-content" class="main-pane" tabindex="-1">
       <header class="mobile-header">
         <button id="sidebar-open" class="icon-button" type="button" aria-label="사이드바 열기" data-tooltip="사이드바 열기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-menu"/></svg></button>
-        <strong>JoripNote</strong>
+        <strong id="mobile-workspace-name">JoripNote</strong>
         <span id="mobile-save-state" role="status" aria-live="polite"></span>
       </header>
 
@@ -207,8 +216,8 @@ const HTML = String.raw`<!doctype html>
             <button id="trash-button" class="icon-button danger-text" type="button" aria-label="휴지통으로 이동" data-tooltip="휴지통으로 이동"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"/></svg></button>
           </div>
         </header>
-        <article class="document-editor" aria-label="문서 편집기">
-          <textarea id="document-title" class="document-title" maxlength="160" rows="1" placeholder="제목 없음" aria-label="문서 제목"></textarea>
+        <article id="document-editor" class="document-editor" aria-label="문서 편집기">
+          <div class="document-title-line"><span id="document-page-icon" class="document-page-icon" aria-hidden="true" hidden><svg class="document-page-icon-svg" aria-hidden="true"><use href="#icon-files"/></svg></span><textarea id="document-title" class="document-title" maxlength="160" rows="1" placeholder="제목 없음" aria-label="문서 제목"></textarea></div>
           <div id="readonly-notice" class="notice" hidden>Viewer 권한에서는 문서를 읽을 수만 있습니다.</div>
           <div id="block-editor" class="block-editor" role="group" aria-label="문서 본문 블록"></div>
           <button id="append-block" class="append-block" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg><span>블록 추가</span></button>
@@ -217,13 +226,23 @@ const HTML = String.raw`<!doctype html>
 
       <section id="list-view" class="page-view">
         <header class="page-header">
-          <div><p class="eyebrow">JoripNote</p><h1 id="list-title">전체 문서</h1><p id="list-description">워크스페이스의 최상위 문서입니다.</p></div>
+          <div><p id="list-space-name" class="eyebrow">JoripNote</p><h1 id="list-title">모든 문서</h1><p id="list-description">이 공간의 최상위 문서입니다.</p></div>
           <button id="list-new-document" class="button primary compact" type="button">새 문서</button>
         </header>
         <form id="search-form" class="search-panel" hidden>
           <input id="search-input" type="search" maxlength="80" placeholder="문서 제목으로 검색" aria-label="문서 제목 검색">
           <button class="button primary compact" type="submit">검색</button>
         </form>
+        <div id="list-controls" class="list-controls" hidden>
+          <label class="list-filter-search"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"/></svg><input id="list-filter-query" type="search" maxlength="80" placeholder="문서 찾기" aria-label="모든 문서에서 검색"></label>
+          <select id="list-kind-filter" class="list-filter-select" aria-label="문서 유형"><option value="all">모든 유형</option><option value="document">일반 문서</option><option value="database">데이터베이스</option><option value="imported">가져온 문서</option></select>
+          <select id="list-sort" class="list-filter-select" aria-label="문서 정렬"><option value="updated_desc">최근 수정순</option><option value="updated_asc">오래된 수정순</option><option value="title_asc">이름순</option><option value="created_desc">최근 생성순</option></select>
+          <div class="list-layout-switch" role="group" aria-label="문서 보기 방식">
+            <button type="button" data-list-layout="list" aria-label="목록 보기" data-tooltip="목록"><svg class="ui-icon" aria-hidden="true"><use href="#icon-list"/></svg></button>
+            <button type="button" data-list-layout="grid" aria-label="그리드 보기" data-tooltip="그리드"><svg class="ui-icon" aria-hidden="true"><use href="#icon-grid"/></svg></button>
+            <button type="button" data-list-layout="preview" aria-label="미리보기" data-tooltip="미리보기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-preview"/></svg></button>
+          </div>
+        </div>
         <div id="list-alert" class="alert" role="alert" hidden></div>
         <div id="document-list" class="document-list"></div>
         <button id="load-more-documents" class="button subtle load-more" type="button" hidden>더 보기</button>
@@ -231,7 +250,7 @@ const HTML = String.raw`<!doctype html>
 
       <section id="members-view" class="page-view" hidden>
         <header class="page-header">
-          <div><p class="eyebrow">WORKSPACE</p><h1>멤버 관리</h1><p>역할과 대기 중인 초대를 관리합니다.</p></div>
+          <div><p class="eyebrow">SPACE</p><h1>멤버 관리</h1><p>역할과 대기 중인 초대를 관리합니다.</p></div>
           <button id="open-invite" class="button primary compact" type="button">멤버 초대</button>
         </header>
         <div id="members-permission" class="notice" hidden>멤버 관리 권한이 없습니다.</div>
@@ -241,6 +260,10 @@ const HTML = String.raw`<!doctype html>
           <button id="load-more-members" class="button subtle load-more" type="button" hidden>멤버 더 보기</button>
         </section>
         <section class="panel">
+          <div class="section-title"><div><h2>Notion 원본 멤버</h2><p class="muted">Notion 사용자 정보이며 JoripNote 로그인 계정과는 별개입니다.</p></div><span id="notion-member-count"></span></div>
+          <div id="notion-member-list" class="member-list"></div>
+        </section>
+        <section class="panel">
           <div class="section-title"><h2>대기 중인 초대</h2><span id="invite-count"></span></div>
           <div id="invite-list" class="member-list"></div>
           <button id="load-more-invites" class="button subtle load-more" type="button" hidden>초대 더 보기</button>
@@ -248,16 +271,20 @@ const HTML = String.raw`<!doctype html>
       </section>
 
       <section id="settings-view" class="page-view settings-page" hidden>
-        <header class="page-header settings-header"><div><p class="eyebrow">WORKSPACE</p><h1>설정</h1></div></header>
-        <div class="settings-grid">
-          <div class="settings-card import-card">
-            <div><h2>Notion 가져오기</h2><p>Markdown 한 파일 또는 Notion 전체 내보내기 ZIP을 가져옵니다.</p><small>대용량 ZIP도 자동으로 나눠 전송하며 문서 계층, CSV 데이터 표와 첨부파일을 복원합니다. Owner와 Admin만 사용할 수 있습니다.</small><small id="notion-import-progress" role="status" aria-live="polite"></small></div>
-            <div class="import-actions">
-              <label id="notion-import-button" class="button subtle compact import-button">Markdown 업로드<input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
-              <label id="notion-zip-import-button" class="button subtle compact import-button"><span id="notion-zip-import-label">Notion ZIP 업로드</span><input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
-              <button id="notion-api-import-button" type="button" hidden aria-hidden="true" tabindex="-1"></button>
-              <label class="import-repair-toggle"><input id="notion-import-repair" type="checkbox"><span><strong>기존 가져오기 교정</strong><small>같은 ZIP을 다시 선택해 링크·파일·데이터베이스 연결을 점검합니다.</small></span></label>
-            </div>
+        <header class="page-header settings-header"><div><p class="eyebrow">SPACE</p><h1>설정</h1></div></header>
+        <form id="workspace-settings-form" class="settings-grid">
+          <section id="space-profile-form" class="settings-card policy-card space-profile-card owner-setting">
+            <header><div><h2>공간 구성</h2><p>사용 방식과 사이드바 구조를 선택합니다.</p></div><span class="owner-only-badge">Owner 전용</span></header>
+            <label class="setting-select"><span><strong>공간 이름</strong><small>사이드바와 문서 상단에 표시됩니다.</small></span><input id="space-name" type="text" minlength="1" maxlength="40" autocomplete="off" placeholder="내 문서 공간"></label>
+            <label class="setting-select"><span><strong>사용 방식</strong><small>개인 공간은 문서를 한 목록에, 팀 공간은 공용 문서와 내 문서를 나눠 표시합니다.</small></span><select id="space-mode"><option value="personal">개인 공간</option><option value="team">팀 공간</option></select></label>
+          </section>
+          <div id="agent-import-controls" hidden aria-hidden="true">
+            <span id="notion-import-progress" role="status" aria-live="polite"></span>
+            <label id="notion-import-button"><input id="notion-import-input" type="file" accept=".md,text/markdown,text/plain" hidden></label>
+            <label id="notion-zip-import-button"><span id="notion-zip-import-label"></span><input id="notion-zip-import-input" type="file" accept=".zip,application/zip" hidden></label>
+            <button id="notion-api-import-button" type="button" hidden tabindex="-1"></button>
+            <button id="notion-remigrate-button" type="button" hidden tabindex="-1"></button>
+            <label><input id="notion-import-repair" type="checkbox"></label>
           </div>
           <div class="settings-card document-width-card">
             <div><h2>문서 너비</h2><p>집중해서 읽거나, 넓은 화면을 모두 활용할 수 있습니다.</p></div>
@@ -267,31 +294,30 @@ const HTML = String.raw`<!doctype html>
               <button type="button" data-document-width="full" role="radio" aria-checked="false"><span class="width-preview full" aria-hidden="true"></span><strong>전체 화면</strong></button>
             </div>
           </div>
-          <form id="workspace-access-form" class="settings-card policy-card">
+          <section id="workspace-access-form" class="settings-card policy-card owner-setting">
             <header><div><h2>가입 정책</h2><p>초대 없이 새 계정을 만들 수 있는지 정합니다.</p></div><span class="owner-only-badge">Owner 전용</span></header>
             <label class="setting-toggle"><span><strong>공개 회원가입</strong><small>로그인 화면에 회원가입 버튼을 표시합니다.</small></span><input id="public-signup-enabled" type="checkbox" role="switch"></label>
             <label class="setting-select"><span><strong>신규 회원 기본 역할</strong><small>Member는 문서 작성, Viewer는 읽기만 가능합니다.</small></span><select id="public-signup-role"><option value="member">Member</option><option value="viewer">Viewer</option></select></label>
-            <button class="button primary compact policy-save" type="submit">가입 정책 저장</button>
-          </form>
-          <form id="ip-access-form" class="settings-card policy-card">
+          </section>
+          <section id="ip-access-form" class="settings-card policy-card owner-setting">
             <header><div><h2>IP 접근 제한</h2><p>등록한 IP에서만 로그인하고 내부 문서에 접근하도록 제한합니다.</p></div><span class="owner-only-badge">Owner 전용</span></header>
             <div class="current-ip"><span>현재 접속 IP <strong id="current-request-ip">확인 중</strong></span><button id="add-current-ip" class="button subtle compact" type="button">현재 IP 추가</button></div>
             <label class="setting-toggle"><span><strong>허용목록 사용</strong><small>공개 문서 링크에는 적용하지 않습니다.</small></span><input id="ip-allowlist-enabled" type="checkbox" role="switch"></label>
             <label class="ip-list-label"><span><strong>허용할 IP</strong><small>IP 주소를 입력한 뒤 Enter 또는 쉼표로 추가하세요. 최대 50개까지 등록할 수 있습니다.</small></span><div id="ip-tag-editor" class="ip-tag-editor"><div id="ip-tags" class="ip-tags" aria-live="polite"></div><input id="ip-allowlist-input" class="ip-tag-input" type="text" maxlength="2500" autocomplete="off" placeholder="203.0.113.10 입력"></div><input id="ip-allowlist" type="hidden"></label>
             <p class="ip-input-hint"><span>등록된 IP는 태그로 표시됩니다. Backspace로 마지막 태그를 삭제할 수도 있습니다.</span><strong id="ip-count">0/50</strong></p>
             <p class="security-warning">현재 접속 IP가 목록에 없으면 제한을 켤 수 없습니다.</p>
-            <button class="button primary compact policy-save" type="submit">IP 정책 저장</button>
-          </form>
-        </div>
+          </section>
+          <footer class="settings-save-bar"><span id="settings-save-note" role="status"></span><button id="settings-save-button" class="button primary compact" type="submit">변경사항 저장</button></footer>
+        </form>
       </section>
 
       <section id="notifications-view" class="page-view" hidden>
-        <header class="page-header"><div><p class="eyebrow">WORKSPACE</p><h1>알림과 활동</h1><p>나를 부른 댓글과 워크스페이스 변경 사항을 확인합니다.</p></div><button id="mark-notifications-read" class="button subtle compact" type="button">모두 읽음</button></header>
+        <header class="page-header"><div><p class="eyebrow">SPACE</p><h1>알림과 활동</h1><p>나를 부른 댓글과 공간 변경 사항을 확인합니다.</p></div><button id="mark-notifications-read" class="button subtle compact" type="button">모두 읽음</button></header>
         <div class="two-column-feed"><section class="panel"><div class="section-title"><h2>내 알림</h2></div><div id="notification-list" class="feed-list"></div></section><section class="panel"><div class="section-title"><h2>최근 활동</h2></div><div id="activity-list" class="feed-list"></div></section></div>
       </section>
 
       <section id="templates-view" class="page-view" hidden>
-        <header class="page-header"><div><p class="eyebrow">WORKSPACE</p><h1>문서 템플릿</h1><p>반복해서 쓰는 문서를 한 번에 시작합니다.</p></div><button id="new-template-button" class="button primary compact" type="button">현재 문서를 템플릿으로</button></header>
+        <header class="page-header"><div><p class="eyebrow">SPACE</p><h1>문서 템플릿</h1><p>반복해서 쓰는 문서를 한 번에 시작합니다.</p></div><button id="new-template-button" class="button primary compact" type="button">현재 문서를 템플릿으로</button></header>
         <div id="template-list" class="template-grid"></div>
       </section>
     </section>
@@ -340,6 +366,7 @@ const HTML = String.raw`<!doctype html>
 
   <div id="slash-menu" class="slash-menu" role="menu" aria-label="블록 유형 선택" hidden></div>
   <div id="block-menu" class="block-menu" role="menu" aria-label="블록 메뉴" hidden></div>
+  <div id="tree-menu" class="block-menu tree-context-menu" role="menu" aria-label="문서 메뉴" hidden></div>
   <div id="url-paste-menu" class="url-paste-menu" role="menu" aria-label="URL 붙여넣기 방식 선택" hidden></div>
   <div id="inline-toolbar" class="inline-toolbar" role="toolbar" aria-label="인라인 서식" hidden>
     <button type="button" data-inline-command="bold" aria-label="굵게" data-tooltip="굵게 (Ctrl+B)"><strong>B</strong></button>
@@ -349,7 +376,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260911-joripnote-19" defer></script>
+  <script src="/app.js?v=20260917-joripnote-51" defer></script>
 </body>
 </html>`;
 
@@ -378,7 +405,7 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 @media(max-width:760px){.settings-page{width:calc(100% - 24px);padding:18px 0 72px}.settings-page .settings-header{padding-bottom:14px}.settings-page .settings-grid{margin-top:10px;border-radius:10px}.settings-page .settings-card{padding:18px 16px}.settings-page .import-card,.settings-page .document-width-card{display:grid}.settings-page .width-options{grid-template-columns:repeat(3,minmax(0,1fr));width:100%}.settings-page .setting-select{align-items:stretch;flex-direction:column}.settings-page .setting-select select{width:100%}.settings-page .policy-card header{gap:10px}}
 .block-menu{max-height:min(70vh,460px);overflow:auto}.block-menu button{flex:none}.block-menu-separator{flex:none}
 .slash-category{padding:10px 8px 5px;color:var(--muted);font-size:10px;font-weight:800}.public-shell{min-height:100vh;background:#fff}.public-header{display:flex;align-items:center;justify-content:space-between;height:58px;padding:0 24px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}.public-brand{display:flex;align-items:center;gap:9px;color:var(--ink);text-decoration:none}.public-brand .workspace-note-logo{width:30px;height:30px}.public-title{margin:0;font-size:44px;line-height:1.2;letter-spacing:-.045em}.public-document{padding-top:68px}.public-block-editor .block-row{grid-template-columns:minmax(0,1fr);margin-left:0}.public-block-editor .block-handle{display:none}.block-content[data-type=heading4]{font-size:16px;font-weight:800;line-height:1.55}.callout-wrap{display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;padding:12px 14px;border:1px solid #e5e4df;border-radius:7px;background:#f7f7f5}.callout-wrap>.ui-icon{margin-top:5px;color:#6f6e68}.structured-block{min-width:0;padding:4px 0}.structured-block .block-content{width:100%}.block-table{width:100%;border-collapse:collapse;table-layout:fixed}.block-table td,.block-table th{min-width:100px;height:38px;padding:0;border:1px solid #deddd8}.block-table input{width:100%;height:37px;padding:0 10px;border:0;background:transparent;outline:none}.block-table thead{background:#f7f7f5;font-weight:700}.block-table-actions{display:flex;gap:6px;margin-top:7px}.block-table-actions button{height:28px;padding:0 9px;border:0;border-radius:5px;background:#f2f2ef;color:#696862;font-size:11px}.database-block{padding:12px;border:1px solid var(--line);border-radius:8px}.database-label{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px;font-weight:800}.media-block{display:grid;gap:8px}.media-url{width:100%;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#fff;outline:none}.media-preview{display:grid;place-items:center;min-height:54px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#fafaf8;color:var(--muted);font-size:12px}.media-preview img,.media-preview video{display:block;max-width:100%;max-height:520px}.media-preview audio{width:min(100%,520px);margin:16px}.media-preview iframe{width:100%;height:420px;border:0}.media-preview a{display:flex;align-items:center;gap:8px;width:100%;padding:16px;color:var(--ink);text-decoration:none}.toc-block{padding:10px 14px;border-left:2px solid #dddcd7}.toc-block strong{display:block;margin-bottom:7px;font-size:12px}.toc-block a{display:block;padding:3px 0;color:#696862;font-size:12px;text-decoration:none}.math-block{padding:13px;border-radius:7px;background:#f7f7f5;text-align:center}.math-block .block-content{font-family:"SFMono-Regular",Consolas,monospace}.inline-toolbar{position:fixed;z-index:90;display:flex;padding:4px;border-radius:7px;background:#2f2f2c;box-shadow:0 8px 30px rgba(0,0,0,.22)}.inline-toolbar button{display:grid;place-items:center;min-width:30px;height:30px;padding:0 7px;border:0;border-radius:4px;background:transparent;color:#fff;font-size:12px}.inline-toolbar button:hover{background:#4b4b47}.inline-toolbar .ui-icon{width:15px;height:15px}.block-content a{color:#2563a8;text-decoration:underline;text-underline-offset:2px}.block-content code{padding:1px 4px;border-radius:4px;background:#efefec;color:#c33;font-family:"SFMono-Regular",Consolas,monospace;font-size:.9em}.search-dialog{width:min(92vw,660px);padding:0;border-radius:12px}.global-search-card{background:#fff}.global-search-card>header{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}.global-search-card input{height:38px;border:0;outline:none;font-size:16px}.global-search-card kbd{padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:#f7f7f5;color:var(--muted);font-size:10px}.global-search-results{max-height:min(58vh,480px);overflow:auto;padding:7px}.global-search-item{display:grid;gap:3px;width:100%;padding:10px 11px;border:0;border-radius:6px;background:#fff;text-align:left}.global-search-item:hover,.global-search-item.active{background:var(--hover)}.global-search-item strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.global-search-item small{color:var(--muted);font-size:10px}.global-search-empty{padding:44px 20px;color:var(--muted);font-size:13px;text-align:center}.global-search-card>footer{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}.publish-card{width:min(92vw,480px)}.publication-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px;border:1px solid var(--line);border-radius:8px}.publication-row strong,.publication-row small{display:block}.publication-row small{margin-top:4px;color:var(--muted);font-size:11px}.link-dialog-card{width:min(92vw,460px)}.link-dialog-actions{display:flex;justify-content:flex-end;gap:8px}.link-dialog-actions .button{min-width:82px}
-@media(min-width:761px){.app-shell.sidebar-collapsed .sidebar{width:68px}.app-shell.sidebar-collapsed .main-pane{margin-left:68px}.app-shell.sidebar-collapsed .workspace-header{justify-content:center;padding-inline:8px}.app-shell.sidebar-collapsed #workspace-home,.app-shell.sidebar-collapsed .nav-label,.app-shell.sidebar-collapsed .document-tree,.app-shell.sidebar-collapsed .profile-footer .avatar,.app-shell.sidebar-collapsed .profile-copy{display:none}.app-shell.sidebar-collapsed .main-nav{padding-inline:8px}.app-shell.sidebar-collapsed .main-nav button{justify-content:center;padding:0}.app-shell.sidebar-collapsed .main-nav button>span:first-child{width:24px}.app-shell.sidebar-collapsed .tree-heading{justify-content:center;padding:14px 8px 6px}.app-shell.sidebar-collapsed .profile-footer{justify-content:center;padding-inline:8px}}
+@media(min-width:761px){.app-shell.sidebar-collapsed .sidebar{width:68px}.app-shell.sidebar-collapsed .main-pane{margin-left:68px}.app-shell.sidebar-collapsed .workspace-header{justify-content:center;padding-inline:8px}.app-shell.sidebar-collapsed #workspace-home,.app-shell.sidebar-collapsed .nav-label,.app-shell.sidebar-collapsed .sidebar-document-scroll,.app-shell.sidebar-collapsed .profile-footer .avatar,.app-shell.sidebar-collapsed .profile-copy{display:none}.app-shell.sidebar-collapsed .main-nav{padding-inline:8px}.app-shell.sidebar-collapsed .main-nav button{justify-content:center;padding:0}.app-shell.sidebar-collapsed .main-nav button>span:first-child{width:24px}.app-shell.sidebar-collapsed .tree-heading{justify-content:center;padding:14px 8px 6px}.app-shell.sidebar-collapsed .profile-footer{justify-content:center;padding-inline:8px}}
 @media(max-width:900px){.settings-grid{grid-template-columns:1fr}.document-width-card{grid-column:auto}.width-options{grid-template-columns:repeat(3,minmax(82px,1fr));width:100%}}@media(max-width:760px){.desktop-only{display:none!important}.sidebar{width:264px}.main-pane{margin-left:0}.document-editor,.app-shell.document-width-narrow .document-editor,.app-shell.document-width-full .document-editor{width:calc(100% - 28px);padding:34px 0 90px}.page-view{width:calc(100% - 24px);padding:20px 0 80px}.settings-grid{margin-top:16px}.settings-card{align-items:flex-start}.import-card,.document-width-card{display:grid}.import-button{width:100%}.width-options{grid-template-columns:repeat(3,1fr)}.setting-toggle,.setting-select{width:100%}.policy-save{width:100%;justify-self:stretch}.button{min-height:40px}.icon-button{width:38px;height:38px}}
 :root{--accent:#59647f}body{background:#fff}.workspace-avatar{border-radius:8px;background:#596174}.main-nav button.active{background:#e8e9ee;color:#303748}.button.primary{background:#343b4a}.button.primary:hover{background:#242a36}.block-row.drop-before::before,.block-row.drop-after::after{background:var(--accent)}
 .block-row{padding-left:calc(var(--indent,0) * 26px)}.block-row.selected{margin-right:-6px;border-radius:6px;background:rgba(89,100,127,.09);box-shadow:inset 2px 0 #7a849b}.block-row.selected .block-handle{visibility:visible;color:#59647f}@media(max-width:760px){.block-row{padding-left:calc(var(--indent,0) * 18px)}}
@@ -435,15 +462,28 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .tree-heading{min-height:44px;padding:14px 13px 7px 17px;letter-spacing:.02em}
 .document-tree{min-height:0;max-height:none;flex:1 1 auto;padding:0 10px 14px;scrollbar-gutter:stable}
 .tree-row{position:relative;height:32px;margin:1px 0;padding-right:3px;border-radius:7px}
-.tree-toggle{position:absolute;top:2px;right:57px;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;color:#85847e}
-.tree-row.has-children .tree-title{padding-right:90px}
+.tree-toggle{position:absolute;top:2px;right:0;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;color:#85847e}
+.tree-row.has-children .tree-title{padding-right:36px}
 .tree-title{height:30px;padding:0 8px 0 10px;line-height:30px}
-.tree-action{position:absolute;top:2px;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;opacity:0;visibility:visible;pointer-events:none}
-.tree-add{right:30px}.tree-trash{right:3px;color:#9a4b4b}
-.tree-row:hover .tree-action,.tree-row:focus-within .tree-action{opacity:1;pointer-events:auto}
-.tree-row:not(.has-children):hover .tree-title,.tree-row:not(.has-children):focus-within .tree-title{padding-right:61px}
-.tree-row.has-children:hover .tree-title,.tree-row.has-children:focus-within .tree-title{padding-right:90px}
+.tree-row.has-children:hover .tree-title,.tree-row.has-children:focus-within .tree-title{padding-right:36px}
 .tree-children{margin-left:13px;padding-left:4px;border-left:1px solid #e4e4e0}
+.sidebar-document-scroll{min-height:0;flex:1 1 auto;overflow-y:auto;padding-bottom:12px;scrollbar-gutter:stable}
+.sidebar-document-scroll .document-tree{min-height:0;max-height:none;overflow:visible;padding-bottom:0;scrollbar-gutter:auto}
+.sidebar-all,.sidebar-new-page{display:flex;align-items:center;gap:8px;width:calc(100% - 20px);height:32px;margin:1px 10px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:#5d5c57;font-size:13px;text-align:left}
+.sidebar-all:hover,.sidebar-all.active,.sidebar-new-page:hover{background:#eaeae6;color:#222}
+.sidebar-glyph{display:grid;place-items:center;width:18px;min-width:18px;height:20px;font-size:15px;line-height:1}
+.sidebar-glyph .sidebar-doc-icon{display:block;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.tree-row .sidebar-glyph{color:#77766f}
+.tree-row.active .sidebar-glyph,.tree-row:hover .sidebar-glyph{color:#50504c}
+.workspace-glyph{color:#2383e2;font-size:18px;font-weight:800}
+.tree-row .sidebar-glyph{margin-left:8px;margin-right:2px}
+.tree-row.has-children .tree-title{padding-left:4px}
+.tree-title{padding-left:4px}
+.personal-heading{margin-top:12px}
+.sidebar-new-page{color:#8b8a84}
+.sidebar-new-page .ui-icon{width:15px;height:15px;margin-left:1px}
+.teamspace-tree:empty::after{display:block;padding:5px 10px;color:#aaa9a3;content:"공용 문서가 없습니다";font-size:11px}
+.personal-tree:empty{display:none}
 .bottom-nav{padding-top:10px;background:#f8f8f7}
 .profile-footer{padding:11px 13px}
 .page-view{width:min(calc(100% - 64px),var(--content-width));padding:38px 0 112px}
@@ -470,13 +510,232 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .card-actions .icon-button{width:34px;height:34px}.card-actions .list-trash{color:#8d5555}.card-actions .list-trash:hover{background:#fff0f0;color:#ba3434}
 @media(max-width:1050px) and (min-width:761px){.template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.setup-shell{grid-template-columns:1fr;background:#fff}.setup-intro{min-height:auto;padding:32px 28px;background:#f5f6f8}.setup-copy{margin:56px 0 20px}.setup-copy h1{font-size:42px}.setup-benefits{display:none}.setup-panel{padding:48px 24px}}
-@media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.tree-action{opacity:1;pointer-events:auto}.tree-title{padding-right:61px}.setup-intro{padding:24px 20px}.setup-copy{margin:38px 0 4px}.setup-copy h1{font-size:34px}.setup-copy p{font-size:14px}.setup-panel{align-items:start;padding:36px 20px}.setup-card header h2{font-size:27px}}
+@media(max-width:760px){:root{--sidebar-width:264px}.sidebar{width:var(--sidebar-width)}.main-pane{margin-left:0}.page-view{width:calc(100% - 32px);padding:28px 0 88px}.page-header{flex-direction:column;align-items:stretch;gap:18px;padding-bottom:22px}.page-header h1{font-size:30px}.page-header>.button{align-self:flex-start}.template-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}.template-card{min-height:0;padding:20px}.setup-intro{padding:24px 20px}.setup-copy{margin:38px 0 4px}.setup-copy h1{font-size:34px}.setup-copy p{font-size:14px}.setup-panel{align-items:start;padding:36px 20px}.setup-card header h2{font-size:27px}}
 .db-filter-value{width:170px;min-width:140px;flex:0 1 170px;padding:0 10px}.db-toolbar>.db-select[aria-label="필터 속성"],.db-toolbar>.db-select[aria-label="필터 조건"]{min-width:108px}@media(max-width:760px){.db-filter-value{width:auto;min-width:0;flex:1}.db-toolbar>.db-select[aria-label="필터 속성"],.db-toolbar>.db-select[aria-label="필터 조건"]{min-width:0}}
-.database-block{min-width:0;max-width:100%;overflow:hidden}.database-block .db-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:100%;overflow:visible}.database-block .db-viewbar{display:flex;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}.database-block .db-board{width:100%;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}.database-block .db-board-column{flex:0 0 clamp(220px,28vw,300px);min-width:0}.database-block .db-card{min-width:0;max-width:100%}.database-block .db-card-title{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.database-block .db-card-value{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.database-block .db-card-meta{min-width:0}.database-block .db-board-more{width:100%;padding:8px;border:1px dashed var(--line);border-radius:6px;background:#fff;color:var(--muted);font-size:11px}.db-calendar{min-width:0}.db-calendar-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.db-calendar-heading strong{font-size:15px}.db-calendar-controls{display:flex;gap:5px}.db-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}.db-calendar-weekday{padding:7px 6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;text-align:center}.db-calendar-day{display:flex;flex-direction:column;gap:3px;min-height:92px;padding:5px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff}.db-calendar-day.outside{background:#fafaf8;color:#aaa}.db-calendar-day.today{background:#f3f7fd;box-shadow:inset 0 0 0 2px #6f9be8}.db-calendar-date{align-self:flex-end;color:#777;font-size:11px}.db-calendar-event,.db-calendar-undated-item{display:block;min-width:0;overflow:hidden;padding:4px 5px;border:0;border-radius:4px;background:#eef3fb;color:#285b9b;font-size:11px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.db-calendar-event:hover,.db-calendar-undated-item:hover{background:#dfeafb}.db-calendar-undated{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding:10px;border:1px dashed var(--line);border-radius:7px}.db-calendar-undated strong{width:100%;font-size:11px;color:var(--muted)}.db-calendar-undated-item{background:#f7f7f5;color:var(--ink)}
-@media(max-width:760px){.database-block{padding:8px}.database-block .db-toolbar>*{min-width:0;flex:1}.database-block .db-toolbar .db-search-wrap{flex-basis:100%}.db-calendar-day{min-height:72px;padding:3px}.db-calendar-event{font-size:10px;padding:3px}.database-block .db-board-column{flex-basis:78vw}}
+.database-block{min-width:0;max-width:100%;overflow:hidden}.database-block .db-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:100%;overflow:visible}.database-block .db-viewbar{display:flex;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}.database-block .db-board{width:100%;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}.database-block .db-board-column{flex:0 0 clamp(220px,28vw,300px);min-width:0}.database-block .db-card{min-width:0;max-width:100%}.database-block .db-card-title{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.database-block .db-card-value{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.database-block .db-card-meta{min-width:0}.database-block .db-board-more{width:100%;padding:8px;border:1px dashed var(--line);border-radius:6px;background:#fff;color:var(--muted);font-size:11px}.db-calendar{min-width:0;overflow-x:auto}.db-calendar-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:700px;min-height:58px;margin:0;padding:14px 12px 12px;border-bottom:1px solid var(--line)}.db-calendar-heading strong{font-size:16px;line-height:1.4}.db-calendar-controls{display:flex;gap:6px}.db-calendar-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));min-width:700px;border-left:1px solid var(--line)}.db-calendar-weekday{padding:9px 8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--muted);font-size:11px;text-align:center}.db-calendar-weeks{min-width:700px;border-left:1px solid var(--line)}.db-calendar-week{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:27px;min-height:128px;border-bottom:1px solid var(--line)}.db-calendar-day{display:flex;flex-direction:column;gap:3px;min-height:92px;padding:7px 8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff}.db-calendar-week .db-calendar-day{grid-row:1/-1;min-width:0;min-height:128px;border-bottom:0}.db-calendar-day.outside{background:#fafaf8;color:#aaa}.db-calendar-day.today{background:#f7faff;box-shadow:none}.db-calendar-date{display:grid;place-items:center;align-self:flex-end;min-width:22px;height:22px;padding:0 5px;border-radius:999px;color:#777;font-size:11px;line-height:1}.db-calendar-day.today .db-calendar-date{background:#2f6feb;color:#fff;font-weight:700}.db-calendar-range,.db-calendar-undated-item{display:block;min-width:0;overflow:hidden;padding:4px 8px;border:0;border-radius:4px;background:#eef3fb;color:#285b9b;font-size:11px;text-align:left;text-overflow:ellipsis;white-space:nowrap}.db-calendar-range{z-index:2;align-self:center;height:23px;margin:2px 4px;line-height:15px;cursor:pointer}.db-calendar-range:hover,.db-calendar-undated-item:hover{background:#dfeafb}.db-calendar-range:focus-visible{outline:2px solid #2f6feb;outline-offset:1px}.db-calendar-range.continues-before{margin-left:0;border-radius:0 4px 4px 0}.db-calendar-range.continues-after{margin-right:0;border-radius:4px 0 0 4px}.db-calendar-range.continues-before.continues-after{border-radius:0}.db-calendar-undated{display:block;margin:12px 0 0;padding:11px 12px;border:1px dashed var(--line);border-radius:7px}.db-calendar-undated summary{cursor:pointer;color:var(--muted);font-size:11px;font-weight:700}.db-calendar-undated-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.db-calendar-undated-item{background:#f7f7f5;color:var(--ink)}.notion-property-table .block-table thead,.notion-property-table .block-table-actions{display:none}.notion-property-table .block-table{border:0}.notion-property-table .block-table td{border:0;border-bottom:1px solid #f0f0ed}.notion-property-table .block-table td:first-child{width:150px;color:var(--muted)}.notion-property-table .block-table input{background:transparent}.notion-page-link .media-url{display:none}.notion-page-link .media-preview a{display:inline-flex;align-items:center;gap:6px;padding:4px 7px;border-radius:4px;background:#f7f7f5;color:var(--ink);text-decoration:none}.notion-page-link .media-preview a:hover{background:#efefec;text-decoration:underline}
+@media(max-width:760px){.database-block{padding:8px}.database-block .db-toolbar>*{min-width:0;flex:1}.database-block .db-toolbar .db-search-wrap{flex-basis:100%}.db-calendar-heading,.db-calendar-weekdays,.db-calendar-weeks{min-width:660px}.db-calendar-week,.db-calendar-week .db-calendar-day{min-height:116px}.db-calendar-day{min-height:72px;padding:6px}.db-calendar-range{font-size:10px;padding:4px 6px}.database-block .db-board-column{flex-basis:78vw}}
+/* Notion-fidelity database chrome */
+.document-title-line{display:flex;align-items:flex-start;gap:10px;min-width:0}.document-page-icon{display:grid;place-items:center;width:42px;height:53px;flex:none;color:#696862;line-height:1}.document-page-icon-svg{display:block;width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}.document-title-line .document-title{min-width:0}.editor-view.database-page .document-editor{width:min(calc(100% - 72px),1800px);padding-top:44px}.editor-view.database-page .block-editor{margin-top:34px}.editor-view.database-page .block-row:has(.database-block){margin-left:0;grid-template-columns:minmax(0,1fr)}.editor-view.database-page .block-row:has(.database-block)>.block-handle{display:none}
+.database-block{border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent}.db-chrome{display:flex;align-items:center;justify-content:space-between;gap:18px;min-width:0;border-bottom:1px solid #e9e9e7}.db-chrome .db-viewbar{min-width:0;flex:1 1 auto;padding:0;border:0}.db-view-tab{height:40px;padding:0 9px;border:0;border-radius:5px;color:#62615d;font-size:12px;font-weight:600}.db-view-tab:hover{background:#f1f1ef}.db-view-tab.active{border:0;background:#efefed;color:#272725}.db-chrome .db-toolbar{justify-content:flex-end;min-width:0;flex:0 1 auto;flex-wrap:nowrap;padding:4px 0;border:0;background:transparent}.db-chrome .db-search-wrap{min-width:34px;flex:0 1 150px}.db-chrome .db-search,.db-chrome .db-select,.db-chrome .db-control{height:30px;border-color:transparent;border-radius:5px;background:transparent}.db-chrome .db-search:hover,.db-chrome .db-search:focus,.db-chrome .db-select:hover,.db-chrome .db-select:focus,.db-chrome .db-control:hover,.db-chrome .db-control:focus-visible{border-color:#e2e2df;background:#f5f5f3}.db-chrome .db-search-wrap .ui-icon{top:8px}.db-chrome .db-search{padding-right:7px}.db-chrome .db-select{min-width:88px;max-width:118px;padding-left:8px}.db-chrome .db-filter-value{width:112px;min-width:82px}.db-header{padding-inline:0}.db-footer{padding-inline:0;background:transparent}
+.db-calendar{overflow-x:auto}.db-calendar-heading{min-height:54px;padding:13px 8px 11px}.db-calendar-heading strong{font-size:15px}.db-calendar-controls{gap:2px}.db-calendar-controls .db-control{height:30px;min-width:30px;padding-inline:8px;border-color:#e5e5e2}.db-calendar-weekday{padding:7px 8px;background:#fff;font-size:10px}.db-calendar-week{grid-auto-rows:30px;min-height:138px}.db-calendar-week .db-calendar-day{min-height:138px;padding:6px 8px}.db-calendar-day.outside{background:#fbfbfa}.db-calendar-day.today{background:#fff}.db-calendar-day.today .db-calendar-date{background:#e95b54;color:#fff}.db-calendar-range{display:flex;align-items:center;gap:6px;height:27px;margin:1px 3px;padding:3px 7px;border:1px solid #dededa;border-radius:4px;background:#fff;color:#373733;font-size:11px;font-weight:650;line-height:19px;box-shadow:0 1px 1px rgba(30,30,28,.035)}.db-calendar-range .ui-icon{width:13px;height:13px;flex:none;color:#85847f}.db-calendar-range span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.db-calendar-range:hover{border-color:#c9c9c4;background:#f7f7f5}.db-calendar-range.continues-before{margin-left:0;border-left-color:transparent;border-radius:0 4px 4px 0}.db-calendar-range.continues-after{margin-right:0;border-right-color:transparent;border-radius:4px 0 0 4px}.db-calendar-range.continues-before.continues-after{border-right-color:transparent;border-left-color:transparent;border-radius:0}
+@media(max-width:1100px) and (min-width:761px){.editor-view.database-page .document-editor{width:calc(100% - 40px)}.db-chrome{align-items:stretch;flex-direction:column;gap:0}.db-chrome .db-toolbar{justify-content:flex-start;border-top:1px solid #f0f0ed}}
+@media(max-width:760px){.document-title-line{gap:7px}.document-page-icon{width:32px;height:43px}.document-page-icon-svg{width:25px;height:25px}.editor-view.database-page .document-editor{width:calc(100% - 20px);padding-top:30px}.editor-view.database-page .block-row:has(.database-block){margin-left:0}.database-block{margin-right:0;padding:0}.db-chrome{align-items:stretch;flex-direction:column;gap:0}.db-chrome .db-toolbar{display:flex;justify-content:flex-start;padding:6px 0;border-top:1px solid #f0f0ed}.db-chrome .db-search-wrap{flex-basis:100%;max-width:none}.db-chrome .db-select,.db-chrome .db-filter-value{max-width:none}.db-calendar-week,.db-calendar-week .db-calendar-day{min-height:126px}.db-calendar-range{height:26px;font-size:10px}}
+/* Universal Notion database views */
+.db-list{border-top:1px solid #e9e9e7}.db-list-item{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(0,1fr);align-items:center;gap:24px;min-height:43px;padding:5px 8px;border-bottom:1px solid #eeeeeb}.db-list-item:hover{background:#f7f7f5}.db-list-open,.db-gallery-title,.db-timeline-label{min-width:0;border:0;background:transparent;color:#373733;font-size:12px;font-weight:650;text-align:left}.db-list-open{display:flex;align-items:center;gap:7px;height:31px;padding:0 4px}.db-list-open .ui-icon,.db-timeline-label .ui-icon{width:14px;height:14px;flex:none;color:#85847f}.db-list-open span,.db-timeline-label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.db-list-item>.db-card-meta{display:flex;justify-content:flex-end;gap:16px;overflow:hidden}.db-list-item .db-card-field{max-width:180px}.db-list-more,.db-gallery-more,.db-timeline-more{width:100%;min-height:36px;border:0;background:transparent;color:#77766f;font-size:11px}.db-list-more:hover,.db-gallery-more:hover,.db-timeline-more:hover{background:#f7f7f5}
+.db-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:14px 0}.db-gallery-card{min-width:0;overflow:hidden;border:1px solid #dededb;border-radius:5px;background:#fff;box-shadow:0 1px 2px rgba(30,30,28,.05)}.db-gallery-card:hover{border-color:#cacac5;box-shadow:0 2px 5px rgba(30,30,28,.08)}.db-gallery-cover{display:grid;place-items:center;width:100%;height:112px;border:0;border-bottom:1px solid #e8e8e5;background:#f7f7f5;color:#aaa9a3}.db-gallery-cover:hover{background:#f2f2ef}.db-gallery-cover .ui-icon{width:28px;height:28px}.db-gallery-copy{display:grid;gap:9px;padding:11px 12px 12px}.db-gallery-title{display:-webkit-box;min-height:36px;padding:0;overflow:hidden;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2}.db-gallery-copy .db-card-meta{gap:6px}.db-gallery-more{grid-column:1/-1;border:1px dashed #dededb;border-radius:5px}
+.db-timeline{min-width:0}.db-timeline-heading{display:flex;align-items:center;justify-content:space-between;min-height:54px;padding:11px 8px;border-bottom:1px solid #e8e8e5}.db-timeline-heading strong{font-size:15px}.db-timeline-scroll{max-width:100%;overflow:auto;border-bottom:1px solid #e8e8e5}.db-timeline-grid{display:grid;grid-template-columns:220px repeat(var(--timeline-days),40px);min-width:max-content}.db-timeline-corner,.db-timeline-day{position:sticky;z-index:3;top:0;height:34px;border-right:1px solid #eeeeeb;border-bottom:1px solid #dededb;background:#fff;color:#85847f;font-size:10px}.db-timeline-corner{left:0;z-index:5;padding:9px 10px;font-weight:650}.db-timeline-day{display:grid;place-items:center}.db-timeline-day.weekend{background:#fafaf8}.db-timeline-day.today{color:#e0524d;font-weight:750}.db-timeline-label{position:sticky;z-index:2;left:0;display:flex;align-items:center;gap:7px;height:38px;padding:0 10px;border-right:1px solid #dededb;border-bottom:1px solid #eeeeeb;background:#fff}.db-timeline-label:hover{background:#f7f7f5}.db-timeline-track{display:grid;grid-template-columns:repeat(var(--timeline-days),40px);grid-column:2/-1;height:38px;border-bottom:1px solid #eeeeeb;background:repeating-linear-gradient(90deg,#fff 0,#fff 39px,#eeeeeb 39px,#eeeeeb 40px)}.db-timeline-bar{align-self:center;display:flex;align-items:center;min-width:0;height:26px;margin:0 3px;padding:3px 8px;overflow:hidden;border:1px solid #d9d9d5;border-radius:4px;background:#fff;color:#373733;font-size:11px;font-weight:650;line-height:1.2;text-align:left;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 1px 1px rgba(30,30,28,.04)}.db-timeline-bar>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.db-timeline-bar:hover{border-color:#bebeb8;background:#f7f7f5}.db-timeline-undated{padding:9px 8px;color:#85847f;font-size:10px}
+@media(max-width:760px){.db-list-item{grid-template-columns:1fr;gap:2px;padding:7px 5px}.db-list-item>.db-card-meta{justify-content:flex-start;padding-left:25px}.db-gallery{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:9px;padding-block:10px}.db-gallery-cover{height:90px}.db-timeline-grid{grid-template-columns:170px repeat(var(--timeline-days),36px)}.db-timeline-track{grid-template-columns:repeat(var(--timeline-days),36px)}.db-timeline-corner{width:170px}.db-timeline-label{width:170px}}
+/* Calendar drag affordance */
+.db-calendar-range[draggable="true"]{cursor:grab}.db-calendar-range.dragging{opacity:.48;cursor:grabbing}.db-calendar-day.drag-over{background:#eef6ff;box-shadow:inset 0 0 0 2px #3182f6}
+/* Imported-content and block-layout hardening */
+body.pointer-mode .document-title:focus,body.pointer-mode .block-content[contenteditable="true"]:focus{outline:none;box-shadow:none}
+.block-row{min-width:0}.block-row>*{min-width:0}.todo-wrap{grid-template-columns:20px minmax(0,1fr);gap:6px;min-width:0}.todo-wrap input{justify-self:center}
+.block-content[data-type=heading5]{font-size:15px;font-weight:800;line-height:1.55}.block-content[data-type=heading6]{font-size:14px;font-weight:800;line-height:1.55}
+
+/* Toss-inspired product system: clear hierarchy, calm surfaces, predictable states. */
+:root{--toss-blue:#3182f6;--toss-blue-soft:#eef5ff;--toss-ink:#191f28;--toss-muted:#6b7684;--toss-line:#e5e8eb;--toss-surface:#f7f8fa;--toss-radius:14px;--toss-shadow:0 8px 24px rgba(25,31,40,.06)}
+body{color:var(--toss-ink);background:#fff;letter-spacing:-.012em}.app-shell{background:#fff}.sidebar{background:#f7f8fa;border-right:1px solid var(--toss-line)}.workspace-header{height:64px;padding-inline:18px;border-bottom:1px solid var(--toss-line)}.workspace-header .wordmark{font-size:17px;font-weight:800;letter-spacing:-.03em}.workspace-note-logo{border-radius:12px}.main-pane{background:#fff}.main-nav{padding:10px 12px}.main-nav button{height:38px;border-radius:10px;color:#4e5968;transition:background .16s ease,color .16s ease}.main-nav button:hover{background:#eef0f3;color:var(--toss-ink)}.main-nav button.active{background:var(--toss-blue-soft);color:#1b64da;font-weight:700}.tree-heading{padding:18px 16px 8px;color:#8b95a1;font-size:11px;font-weight:700}.sidebar-all,.sidebar-new-page{height:36px;border-radius:10px;color:#4e5968}.sidebar-all:hover,.sidebar-all.active,.sidebar-new-page:hover{background:#eef0f3;color:var(--toss-ink)}.sidebar-all.active{background:var(--toss-blue-soft);color:#1b64da;font-weight:700}.tree-row{height:36px;margin:2px 0;border-radius:10px}.tree-title{height:34px;padding-left:8px;color:#4e5968;line-height:34px}.tree-row.active{background:var(--toss-blue-soft)}.tree-row.active .tree-title,.tree-row.active .sidebar-glyph{color:#1b64da;font-weight:700}.tree-row:hover{background:#eef0f3}.profile-footer{border-top:1px solid var(--toss-line);background:#fff}.document-editor{padding-top:62px}.document-title{font-size:40px;font-weight:800;letter-spacing:-.055em;color:var(--toss-ink)}.document-page-icon{color:#8b95a1}.breadcrumbs{color:#8b95a1}.block-editor{margin-top:34px}.block-row{padding-block:2px}.block-content{color:#333d4b;font-size:15px;line-height:1.75}.block-content[data-type^=heading]{color:var(--toss-ink);letter-spacing:-.035em}.block-content[data-type=heading1]{font-size:32px;font-weight:800}.block-content[data-type=heading2]{font-size:24px;font-weight:800}.block-content[data-type=heading3]{font-size:20px;font-weight:800}.block-content[data-type=heading4]{font-size:17px;font-weight:800}.block-content[contenteditable=true]:hover{background:#fafbfc;border-radius:8px}.block-content[contenteditable=true]:focus{background:#fff}.block-handle{color:#b0b8c1;border-radius:8px}.block-handle:hover{background:#f2f4f6;color:#4e5968}.todo-wrap{padding:4px 8px;border-radius:10px}.todo-wrap:hover{background:#f7f8fa}.todo-wrap.checked .block-content{text-decoration:line-through;color:#8b95a1}.append-block{margin-top:12px;padding:8px 10px;border-radius:9px;color:#8b95a1}.append-block:hover{background:#f2f4f6;color:#4e5968}.button{border-radius:10px;font-weight:700;transition:background .16s ease,box-shadow .16s ease,transform .16s ease}.button.primary{background:var(--toss-blue);box-shadow:0 4px 10px rgba(49,130,246,.2)}.button.primary:hover{background:#1b64da;box-shadow:0 6px 14px rgba(49,130,246,.24);transform:translateY(-1px)}.button.subtle{border-color:var(--toss-line);background:#fff;color:#4e5968}.button.subtle:hover{background:#f7f8fa;border-color:#d8dde3}.settings-page .settings-grid,.panel,.database-block{border-color:var(--toss-line);border-radius:var(--toss-radius)}.panel,.settings-page .settings-card{background:#fff}.db-chrome{padding:6px 0;border-color:var(--toss-line)}.db-view-tab{height:42px;border-radius:9px;color:#8b95a1;font-weight:700}.db-view-tab:hover{background:#f7f8fa;color:#4e5968}.db-view-tab.active{background:var(--toss-blue-soft);color:#1b64da}.db-toolbar{gap:6px}.db-search,.db-select,.db-control{border-color:var(--toss-line);border-radius:9px;background:#fff;color:#4e5968}.db-search:focus,.db-select:focus,.db-control:focus-visible{border-color:var(--toss-blue);box-shadow:0 0 0 3px rgba(49,130,246,.12)}.db-calendar-day{border-color:#eef0f3}.db-calendar-day.today{background:#f7fbff}.db-calendar-day.today .db-calendar-date{background:var(--toss-blue)}.db-calendar-range{border-color:#dbe8fb;background:#f0f6ff;color:#1b64da;border-radius:7px;box-shadow:none}.db-calendar-range:hover{background:#e4f0ff;border-color:#b9d5ff}.db-card{border-color:var(--toss-line);border-radius:12px;box-shadow:0 1px 2px rgba(25,31,40,.03)}.db-card:hover{border-color:#b9d5ff;box-shadow:var(--toss-shadow)}.toast{border:1px solid var(--toss-line);border-radius:12px;box-shadow:0 10px 30px rgba(25,31,40,.12)}
+@media(max-width:760px){.document-editor{padding-top:34px}.document-title{font-size:32px}.block-content{font-size:15px}.main-nav button{height:42px}.tree-row{height:40px}.tree-title{height:38px;line-height:38px}.db-view-tab{height:40px}}
+.sidebar-document-scroll{overflow-x:hidden;overscroll-behavior-x:none}.sidebar-document-scroll .document-tree{overflow-x:hidden}.sidebar-document-scroll .tree-row{min-width:0;contain:layout}.sidebar-document-scroll .tree-title{min-width:0;max-width:100%}.sidebar [data-tooltip]::after{display:none!important}.tree-context-menu{z-index:270;width:210px}
+.workspace-header-actions{display:flex;align-items:center;gap:2px;flex:none}.header-notification{position:relative}.header-notification:hover,.header-notification.active{background:#eef0f3;color:#1b64da}.header-notification .notification-badge{position:absolute;top:-2px;right:-3px;display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border:2px solid #f7f8fa;font-size:9px!important;line-height:1}.sidebar-primary-nav{position:relative;z-index:30;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:8px 10px 10px;overflow:visible}.sidebar-primary-nav button{width:100%;min-width:0;height:34px;justify-content:center;padding:0}.sidebar-primary-nav button .nav-icon{width:18px}.sidebar-primary-nav button .ui-icon,.sidebar-primary-nav button .star-icon{width:17px;height:17px}.sidebar .sidebar-primary-nav [data-tooltip]::after{top:calc(100% + 6px);left:50%;transform:translateX(-50%)}.sidebar .sidebar-primary-nav [data-tooltip]:hover::after,.sidebar .sidebar-primary-nav [data-tooltip]:focus-visible::after{display:block!important}@media(min-width:761px){.app-shell.sidebar-collapsed .header-notification{display:none}.app-shell.sidebar-collapsed .sidebar-primary-nav{display:grid;grid-template-columns:1fr;padding:4px 8px}.app-shell.sidebar-collapsed .sidebar-primary-nav button{width:100%}.app-shell.sidebar-collapsed .sidebar-primary-nav [data-tooltip]::after{top:50%;left:calc(100% + 8px);transform:translateY(-50%)}}
+/* Full-width documents and a quiet, platform-consistent sidebar scrollbar. */
+.setting-select>input{width:min(100%,280px);height:38px;padding:0 11px;border:1px solid var(--line);border-radius:8px;background:#fff;outline:none}.setting-select>input:focus{border-color:#3182f6;box-shadow:0 0 0 3px rgba(49,130,246,.1)}
+.settings-page .setting-select>input,.settings-page .setting-select select,.settings-page .ip-tag-input{height:34px;font-size:12px}.settings-save-bar{grid-column:1/-1;display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-top:2px;padding:18px;border-top:1px solid var(--toss-line);background:transparent}.settings-save-bar span{margin-right:auto;color:#8b95a1;font-size:11px}.settings-save-bar span:empty{display:none}.settings-save-bar .button{min-width:116px;box-shadow:none}.settings-save-bar .button:hover{box-shadow:none}@media(max-width:600px){.settings-save-bar{padding:14px}.settings-save-bar span{display:none}.settings-save-bar .button{width:100%}}
+.app-shell.space-mode-personal .shared-space-only,.app-shell.space-mode-personal .sidebar-primary-nav [data-view=members]{display:none}.app-shell.space-mode-personal .sidebar-primary-nav{grid-template-columns:repeat(6,minmax(0,1fr))}.app-shell.space-mode-personal .personal-heading{margin-top:0}@media(min-width:761px){.app-shell.sidebar-collapsed.space-mode-personal .sidebar-primary-nav{grid-template-columns:1fr}}@media(max-width:760px){.settings-page .setting-select>input{width:100%}}
+.list-controls{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;align-items:center;gap:8px;margin:20px 0 6px}.list-filter-search{display:flex;align-items:center;gap:8px;height:38px;padding:0 11px;border:1px solid var(--toss-line);border-radius:10px;background:#fff;color:#8b95a1}.list-filter-search:focus-within{border-color:var(--toss-blue);box-shadow:0 0 0 3px rgba(49,130,246,.1)}.list-filter-search input{min-width:0;width:100%;height:100%;padding:0;border:0;outline:0;background:transparent}.list-filter-select{height:38px;padding:0 32px 0 11px;border:1px solid var(--toss-line);border-radius:10px;background:#fff;color:#4e5968;font-size:13px}.list-layout-switch{display:flex;padding:3px;border:1px solid var(--toss-line);border-radius:10px;background:#f7f8fa}.list-layout-switch button{position:relative;display:grid;place-items:center;width:32px;height:30px;padding:0;border:0;border-radius:7px;background:transparent;color:#8b95a1}.list-layout-switch button:hover{color:#4e5968}.list-layout-switch button.active{background:#fff;color:#1b64da;box-shadow:0 1px 4px rgba(25,31,40,.1)}.document-card-main{display:flex;align-items:center;gap:11px;min-width:0}.document-card-copy{min-width:0;flex:1}.document-card-icon{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:9px;background:#f2f4f6;color:#6b7684}.document-card-icon .ui-icon{width:17px;height:17px}.document-card-meta{display:flex!important;align-items:center;gap:6px;flex-wrap:wrap}.document-kind{padding:2px 6px;border-radius:5px;background:#f2f4f6;color:#6b7684;font-size:10px;font-weight:700}.document-card-preview{display:none;margin:10px 0 0;color:#6b7684;font-size:12px;line-height:1.55;overflow:hidden}.document-list.layout-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:18px}.document-list.layout-grid .document-card{position:relative;display:flex;align-items:stretch;min-height:172px;padding:18px;border:1px solid var(--toss-line);border-radius:14px;background:#fff}.document-list.layout-grid .document-card:hover{border-color:#b9d5ff;box-shadow:var(--toss-shadow)}.document-list.layout-grid .document-card-main{align-items:flex-start;width:100%}.document-list.layout-grid .document-card-icon{width:38px;height:38px}.document-list.layout-grid .doc-open{width:100%;padding-right:74px}.document-list.layout-grid .document-card strong{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.document-list.layout-grid .document-card-preview{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}.document-list.layout-grid .card-actions{position:absolute;top:10px;right:9px}.document-list.layout-preview{gap:10px;margin-top:18px}.document-list.layout-preview .document-card{align-items:start;min-height:116px;padding:16px;border:1px solid var(--toss-line);border-radius:13px}.document-list.layout-preview .document-card-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.document-list.layout-preview .document-card-icon{width:42px;height:42px}.document-list.layout-preview .doc-open{width:100%}@media(max-width:900px){.list-controls{grid-template-columns:minmax(180px,1fr) 1fr 1fr}.list-layout-switch{grid-column:1/-1;justify-self:end}}@media(max-width:600px){.list-controls{grid-template-columns:1fr 1fr}.list-filter-search{grid-column:1/-1}.list-layout-switch{grid-column:auto;justify-self:stretch}.list-layout-switch button{flex:1}.document-list.layout-grid{grid-template-columns:1fr}.document-card{gap:8px}.document-card-icon{display:none}}
+.sidebar-document-scroll{scrollbar-width:thin;scrollbar-color:rgba(139,149,161,.55) transparent}
+.sidebar-document-scroll::-webkit-scrollbar{width:9px}
+.sidebar-document-scroll::-webkit-scrollbar-track{background:transparent}
+.sidebar-document-scroll::-webkit-scrollbar-thumb{min-height:44px;border:2px solid transparent;border-radius:999px;background:rgba(139,149,161,.5);background-clip:padding-box}
+.sidebar-document-scroll::-webkit-scrollbar-thumb:hover{background:rgba(107,118,132,.72);background-clip:padding-box}
+@media(min-width:761px){.app-shell.document-width-full .document-editor,.app-shell.document-width-full .editor-view.database-page .document-editor,.app-shell.document-width-full .page-view{width:100%;max-width:none;margin-inline:0;padding-right:clamp(24px,3vw,48px);padding-left:clamp(24px,3vw,48px)}}
+.block-row:has(> .database-block)>.block-handle{visibility:hidden!important;pointer-events:none}
+/* One document type scale and one quiet surface language. */
+.editor-view:not(.database-page) .document-title{font-size:38px;line-height:1.22}.editor-view:not(.database-page) .document-page-icon{width:36px;height:46px}.editor-view:not(.database-page) .document-page-icon-svg{width:25px;height:25px}.editor-view:not(.database-page) .block-editor{gap:6px;margin-top:30px}.editor-view:not(.database-page) .block-content{font-size:15px;line-height:1.7}
+.notion-property-table{margin:4px 0 14px;padding:8px 14px;border:1px solid var(--toss-line);border-radius:14px;background:#fbfcfd}.notion-property-table .block-table{width:100%;border:0}.notion-property-table .block-table td{height:42px;border-bottom:1px solid #eef0f3}.notion-property-table .block-table tr:last-child td{border-bottom:0}.notion-property-table .block-table td:first-child{width:140px}.notion-property-table .block-table input{height:42px;padding:0 8px;color:#333d4b;font-size:14px;line-height:1.45}.notion-property-table .block-table td:first-child input{color:#8b95a1;font-size:13px;font-weight:600}
+.notion-page-link{padding:0;border-radius:0}.notion-page-link .media-preview{display:block;min-height:30px;border:0;background:transparent;border-radius:0}.notion-page-link .media-preview a{display:flex;width:max-content;max-width:100%;min-height:30px;align-items:center;gap:8px;padding:0 2px;border:0;border-radius:6px;background:transparent;color:#2c2c2b;font-size:16px;font-weight:400;line-height:24px;text-decoration:none;transition:background .16s ease,color .16s ease}.notion-page-link .media-preview a:hover{background:#f1f1ef;color:#1b64da;text-decoration:none}.notion-page-link .media-preview .ui-icon{width:16px;height:16px;flex:none;color:#8b95a1}
+.media-image .media-preview{display:block;min-height:0;border:0;border-radius:0;background:transparent}.media-image .media-preview img{width:auto;max-width:100%;height:auto;max-height:none;object-fit:contain;border-radius:6px}.media-image .media-preview img[loading=lazy]{content-visibility:auto}.media-unavailable{display:flex!important;align-items:center;gap:10px;min-height:64px;padding:12px 14px!important;border:1px solid #e5e8eb!important;border-radius:10px!important;background:#f7f8fa;color:#6b7684!important;text-decoration:none!important}.media-unavailable:hover{border-color:#cbd2da!important;background:#f2f4f6}.media-unavailable .ui-icon{width:20px;height:20px;flex:none}.media-unavailable span{font-size:14px;line-height:1.55}
+.editor-view.notion-imported:not(.database-page) .document-editor{width:min(100% - 40px,900px)}.editor-view.notion-imported:not(.database-page) .block-editor{gap:0;margin-top:22px}.editor-view.notion-imported:not(.database-page) .block-row{min-height:40px;padding-block:0}.editor-view.notion-imported:not(.database-page) .block-content{min-height:40px;padding:8px 0;color:#2c2c2b;font-size:16px;line-height:24px}.editor-view.notion-imported:not(.database-page) .block-content[data-type=heading1]{padding:14px 0 8px;font-size:30px;line-height:36px}.editor-view.notion-imported:not(.database-page) .block-content[data-type=heading2]{padding:13px 0 7px;font-size:24px;line-height:30px}.editor-view.notion-imported:not(.database-page) .block-content[data-type=heading3]{padding:12px 0 6px;font-size:20px;line-height:26px}.editor-view.notion-imported:not(.database-page) .block-content[data-type=heading4]{padding:10px 0 6px;font-size:17px;line-height:24px}.editor-view.notion-imported:not(.database-page) .block-row:has(>.notion-page-link){min-height:30px}.editor-view.notion-imported:not(.database-page) .block-row:has(>.notion-page-link)>.block-handle{height:30px}
+.todo-wrap{min-height:42px;padding:6px 10px}.todo-wrap input[type=checkbox]{width:16px;height:16px;margin:6px 0 0;accent-color:var(--toss-blue)}.todo-wrap .block-content{padding:2px 0;font-size:15px;line-height:1.7}.append-block{font-size:13px}
+@media(max-width:760px){.editor-view:not(.database-page) .document-title{font-size:32px}.editor-view:not(.database-page) .block-editor{margin-top:24px}.notion-property-table{padding:6px 8px}.notion-property-table .block-table td:first-child{width:108px}.notion-page-link .media-preview a{min-height:46px;padding-inline:12px}}
+.db-card.drag-copy,.db-calendar-range.drag-copy,.db-timeline-bar.drag-copy{cursor:copy}
+.db-board-column.drag-copy-over,.db-calendar-day.drag-copy-over,.db-timeline-track.drag-copy-over{background:#eef6ff;box-shadow:inset 0 0 0 2px #3182f6}
+.db-timeline-bar[draggable="true"],.db-card[draggable="true"]{cursor:grab}.db-timeline-bar.dragging,.db-card.dragging{cursor:grabbing;opacity:.48}
+body[data-drag-mode="copy"]::after{content:'복사';position:fixed;right:18px;bottom:18px;z-index:10000;padding:6px 9px;border-radius:999px;background:#3182f6;color:#fff;font-size:11px;font-weight:700;box-shadow:0 4px 14px rgba(49,130,246,.24);pointer-events:none}
+.notion-page-link .media-preview a{justify-content:flex-start}
+.editor-view.notion-imported:not(.database-page) .block-row:has(.notion-page-link){min-height:30px}
+.editor-view.notion-imported:not(.database-page) .block-row:has(.notion-page-link)>.block-content{min-height:30px;padding:0}
+.editor-view.notion-imported:not(.database-page) .block-row:has(.notion-page-link)>.block-handle{height:30px}
+.editor-view.notion-imported:not(.database-page) .notion-page-link .media-preview a{width:100%;max-width:none}
+.editor-view.notion-imported:not(.database-page) .media-block .media-url{display:none}
+.block-editor.block-selecting{user-select:none;cursor:default}
+.editor-view:not(.database-page) .block-editor{margin-left:-52px;padding-left:52px}
+.block-editor.block-selecting .block-content{user-select:none}
+.block-row.selected{background:#e8f3ff;box-shadow:inset 3px 0 #3182f6;color:#1f2937}
+.block-row.selected .block-content{border-radius:8px}
+.block-row.selected .block-handle{visibility:hidden;color:#3182f6}
+.block-editor.block-selecting .block-row.selected .block-handle{visibility:visible}
+.block-row.selected:hover{background:#e1efff}
+.document-title.skeleton-title::placeholder{color:transparent!important}
+.document-title:focus-visible,.block-content[contenteditable="true"]:focus-visible{outline:none;box-shadow:none}
+.inline-link-favicon{display:inline-block;width:16px;height:16px;margin:0 5px 0 0;vertical-align:-3px;border-radius:3px;object-fit:contain}.media-preview a .inline-link-favicon{width:18px;height:18px;flex:none;margin:0}.media-preview a .page-link-icon-svg,.media-preview a .page-link-icon-image,.media-preview a .page-link-icon-emoji{display:block;width:18px;height:18px;flex:none}.media-preview a .page-link-icon-svg{fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}.media-preview a .page-link-icon-image{object-fit:contain;border-radius:4px}.media-preview a .page-link-icon-emoji{font-size:16px;line-height:18px;text-align:center}
+.editor-view.notion-imported:not(.database-page) .block-content[data-type=heading5]{padding:9px 0 5px;font-size:15px;line-height:22px;font-weight:700}.editor-view.notion-imported:not(.database-page) .block-content[data-type=heading6]{padding:8px 0 4px;font-size:14px;line-height:20px;font-weight:700}
+.sidebar-page-emoji,.sidebar-page-icon{display:block;width:15px;height:15px;flex:none;object-fit:contain;text-align:center;line-height:15px}.sidebar-page-emoji{font-size:14px}.document-page-icon-emoji,.document-page-icon-image{display:block;width:30px;height:30px;object-fit:contain;text-align:center;line-height:30px}.document-page-icon-emoji{font-size:27px}.document-page-icon-image{border-radius:6px}
+@media(max-width:760px){.editor-view:not(.database-page) .block-editor{margin-left:-36px;padding-left:36px}}
+/* Imported documents must honor the selected full-width mode.  The imported
+   readability cap above intentionally wins in the default mode, but it must
+   not override the user's explicit full-width choice. */
+@media(min-width:761px){.app-shell.document-width-full .editor-view.notion-imported:not(.database-page) .document-editor{width:100%;max-width:none;margin-inline:0;padding-inline:clamp(24px,3vw,48px)}}
+/* Keep drag selection quiet and structural.  The old inset blue rail and
+   rounded block surfaces made a multi-selection look like a stack of cards;
+   selected content now uses one blue surface while the block order and
+   copy/move behavior stay unchanged. */
+.block-row.selected{margin-right:0;background:transparent;box-shadow:none;color:inherit}
+.block-row.selected::before{display:none}
+.block-row.selected .block-content{border-radius:8px;background:#e8f3ff}
+.block-row.selected .media-block{outline:none;border-radius:8px;background:#e8f3ff}
+.block-row.selected .media-preview{border-color:transparent;background:transparent;box-shadow:none}
+.block-row.selected .block-handle{visibility:visible;color:#8b95a1}
+.block-editor.block-selecting .block-row.selected .block-content{background:#dceeff}
+.block-row.selected:hover{background:transparent}.block-row.selected:hover .block-content{background:#e8f3ff}
+.block-row.drop-before::before,.block-row.drop-after::after{height:1px;border-radius:0;background:#8b95a1}
+body[data-drag-mode="copy"]::after{display:none}
+@media(min-width:761px){.toolbar-actions .button,.toolbar-actions .icon-button{height:32px;min-height:32px}.db-chrome .db-view-tab{height:36px}.db-chrome .db-toolbar{min-height:36px}.db-chrome .db-search,.db-chrome .db-select,.db-chrome .db-control{height:32px}}
+.list-filter-search,.list-filter-select{height:36px;box-sizing:border-box}.list-layout-switch{height:36px;box-sizing:border-box;padding:2px}.list-layout-switch button{height:30px}
+.tree-row .document-page-icon-emoji,.tree-row .document-page-icon-image{display:grid;width:15px;height:15px;place-items:center;overflow:hidden;border-radius:3px;font-size:14px;line-height:1;object-fit:contain}.tree-row .document-page-icon-svg{width:15px;height:15px}
+/* Shared block gutter: handle -> marker -> content.  Every editable block uses
+   the same coordinate system so hover never moves the text or steals the list marker. */
+.editor-view:not(.database-page) .block-editor{--handle-gutter:28px;--marker-gutter:22px;--indent-step:24px;gap:6px;margin-left:-52px;padding-left:52px;padding-right:16px}
+.editor-view:not(.database-page) .block-row{grid-template-columns:var(--handle-gutter) minmax(0,1fr);margin-left:calc(-1 * var(--handle-gutter));padding-left:calc(var(--indent,0) * var(--indent-step))}
+.editor-view:not(.database-page) .block-handle{width:var(--handle-gutter);min-width:var(--handle-gutter);height:30px}
+.editor-view:not(.database-page) .block-content[data-type="bullet"],.editor-view:not(.database-page) .block-content[data-type="numbered"]{position:relative;padding-left:var(--marker-gutter)}
+.editor-view:not(.database-page) .block-content[data-type="bullet"]::before,.editor-view:not(.database-page) .block-content[data-type="numbered"]::before{position:absolute;left:0;top:.18em;width:var(--marker-gutter);margin:0;line-height:1.65;box-sizing:border-box}
+.editor-view:not(.database-page) .block-content[data-type="bullet"]::before{text-align:left;padding-left:3px}
+.editor-view:not(.database-page) .block-content[data-type="numbered"]::before{min-width:var(--marker-gutter);padding-right:4px;text-align:right}
+.editor-view:not(.database-page) .todo-wrap{grid-template-columns:var(--marker-gutter) minmax(0,1fr);gap:0;min-width:0;padding:0}
+.editor-view:not(.database-page) .todo-wrap input[type="checkbox"]{justify-self:center;margin:7px 0 0}
+.editor-view:not(.database-page) .todo-wrap .block-content{padding-left:0}
+.editor-view:not(.database-page) .toggle-summary{grid-template-columns:var(--marker-gutter) minmax(0,1fr)}
+.editor-view:not(.database-page) .toggle-caret{width:var(--marker-gutter)}
+.editor-view:not(.database-page) .block-content[contenteditable="true"]:hover{background:transparent;border-radius:0}
+.block-row.selected:hover{background:transparent}.block-row.selected:hover .block-content{background:#e8f3ff}.block-row.selected:hover .media-block,.block-editor.block-selecting .block-row.selected .media-block{background:#e8f3ff}.block-row.dragging{opacity:.62}.block-row.drop-before::before,.block-row.drop-after::after{right:16px;left:28px;height:2px;border-radius:2px;background:#b6bec9;box-shadow:none}.db-board-column.drag-copy-over,.db-calendar-day.drag-copy-over,.db-timeline-track.drag-copy-over{background:#f7fbff;box-shadow:inset 0 0 0 1px #b9d5ff}.db-card.dragging,.db-calendar-range.dragging,.db-timeline-bar.dragging{opacity:.62}
+.block-content[data-type="quote"]{padding-inline:12px;border-left:2px solid #d5dae2;background:transparent}.block-content[data-type="quote"]:hover{background:transparent}
+.editor-view.notion-imported:not(.database-page) .block-content[data-type="quote"]{padding:8px 12px}
+@media(max-width:760px){.editor-view:not(.database-page) .block-editor{--handle-gutter:22px;--marker-gutter:20px;--indent-step:20px;padding-right:8px}.editor-view:not(.database-page) .block-row{margin-left:calc(-1 * var(--handle-gutter))}.editor-view:not(.database-page) .block-handle{height:28px}}
+/* Slash menu and code blocks share the editor's quiet, measured surface. */
+.slash-menu{width:min(320px,calc(100vw - 16px));max-height:min(420px,calc(100vh - 16px));padding:6px;overscroll-behavior:contain}
+.slash-empty{padding:18px 12px;color:#8b95a1;font-size:12px;text-align:center}
+.code-block-shell{min-width:0;max-width:100%;margin:4px 0 8px;overflow:hidden;border:1px solid #e5e8eb;border-radius:10px;background:#f7f8fa}
+.code-block-header{display:flex;align-items:center;justify-content:space-between;min-height:32px;padding:0 10px;border-bottom:1px solid #e5e8eb;background:#f1f3f5;color:#8b95a1;font-size:11px;line-height:1}
+.code-block-label{font-weight:700;letter-spacing:.01em}
+.code-copy-button{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 6px;border:0;border-radius:5px;background:transparent;color:#6b7684;font-size:11px}
+.code-copy-button:hover,.code-copy-button:focus-visible{background:#e5e8eb;color:#333d4b;outline:none}
+.code-copy-button.copied{color:#1b64da}
+.code-copy-button .ui-icon{width:13px;height:13px}
+.code-block-shell>.code-block-content,.code-block-shell .block-content[data-type="code"]{display:block;min-width:0;max-width:100%;min-height:44px;margin:0;padding:12px 16px!important;overflow-x:auto;overflow-y:hidden;white-space:pre;word-break:normal;overflow-wrap:normal;tab-size:2;color:#26323d;background:transparent;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px!important;line-height:1.6!important;letter-spacing:0}
+.code-block-shell>.code-block-content:empty:before{content:none}
+.code-block-shell>.code-block-content::-webkit-scrollbar{height:8px}.code-block-shell>.code-block-content::-webkit-scrollbar-track{background:transparent}.code-block-shell>.code-block-content::-webkit-scrollbar-thumb{border-radius:8px;background:#cbd2da}
+.editor-view.notion-imported:not(.database-page) .code-block-shell{margin:4px 0 12px;border-radius:10px}
+.editor-view.notion-imported:not(.database-page) .code-block-shell>.code-block-content{min-height:44px;padding:12px 16px!important;font-size:13px!important;line-height:1.6!important;white-space:pre;overflow-x:auto;word-break:normal}
+ .public-block-editor .code-block-shell{margin-inline:0}
+ @media(max-width:760px){.code-block-shell>.code-block-content,.editor-view.notion-imported:not(.database-page) .code-block-shell>.code-block-content{padding:10px 12px!important;font-size:13px!important}.code-block-header{min-height:30px;padding-inline:8px}.slash-menu{max-height:min(360px,calc(100vh - 16px))}}
+ /* Menu type scale: keep the compact shell while making navigation and action labels easier to scan. */
+ .sidebar .main-nav button,.sidebar .tree-title,.sidebar .sidebar-all,.sidebar .sidebar-new-page{font-size:14px}
+ .sidebar .tree-heading{font-size:12px}
+ .sidebar .workspace-button strong{font-size:15px}.sidebar .workspace-button small{font-size:12px}
+ .sidebar .profile-copy strong{font-size:13px}.sidebar .profile-copy small{font-size:11px}
+ .sidebar .sidebar-primary-nav [data-tooltip]::after{font-size:13px}
+ .list-filter-select{font-size:14px}
+ .slash-item strong{font-size:14px}.slash-item small,.slash-empty{font-size:11px}
+ /* The desktop sidebar leaves too little toolbar width on small tablets. Keep primary actions on one line. */
+ @media(max-width:900px) and (min-width:761px){
+ .toolbar-actions{flex-wrap:nowrap}
+ .toolbar-actions #comments-button,.toolbar-actions #history-button,.toolbar-actions #upload-button,.toolbar-actions #access-button,.toolbar-actions #duplicate-button,.toolbar-actions #new-child-button{display:none}
+ }
+ .block-menu button{font-size:13px}
+ .db-view-tab,.db-control{font-size:13px}
+ /* A freshly inserted page-link block has no URL yet, so its editor must stay visible. */
+ .notion-page-link .media-url:not([hidden]){display:block}
+ /* Minimum readable UI text scale: keep every visible text surface at 14px or larger. */
+ .muted,.eyebrow,.auth-card label,.dialog-card label,.button.compact,.form-note,.alert,.workspace-button small,.main-nav button,.tree-heading,.tree-row,.tree-toggle,.avatar,.profile-copy strong,.profile-copy small,.breadcrumbs,.save-state,.notice,.block-content[data-type=code],.append-block,.document-card small,.section-title span,.member-info strong,.member-info small,.member-controls select,.member-controls button,.settings-card p,.dialog-card header p,.invite-link-result p,.invite-link-result input,.slash-item strong,.slash-item small,.toast,.mobile-header span,.page-header p:last-child,.feed-item span,.feed-item small,.template-card p,.document-tree>.empty-state,.boot-shell,.button,.toolbar-actions .button,[data-tooltip]::after,.main-nav button .nav-label,.block-menu button,.import-card small,.width-options button,.policy-card header p,.owner-only-badge,.setting-toggle strong,.setting-select strong,.ip-list-label strong,.setting-toggle small,.setting-select small,.ip-list-label small,.ip-tag-input,.ip-input-hint,.ip-input-hint strong,.current-ip,.import-repair-toggle strong,.import-repair-toggle small,.slash-category,.public-header,.block-table-actions button,.database-label,.media-preview,.toc-block strong,.toc-block a,.inline-toolbar button,.global-search-card kbd,.global-search-item strong,.global-search-item small,.global-search-empty,.global-search-card>footer,.publication-row small,.url-paste-heading,.url-paste-copy strong,.url-paste-copy small,.database-block,.db-count,.db-view-tab,.db-search,.db-select,.db-control,.db-property-name,.db-property-type,.db-cell-input,.db-empty,.db-footer-note,.db-board-heading,.db-board-heading span:last-child,.db-card-title,.db-card-field,.db-card-field .db-cell-input,.db-board-add,.db-table th.db-row-actions-cell,.db-card-value,.db-card-avatar,.sidebar-all,.sidebar-new-page,.teamspace-tree:empty::after,.setup-step,.setup-benefits li>span,.setup-benefits strong,.setup-benefits small,.setup-card header>p:last-child,.setup-card label,.setup-security,.database-block .db-board-more,.db-calendar-weekday,.db-calendar-date,.db-calendar-range,.db-calendar-undated-item,.db-calendar-undated summary,.db-list-open,.db-gallery-title,.db-timeline-label,.db-list-more,.db-gallery-more,.db-timeline-more,.db-timeline-corner,.db-timeline-day,.db-timeline-bar,.db-timeline-undated,.settings-page .setting-select>input,.settings-page .setting-select select,.settings-page .ip-tag-input,.settings-save-bar span,.list-filter-select,.document-kind,.document-card-preview,.notion-property-table .block-table td:first-child input,body[data-drag-mode="copy"]::after,.slash-empty,.code-block-header,.code-copy-button,.sidebar .tree-heading,.sidebar .workspace-button small,.sidebar .profile-copy strong,.sidebar .profile-copy small,.sidebar .sidebar-primary-nav [data-tooltip]::after,.sidebar .main-nav button,.sidebar .tree-title,.sidebar .sidebar-all,.sidebar .sidebar-new-page,.ip-tag{font-size:14px!important}
+ .notification-badge,.header-notification .notification-badge,.security-warning{font-size:14px!important}
+ .code-block-shell>.code-block-content,.code-block-shell .block-content[data-type="code"],.editor-view.notion-imported:not(.database-page) .code-block-shell>.code-block-content{font-size:14px!important}
+ .global-search-item{gap:5px;padding:12px 13px}
+ .global-search-item strong{font-size:14px;line-height:1.35}
+ .global-search-meta,.global-search-preview{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:1.45}
+ .global-search-meta{color:var(--muted)}
+ .global-search-preview{color:#565550}
+  .global-search-item mark{padding:0 2px;border-radius:3px;background:#fff0a8;color:inherit}
+  `;
+
+const UI_SPACING_CSS = String.raw`
+/* UI spacing system: one rhythm, with intentional per-surface tuning. */
+:root{--ui-space-1:4px;--ui-space-2:8px;--ui-space-3:12px;--ui-space-4:16px;--ui-space-5:20px;--ui-surface-radius:12px;--ui-control-height:44px}
+
+/* Inline links stay part of the text flow. Card links are styled below by their media surface. */
+.editor-view.notion-imported:not(.database-page) .block-content:not(.media-block) a{color:#2c2c2b;text-decoration:none;text-underline-offset:2px;border-radius:4px;padding-inline:0;transition:background .16s ease,color .16s ease}
+.editor-view.notion-imported:not(.database-page) .block-content:not(.media-block) a:hover{background:#f1f1ef;color:#1b64da}
+
+/* External bookmark/file/fallback cards: the surface may align to the text column,
+   but its readable content never touches the border. */
+.media-block{min-width:0;max-width:100%}
+.media-block:not(.notion-page-link) .media-preview> a{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;box-sizing:border-box;padding:0 var(--ui-space-4);border-radius:10px;color:var(--ink);text-decoration:none}
+.media-block:not(.notion-page-link) .media-preview> a:hover{background:#f7f8fa;color:#1b64da}
+
+/* Internal page links are intentionally flat, but still have a clear hit area. */
+.notion-page-link{padding:0;border-radius:0}
+.notion-page-link .media-preview{display:block;min-height:40px;border:0;background:transparent;border-radius:0}
+.notion-page-link .media-preview> a{display:flex;width:100%;max-width:none;min-height:40px;align-items:center;justify-content:flex-start;gap:8px;box-sizing:border-box;padding:0 var(--ui-space-2);border:0;border-radius:8px;background:transparent;color:#2c2c2b;font-size:16px;font-weight:400;line-height:24px;text-decoration:none}
+.notion-page-link .media-preview> a:hover{background:#f1f1ef;color:#1b64da;text-decoration:none}
+
+/* Media-specific surfaces: visual media is not padded, controls and fallbacks are. */
+.media-image .media-preview{padding:0}
+.media-image .media-preview img{border-radius:8px}
+.media-preview audio{display:block;width:calc(100% - 32px);margin:16px}
+.media-preview iframe,.media-preview video{border-radius:8px}
+.media-unavailable{padding-inline:var(--ui-space-4)!important}
+
+/* Structured content uses the same readable inset without shrinking its scroll area. */
+.callout-wrap{padding-inline:14px}
+.block-content[data-type="quote"]{padding-inline:12px}
+.toc-block,.math-block{padding-inline:14px}
+.code-block-shell>.code-block-content,.code-block-shell .block-content[data-type="code"]{padding-inline:var(--ui-space-4)!important}
+
+/* App chrome follows the same surface rhythm. */
+.document-title-line>.document-page-icon{display:none!important}
+.document-card{padding-inline:var(--ui-space-4)}
+.panel{padding-inline:var(--ui-space-5)}
+.settings-card{padding-inline:24px}
+.dialog-card{padding-inline:24px}
+.slash-menu,.block-menu,.url-paste-menu{padding:var(--ui-space-2)}
+.global-search-results{padding:var(--ui-space-2)}
+
+/* Selection is a surface state, not a border or left rail. */
+.block-row.selected{margin-right:0;background:transparent;box-shadow:none;color:inherit}
+.block-row.selected::before{display:none}
+.block-row.selected .block-content{border-radius:8px;background:#e8f3ff}
+.block-row.selected .media-block{outline:none;border-radius:var(--ui-surface-radius);background:#e8f3ff}
+  .block-row.selected .media-preview{border-color:transparent;background:transparent;box-shadow:none}
+.block-row.selected:hover{background:transparent}
+.block-row.selected:hover .block-content,.block-editor.block-selecting .block-row.selected .block-content{background:#e8f3ff}
+.block-row.selected:hover .media-block,.block-editor.block-selecting .block-row.selected .media-block{background:#e8f3ff}
+
+@media(max-width:760px){
+  .media-block:not(.notion-page-link) .media-preview> a{min-height:48px;padding-inline:var(--ui-space-3)}
+  .notion-page-link .media-preview{min-height:44px}
+  .notion-page-link .media-preview> a{min-height:44px;padding-inline:var(--ui-space-3)}
+  .media-preview audio{width:calc(100% - 24px);margin:12px}
+  .media-unavailable{padding-inline:var(--ui-space-3)!important}
+  .callout-wrap,.block-content[data-type="quote"],.toc-block,.math-block{padding-inline:var(--ui-space-3)}
+  .code-block-shell>.code-block-content,.code-block-shell .block-content[data-type="code"]{padding-inline:var(--ui-space-3)!important}
+  .document-card{padding-inline:var(--ui-space-3)}
+  .panel{padding-inline:var(--ui-space-3)}
+  .settings-card,.dialog-card{padding-inline:18px}
+  .button,.icon-button,.main-nav button,.sidebar-all,.sidebar-new-page,.tree-row{min-height:var(--ui-control-height)}
+}
 `;
 
-const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,globalSearchIndex:0,globalSearchTimer:null,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,workspaceSettings:null,ipAllowlist:[]};
+const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',listQuery:'',listKind:'all',listSort:'updated_desc',listLayout:'list',listFilterTimer:null,expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,treeContextDoc:null,treeContextRow:null,globalSearchIndex:0,globalSearchTimer:null,globalSearchRequest:0,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,workspaceSettings:null,ipAllowlist:[],notionRepairAttempted:new Set()};
 const $=(id)=>document.getElementById(id);
 function loadingMarkup(kind,count=4){const hidden='<span class="sr-only">콘텐츠를 불러오는 중</span>';if(kind==='tree')return'<div class="skeleton-tree" role="status" aria-label="문서 트리 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='document')return'<div class="skeleton-document" role="status" aria-label="문서 내용 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='member')return'<div class="skeleton-stack" role="status" aria-label="멤버 목록 불러오는 중">'+hidden+Array.from({length:count},()=>'<div class="skeleton-member-row"><span class="skeleton skeleton-avatar"></span><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('')+'</div>';const rows=Array.from({length:count},()=>'<div class="skeleton-list-row"><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('');return'<div class="'+(kind==='search'?'global-search-skeleton':'skeleton-stack')+'" role="status" aria-label="목록 불러오는 중">'+hidden+rows+'</div>'}
 function showLoading(id,kind,count){const container=$(id);container.setAttribute('aria-busy','true');container.innerHTML=loadingMarkup(kind,count)}
@@ -484,7 +743,7 @@ function finishLoading(id){$(id).removeAttribute('aria-busy')}
 function setLoadButton(id,loading){const button=$(id);button.disabled=loading;button.classList.toggle('loading-indicator',loading);button.setAttribute('aria-busy',loading?'true':'false')}
 const icon=(name,className='ui-icon')=>'<svg class="'+className+'" aria-hidden="true"><use href="#icon-'+name+'"></use></svg>';
 const starIcon=()=>icon('star','star-icon');
-const blockIconName={text:'type',heading1:'type',heading2:'type',heading3:'type',heading4:'type',bullet:'list',numbered:'list-ordered',todo:'check-square',toggle:'chevron-right',quote:'quote',callout:'alert',code:'code',divider:'minus',table:'list',database:'files',toc:'list',math:'type',bookmark:'star',image:'files',video:'files',audio:'files',file:'files',embed:'code',page_link:'files'};
+const blockIconName={text:'type',heading1:'type',heading2:'type',heading3:'type',heading4:'type',heading5:'type',heading6:'type',bullet:'list',numbered:'list-ordered',todo:'check-square',toggle:'chevron-right',quote:'quote',callout:'alert',code:'code',divider:'minus',table:'list',database:'files',toc:'list',math:'type',bookmark:'star',image:'files',video:'files',audio:'files',file:'files',embed:'code',page_link:'files'};
 function setFavoriteButton(button,value){const label=value?'즐겨찾기 해제':'즐겨찾기 추가';button.innerHTML=starIcon();button.classList.add('favorite-toggle');button.classList.toggle('active',value);button.setAttribute('aria-label',label);button.dataset.tooltip=label}
 const roleLabel={owner:'Owner',admin:'Admin',member:'Member',viewer:'Viewer'};
 const blockLabels=[
@@ -493,6 +752,8 @@ const blockLabels=[
   ['heading2','H2','제목 2','중간 제목','기본 블록'],
   ['heading3','H3','제목 3','작은 제목','기본 블록'],
   ['heading4','H4','제목 4','가장 작은 제목','기본 블록'],
+  ['heading5','H5','제목 5','작은 제목','기본 블록'],
+  ['heading6','H6','제목 6','가장 작은 제목','기본 블록'],
   ['bullet','-','글머리 목록','항목 목록','기본 블록'],
   ['numbered','1.','번호 목록','순서가 있는 목록','기본 블록'],
   ['todo','[]','할 일 목록','체크할 수 있는 항목','기본 블록'],
@@ -529,8 +790,9 @@ $('signup-form').addEventListener('submit',async(event)=>{event.preventDefault()
 $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);alertBox('invite-alert','');busy(formEl,true);try{const data=await api('/api/invitations/'+encodeURIComponent(inviteToken())+'/accept',{method:'POST',body:{username:form.get('username'),password:form.get('password')}});history.replaceState({},'', '/');enterApp(data)}catch(error){alertBox('invite-alert',error.message);busy(formEl,false)}});
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
-async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}const agentAction=new URLSearchParams(location.search).get('agent_action');try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data);if(agentAction==='notion-import'&&canManage())setTimeout(importAllFromNotionApi,0)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
-function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
+async function auditLinksByAgent(){try{const data=await api('/api/import/notion-api/audit?links=1');const output=document.createElement('pre');output.id='agent-audit-output';output.style.cssText='white-space:pre-wrap;max-height:70vh;overflow:auto;padding:24px;margin:24px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;font:14px/1.5 ui-monospace,monospace';output.textContent=JSON.stringify(data,null,2);document.body.append(output)}catch(error){toast('링크 전수감사 실패: '+String(error?.message||'알 수 없는 오류'))}}
+async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}const params=new URLSearchParams(location.search),agentAction=params.get('agent_action');try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data);if(agentAction==='notion-import'&&canManage())setTimeout(importAllFromNotionApi,0);if(agentAction==='notion-import-source'&&canManage()){const sourceId=String(params.get('source')||'').replaceAll('-','').toLowerCase();if(/^[0-9a-f]{32}$/.test(sourceId))setTimeout(()=>importNotionApiSourceByAgent(sourceId),0)}if(agentAction==='notion-link-audit'&&canManage())setTimeout(auditLinksByAgent,0)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
+function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();applySpaceProfile(data.workspace);let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default';state.listLayout=['list','grid','preview'].includes(localStorage.getItem('joripnote_list_layout'))?localStorage.getItem('joripnote_list_layout'):'list'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setListLayout(state.listLayout,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
@@ -538,33 +800,54 @@ function setSidebarCollapsed(collapsed,persist=true){const label=collapsed?'사�
 $('sidebar-collapse').onclick=()=>setSidebarCollapsed(!$('app-view').classList.contains('sidebar-collapsed'));
 function setDocumentWidth(value,persist=true){const width=['narrow','default','full'].includes(value)?value:'default';$('app-view').classList.toggle('document-width-narrow',width==='narrow');$('app-view').classList.toggle('document-width-full',width==='full');document.querySelectorAll('[data-document-width]').forEach(button=>{const active=button.dataset.documentWidth===width;button.classList.toggle('active',active);button.setAttribute('aria-checked',active?'true':'false')});if(persist)try{localStorage.setItem('joripnote_document_width',width)}catch{}}
 document.querySelectorAll('[data-document-width]').forEach(button=>button.onclick=()=>{setDocumentWidth(button.dataset.documentWidth);toast('문서 너비를 변경했습니다.')} );
+function setListLayout(value,persist=true){const layout=['list','grid','preview'].includes(value)?value:'list';state.listLayout=layout;$('document-list').className='document-list layout-'+layout;document.querySelectorAll('[data-list-layout]').forEach(button=>{const active=button.dataset.listLayout===layout;button.classList.toggle('active',active);button.setAttribute('aria-pressed',active?'true':'false')});if(persist)try{localStorage.setItem('joripnote_list_layout',layout)}catch{}}
+document.querySelectorAll('[data-list-layout]').forEach(button=>button.onclick=()=>setListLayout(button.dataset.listLayout));
+function applySpaceProfile(profile={}){const mode=profile?.space_mode==='personal'?'personal':'team';const name=String(profile?.space_name||'JoripNote').trim().slice(0,40)||'JoripNote';state.workspaceSettings={...(state.workspaceSettings||{}),...profile,space_mode:mode,space_name:name};$('app-view').classList.toggle('space-mode-personal',mode==='personal');$('app-view').classList.toggle('space-mode-team',mode==='team');$('workspace-display-name').textContent=name;$('workspace-avatar').textContent=name.slice(0,1).toUpperCase();$('mobile-workspace-name').textContent=name;$('breadcrumb-home').textContent=name;$('list-space-name').textContent=name}
 document.querySelectorAll('[data-view]').forEach((button)=>button.addEventListener('click',()=>button.dataset.view==='search'?openGlobalSearch():navigateView(button.dataset.view)));
 $('workspace-home').onclick=()=>navigateView('all');$('breadcrumb-home').onclick=()=>navigateView('all');
-function push(path){setSidebar(false);history.pushState({},'',path);routeFromLocation()}
+function push(path){setSidebar(false);const doc=String(path).match(/^\/doc\/([A-Za-z0-9_-]{8,80})$/);if(doc){openDocument(doc[1],true);return}history.pushState({},'',path);routeFromLocation()}
 function navigateView(view){setSidebar(false);push(view==='all'?'/':'/'+view)}
 window.addEventListener('popstate',routeFromLocation);
-function routeFromLocation(){if(!state.user)return;const doc=location.pathname.match(/^\/doc\/([A-Za-z0-9_-]{8,80})$/);if(doc){openDocument(doc[1],false);return}const view=location.pathname.slice(1)||'all';if(['recent','favorites','all','trash','search'].includes(view)){showList(view);return}if(view==='members'){showMembers();return}if(view==='settings'){showSettings();return}if(view==='notifications'){showNotifications();return}if(view==='templates'){showTemplates();return}showList('all')}
+function routeFromLocation(){if(!state.user)return;const doc=location.pathname.match(/^\/doc\/([A-Za-z0-9_-]{8,80})$/);if(doc){openDocument(doc[1],false).then(()=>repairNotionDocumentFromLocation(doc[1]));return}const view=location.pathname.slice(1)||'all';if(['recent','favorites','all','trash','search'].includes(view)){showList(view);return}if(view==='members'){showMembers();return}if(view==='settings'){showSettings();return}if(view==='notifications'){showNotifications();return}if(view==='templates'){showTemplates();return}showList('all')}
+async function repairNotionDocumentFromLocation(documentId){const params=new URLSearchParams(location.search);if(params.get('notion_repair')!=='1')return;params.delete('notion_repair');history.replaceState({},'',location.pathname+(params.size?'?'+params.toString():''));const match=String(documentId).match(/^doc_notion_([0-9a-f]{32})$/i);if(!match)return;try{await api('/api/import/notion-api/pages/'+match[1],{method:'POST',body:{}});state.current=null;await openDocument(documentId,false);toast('Notion 원본에서 문서를 다시 가져왔습니다.')}catch(error){toast(error.message)}}
+async function importMissingNotionPage(documentId,error){const match=String(documentId).match(/^doc_notion_([0-9a-f]{32})$/i);if(!match||error?.status!==404||!canManage()||state.notionRepairAttempted.has(documentId))return false;state.notionRepairAttempted.add(documentId);await api('/api/import/notion-api/pages/'+match[1],{method:'POST',body:{}});return true}
+function needsAutomaticNotionRepair(document){return canManage()&&/^doc_notion_[0-9a-f]{32}$/i.test(String(document?.id||''))&&!state.notionRepairAttempted.has(document.id)&&(document.blocks||[]).some(block=>/<(?:unknown|mention-page|database|columns?|empty-block)\b/i.test(String(block.content||'')))}
+async function repairLegacyNotionDocument(document){const match=String(document.id).match(/^doc_notion_([0-9a-f]{32})$/i);if(!match)return false;state.notionRepairAttempted.add(document.id);await api('/api/import/notion-api/pages/'+match[1],{method:'POST',body:{}});return true}
+async function importMissingNotionDatabase(documentId,error){const match=String(documentId).match(/^doc_notiondb_([0-9a-f]{32})$/i);if(!match||error?.status!==404||!canManage()||state.notionRepairAttempted.has(documentId))return false;state.notionRepairAttempted.add(documentId);await api('/api/import/notion-api/data-sources/'+match[1],{method:'POST',body:{}});return true}
 function markNav(view){document.querySelectorAll('[data-view]').forEach((el)=>el.classList.toggle('active',el.dataset.view===view))}
 function showPane(id){['editor-view','list-view','members-view','settings-view','notifications-view','templates-view'].forEach((name)=>$(name).hidden=name!==id)}
-const listCopy={all:['전체 문서','워크스페이스의 최상위 문서입니다.'],recent:['최근 문서','최근에 열어본 문서입니다.'],favorites:['즐겨찾기','자주 찾는 문서를 모았습니다.'],trash:['휴지통','삭제한 문서를 복구하거나 영구 삭제할 수 있습니다.'],search:['문서 검색','문서 제목과 블록 내용에서 찾습니다.']};
-async function showList(view){if(state.dirty&&!await flushSave())return;state.current=null;state.view=view;state.cursor=null;if(view==='search'){state.search=(new URLSearchParams(location.search).get('q')||'').trim().slice(0,80);$('search-input').value=state.search}else state.search='';markNav(view);showPane('list-view');$('list-title').textContent=listCopy[view][0];$('list-description').textContent=listCopy[view][1];$('search-form').hidden=view!=='search';$('list-new-document').hidden=!canEdit()||view==='trash';$('document-list').replaceChildren();$('load-more-documents').hidden=true;await loadDocumentList(false);if(view==='search')$('search-input').focus()}
-async function loadDocumentList(append){alertBox('list-alert','');if(!append)showLoading('document-list','list',5);else setLoadButton('load-more-documents',true);const params=new URLSearchParams({scope:state.view,limit:'20'});if(state.cursor)params.set('cursor',state.cursor);if(state.view==='search'&&state.search)params.set('q',state.search);try{const data=await api('/api/documents?'+params);if(!append)$('document-list').replaceChildren();for(const doc of data.documents.filter(item=>!isImportArtifactDoc(item)))$('document-list').append(renderDocumentCard(doc));state.cursor=data.next_cursor;$('load-more-documents').hidden=!state.cursor;if(!$('document-list').children.length)$('document-list').innerHTML='<div class="empty-state"><strong>표시할 문서가 없습니다.</strong><span>'+(state.view==='trash'?'휴지통이 비어 있습니다.':'새 문서를 만들어 시작해 보세요.')+'</span></div>'}catch(error){alertBox('list-alert',error.message);if(!append)$('document-list').replaceChildren()}finally{finishLoading('document-list');setLoadButton('load-more-documents',false)}}
+const listCopy={all:['모든 문서','이 공간의 최상위 문서입니다.'],recent:['최근 문서','최근에 열어본 문서입니다.'],favorites:['즐겨찾기','자주 찾는 문서를 모았습니다.'],trash:['휴지통','삭제한 문서를 복구하거나 영구 삭제할 수 있습니다.'],search:['문서 검색','문서 제목과 블록 내용에서 찾습니다.']};
+async function showList(view){if(state.dirty&&!await flushSave())return;state.current=null;state.view=view;state.cursor=null;if(view==='search'){state.search=(new URLSearchParams(location.search).get('q')||'').trim().slice(0,80);$('search-input').value=state.search}else state.search='';markNav(view);showPane('list-view');$('list-title').textContent=listCopy[view][0];$('list-description').textContent=listCopy[view][1];$('search-form').hidden=view!=='search';$('list-controls').hidden=view!=='all';$('list-new-document').hidden=!canEdit()||view==='trash';$('list-filter-query').value=state.listQuery;$('list-kind-filter').value=state.listKind;$('list-sort').value=state.listSort;setListLayout(state.listLayout,false);$('document-list').replaceChildren();$('load-more-documents').hidden=true;await loadDocumentList(false);if(view==='search')$('search-input').focus()}
+async function loadDocumentList(append){alertBox('list-alert','');if(!append)showLoading('document-list','list',5);else setLoadButton('load-more-documents',true);const params=new URLSearchParams({scope:state.view,limit:'20'});if(state.cursor)params.set('cursor',state.cursor);if(state.view==='search'&&state.search)params.set('q',state.search);if(state.view==='all'){if(state.listQuery)params.set('q',state.listQuery);params.set('kind',state.listKind);params.set('sort',state.listSort)}try{const data=await api('/api/documents?'+params);if(!append)$('document-list').replaceChildren();setListLayout(state.listLayout,false);for(const doc of data.documents.filter(item=>!isImportArtifactDoc(item)))$('document-list').append(renderDocumentCard(doc));state.cursor=data.next_cursor;$('load-more-documents').hidden=!state.cursor;if(!$('document-list').children.length)$('document-list').innerHTML='<div class="empty-state"><strong>표시할 문서가 없습니다.</strong><span>'+(state.view==='trash'?'휴지통이 비어 있습니다.':'필터를 바꾸거나 새 문서를 만들어 보세요.')+'</span></div>'}catch(error){alertBox('list-alert',error.message);if(!append)$('document-list').replaceChildren()}finally{finishLoading('document-list');setLoadButton('load-more-documents',false)}}
 $('load-more-documents').onclick=()=>loadDocumentList(true);
 $('search-form').onsubmit=(event)=>{event.preventDefault();state.search=$('search-input').value.trim().slice(0,80);state.cursor=null;const next='/search'+(state.search?'?q='+encodeURIComponent(state.search):'');if(location.pathname+location.search!==next)history.pushState({},'',next);loadDocumentList(false)};
-function renderDocumentCard(doc){const row=document.createElement('div');row.className='document-card';const open=document.createElement('button');open.className='doc-open';open.type='button';const title=document.createElement('strong');title.textContent=doc.title||'제목 없음';const meta=document.createElement('small');meta.textContent='수정 '+formatDate(doc.updated_at);open.append(title,meta);open.onclick=()=>push('/doc/'+doc.id);const actions=document.createElement('div');actions.className='card-actions';if(doc.status==='trashed'){if(canEdit()){actions.append(actionButton('복구',()=>restoreDoc(doc.id)),actionButton('영구 삭제',()=>deleteForever(doc.id),true))}}else{const favorite=actionButton('',()=>toggleFavorite(doc.id,!doc.is_favorite));setFavoriteButton(favorite,!!doc.is_favorite);actions.append(favorite);if(canEdit())actions.append(iconAction('trash','휴지통으로 이동',()=>moveToTrash(doc.id),'list-trash'))}row.append(open,actions);return row}
+function refreshAllDocuments(){state.cursor=null;loadDocumentList(false)}
+$('list-filter-query').oninput=()=>{clearTimeout(state.listFilterTimer);state.listFilterTimer=setTimeout(()=>{state.listQuery=$('list-filter-query').value.trim().slice(0,80);refreshAllDocuments()},220)};
+$('list-kind-filter').onchange=()=>{state.listKind=$('list-kind-filter').value;refreshAllDocuments()};
+$('list-sort').onchange=()=>{state.listSort=$('list-sort').value;refreshAllDocuments()};
+function listPreviewText(doc){const raw=String(doc.preview||'').trim();if(!raw)return doc.has_database?'표, 보드, 캘린더 등 여러 보기로 관리하는 데이터베이스입니다.':'본문 미리보기가 없습니다.';if(raw.startsWith('@qwerty-rich:')){const box=document.createElement('div');box.innerHTML=sanitizeRichHtml(raw.slice(13));return (box.textContent||'').replace(/\s+/g,' ').trim()}if(/^[\[{]/.test(raw))return doc.has_database?'데이터베이스 보기와 속성이 포함되어 있습니다.':'';return raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim()}
+function renderDocumentCard(doc){const row=document.createElement('article');row.className='document-card';const main=document.createElement('div');main.className='document-card-main';const glyph=document.createElement('span');glyph.className='document-card-icon';glyph.innerHTML=icon(doc.has_database?'grid':'files');const open=document.createElement('button');open.className='doc-open';open.type='button';const copy=document.createElement('div');copy.className='document-card-copy';const title=document.createElement('strong');title.textContent=doc.title||'제목 없음';const meta=document.createElement('small');meta.className='document-card-meta';const kind=document.createElement('span');kind.className='document-kind';kind.textContent=doc.has_database?'데이터베이스':doc.is_notion_import?'가져온 문서':'문서';const updated=document.createElement('span');updated.textContent='수정 '+formatDate(doc.updated_at);meta.append(kind,updated);const preview=document.createElement('p');preview.className='document-card-preview';preview.textContent=listPreviewText(doc);copy.append(title,meta,preview);open.append(copy);open.onclick=()=>push('/doc/'+doc.id);main.append(glyph,open);const actions=document.createElement('div');actions.className='card-actions';if(doc.status==='trashed'){if(canEdit()){actions.append(actionButton('복구',()=>restoreDoc(doc.id)),actionButton('영구 삭제',()=>deleteForever(doc.id),true))}}else{const favorite=actionButton('',()=>toggleFavorite(doc.id,!doc.is_favorite));setFavoriteButton(favorite,!!doc.is_favorite);actions.append(favorite);if(canEdit())actions.append(iconAction('trash','휴지통으로 이동',()=>moveToTrash(doc.id),'list-trash'))}row.append(main,actions);return row}
 function isImportArtifactDoc(doc){return /_all$/i.test(String(doc?.title||''))}
 function actionButton(label,handler,danger=false){const button=document.createElement('button');button.type='button';button.className='button subtle compact'+(danger?' danger-text':'');button.textContent=label;button.onclick=handler;return button}
 function iconAction(name,label,handler,className=''){const button=document.createElement('button');button.type='button';button.className='icon-button '+className;button.innerHTML=icon(name);button.setAttribute('aria-label',label);button.dataset.tooltip=label;button.onclick=handler;return button}
 function formatDate(seconds){return new Date(seconds*1000).toLocaleString('ko-KR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 async function createDocument(parentId=null){if(!canEdit())return;try{const data=await api('/api/documents',{method:'POST',body:{parent_document_id:parentId}});await loadTree();push('/doc/'+data.document.id)}catch(error){toast(error.message)}}
 $('new-root-document').onclick=()=>createDocument();$('list-new-document').onclick=()=>createDocument();$('new-child-button').onclick=()=>state.current&&createDocument(state.current.id);
-$('duplicate-button').onclick=async()=>{if(!state.current||!canEdit())return;try{const data=await api('/api/documents/'+state.current.id+'/duplicate',{method:'POST'});await loadTree();push('/doc/'+data.document.id);toast('문서를 복제했습니다.')}catch(error){toast(error.message)}};
-async function loadTree(){const container=$('document-tree');showLoading('document-tree','tree',5);try{const data=await api('/api/documents?scope=all&limit=50');const visible=data.documents.filter(item=>!isImportArtifactDoc(item));container.replaceChildren();for(const doc of visible)container.append(treeNode(doc));if(!visible.length)container.innerHTML='<div class="empty-state">문서가 없습니다.</div>'}catch{container.innerHTML='<div class="empty-state">트리를 불러오지 못했습니다.</div>'}finally{finishLoading('document-tree')}}
-function treeNode(doc){const wrap=document.createElement('div');wrap.dataset.id=doc.id;const row=document.createElement('div');row.className='tree-row'+(doc.has_children?' has-children':'')+(state.current&&state.current.id===doc.id?' active':'');const toggle=doc.has_children?document.createElement('button'):null;if(toggle){toggle.className='tree-toggle';toggle.type='button';const expanded=state.expanded.has(doc.id);toggle.innerHTML=icon('chevron-right');toggle.classList.toggle('expanded',expanded);toggle.setAttribute('aria-label',expanded?'하위 문서 접기':'하위 문서 펼치기');toggle.setAttribute('aria-expanded',expanded?'true':'false');toggle.dataset.tooltip=expanded?'하위 문서 접기':'하위 문서 펼치기';toggle.onclick=()=>toggleTree(doc,wrap,toggle)}const title=document.createElement('button');title.className='tree-title';title.type='button';title.textContent=doc.title||'제목 없음';title.title=title.textContent;title.onclick=()=>push('/doc/'+doc.id);const add=iconAction('plus','하위 문서 추가',()=>createDocument(doc.id),'tree-action tree-add');const trash=iconAction('trash','휴지통으로 이동',()=>moveToTrash(doc.id),'tree-action tree-trash');add.hidden=!canEdit();trash.hidden=!canEdit();if(toggle)row.append(toggle);row.append(title,add,trash);wrap.append(row);if(toggle&&state.expanded.has(doc.id))loadTreeChildren(doc.id,wrap,toggle);return wrap}
+$('duplicate-button').onclick=()=>state.current&&duplicateDocument(state.current.id);
+async function duplicateDocument(id){if(!canEdit())return;try{const data=await api('/api/documents/'+id+'/duplicate',{method:'POST'});await loadTree();push('/doc/'+data.document.id);toast('문서를 복제했습니다.')}catch(error){toast(error.message)}}
+function sidebarTeamspaces(documents){const selected=new Map();for(const doc of documents){if(!doc.is_notion_import||isImportArtifactDoc(doc)||/^(Notion 데이터베이스|데이터베이스 테스트|새 양식)$/i.test(String(doc.title||'').trim()))continue;if(!doc.is_notion_root&&Number(doc.child_count||0)<8)continue;const key=String(doc.title||'제목 없음').replace(/\s*\(\d+\)$/,'').normalize('NFKC').trim().toLowerCase();const current=selected.get(key);const score=(doc.is_notion_root?100000:0)+Number(doc.child_count||0);if(!current||score>current.score)selected.set(key,{doc,score})}const preferred=['문서','작업 목록','회의록','아이디어','프로젝트','매뉴얼'];const rank=new Map(preferred.map((title,index)=>[title,index]));return [...selected.values()].map(item=>item.doc).sort((a,b)=>(rank.get(a.title)??999)-(rank.get(b.title)??999)||Number(b.child_count||0)-Number(a.child_count||0)||String(a.title).localeCompare(String(b.title),'ko'))}
+async function loadTree(){const shared=$('document-tree');const personal=$('personal-tree');showLoading('document-tree','tree',5);personal.replaceChildren();try{const data=await api('/api/documents?scope=sidebar&limit=200');const visible=data.documents.filter(item=>!isImportArtifactDoc(item));shared.replaceChildren();if(state.workspaceSettings?.space_mode==='personal'){for(const doc of visible)personal.append(treeNode(doc,true))}else{for(const doc of sidebarTeamspaces(visible))shared.append(treeNode(doc,true));for(const doc of visible.filter(item=>!item.is_notion_import))personal.append(treeNode(doc,true))}}catch{shared.innerHTML='<div class="empty-state">사이드바를 불러오지 못했습니다.</div>'}finally{finishLoading('document-tree')}}
+function sidebarDocumentIconName(title,root){if(!root)return 'files';const value=String(title||'');if(/작업 목록|캘린더|일정/.test(value))return 'calendar';if(/작업|프로젝트|미팅/.test(value))return 'users';if(/회의/.test(value))return 'comment';if(/아이디어/.test(value))return 'star';if(/매뉴얼\s*\(코드\)|정보|서버/.test(value))return 'code';if(/질문|FAQ/i.test(value))return 'alert';return 'files'}
+function documentIconMarkup(doc,root=false){const emoji=String(doc?.page_icon_emoji||'').trim();if(emoji)return '<span class="'+(root?'document-page-icon-emoji':'sidebar-page-emoji')+'" aria-hidden="true">'+escapeText(emoji)+'</span>';const url=safeWebUrl(doc?.page_icon_url||'');if(url)return '<img class="'+(root?'document-page-icon-image':'sidebar-page-icon')+'" src="'+escapeText(url)+'" alt="" loading="lazy" decoding="async" aria-hidden="true">';return icon(sidebarDocumentIconName(doc?.title,root),root?'document-page-icon-svg':'sidebar-doc-icon')}
+function treeNode(doc,root=false){const wrap=document.createElement('div');wrap.dataset.id=doc.id;const row=document.createElement('div');row.className='tree-row'+(doc.has_children?' has-children':'')+(state.current&&state.current.id===doc.id?' active':'');const toggle=doc.has_children?document.createElement('button'):null;if(toggle){toggle.className='tree-toggle';toggle.type='button';const expanded=state.expanded.has(doc.id);toggle.innerHTML=icon('chevron-right');toggle.classList.toggle('expanded',expanded);toggle.setAttribute('aria-label',expanded?'하위 문서 접기':'하위 문서 펼치기');toggle.setAttribute('aria-expanded',expanded?'true':'false');toggle.dataset.tooltip=expanded?'하위 문서 접기':'하위 문서 펼치기';toggle.onclick=()=>toggleTree(doc,wrap,toggle)}const glyph=document.createElement('span');glyph.className='sidebar-glyph';glyph.setAttribute('aria-hidden','true');glyph.innerHTML=documentIconMarkup(doc,root);const title=document.createElement('button');title.className='tree-title';title.type='button';title.textContent=doc.title||'제목 없음';title.title=title.textContent;title.onclick=()=>push('/doc/'+doc.id);title.onkeydown=event=>{if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();const rect=title.getBoundingClientRect();showTreeMenu(doc,row,rect.left+18,rect.bottom)}};row.oncontextmenu=event=>{event.preventDefault();showTreeMenu(doc,row,event.clientX,event.clientY)};if(toggle)row.append(toggle);row.append(glyph,title);wrap.append(row);if(toggle&&state.expanded.has(doc.id))loadTreeChildren(doc.id,wrap,toggle);return wrap}
+function hideTreeMenu(){$('tree-menu').hidden=true;state.treeContextDoc=null;state.treeContextRow=null}
+function treeMenuButton(label,iconName,action,danger=false){const button=document.createElement('button');button.type='button';button.role='menuitem';button.innerHTML=icon(iconName)+'<span>'+escapeText(label)+'</span>';if(danger)button.classList.add('danger-text');button.onclick=()=>runTreeMenuAction(action);return button}
+function showTreeMenu(doc,row,x,y){state.treeContextDoc=doc;state.treeContextRow=row;hideSlashMenu();hideBlockMenu();hideUrlPasteMenu();const menu=$('tree-menu');const items=[treeMenuButton('문서 열기','files','open')];if(canEdit())items.push(separator(),treeMenuButton('하위 문서 추가','plus','add-child'),treeMenuButton('문서 복제','copy','duplicate'),separator(),treeMenuButton('휴지통으로 이동','trash','trash',true));menu.replaceChildren(...items);menu.hidden=false;const width=menu.offsetWidth;const height=menu.offsetHeight;menu.style.left=Math.max(8,Math.min(x,innerWidth-width-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-height-8))+'px';menu.querySelector('button')?.focus();menu.onkeydown=event=>{const buttons=[...menu.querySelectorAll('button')];const index=buttons.indexOf(document.activeElement);if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();buttons[(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus()}else if(event.key==='Escape'){event.preventDefault();hideTreeMenu();row.querySelector('.tree-title')?.focus()}}}
+async function runTreeMenuAction(action){const doc=state.treeContextDoc;if(!doc)return hideTreeMenu();const id=doc.id;hideTreeMenu();if(action==='open')push('/doc/'+id);else if(action==='add-child')await createDocument(id);else if(action==='duplicate')await duplicateDocument(id);else if(action==='trash')await moveToTrash(id)}
 async function toggleTree(doc,wrap,toggle){if(!doc.has_children)return;if(state.expanded.has(doc.id)){state.expanded.delete(doc.id);wrap.querySelector('.tree-children')?.remove();toggle.classList.remove('expanded');toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','하위 문서 펼치기');toggle.dataset.tooltip='하위 문서 펼치기'}else{state.expanded.add(doc.id);toggle.classList.add('expanded');toggle.setAttribute('aria-expanded','true');toggle.setAttribute('aria-label','하위 문서 접기');toggle.dataset.tooltip='하위 문서 접기';await loadTreeChildren(doc.id,wrap,toggle)}}
 async function loadTreeChildren(parentId,wrap,toggle){if(state.treeLoading.has(parentId)||wrap.querySelector('.tree-children'))return;state.treeLoading.add(parentId);const children=document.createElement('div');children.className='tree-children';children.setAttribute('aria-busy','true');children.innerHTML=loadingMarkup('tree',3);wrap.append(children);try{const data=await api('/api/documents?scope=all&parent_id='+encodeURIComponent(parentId)+'&limit=50');children.replaceChildren();for(const doc of data.documents.filter(item=>!isImportArtifactDoc(item)))children.append(treeNode(doc));children.removeAttribute('aria-busy')}catch{children.remove();toggle.innerHTML=icon('alert');toggle.setAttribute('aria-label','하위 문서를 불러오지 못함');toggle.dataset.tooltip='하위 문서를 불러오지 못했습니다'}finally{state.treeLoading.delete(parentId)}}
-function resizeDocumentTitle(){const title=$('document-title');title.style.height='auto';title.style.height=title.scrollHeight+'px'}
-async function openDocument(id,pushUrl=true){if(state.current&&state.current.id===id){showPane('editor-view');return}if(state.dirty&&!await flushSave())return;if(pushUrl)history.pushState({},'','/doc/'+id);markNav('');showPane('editor-view');const title=$('document-title');title.value='';title.readOnly=true;title.classList.add('skeleton-title');showLoading('block-editor','document',5);$('append-block').hidden=true;try{const data=await api('/api/documents/'+id);state.current=data.document;state.dirty=false;title.value=state.current.title;resizeDocumentTitle();$('breadcrumb-title').textContent=state.current.title||'제목 없음';setFavoriteButton($('favorite-button'),!!state.current.is_favorite);$('readonly-notice').hidden=canEdit();$('readonly-notice').textContent=state.current.can_edit===false?'이 문서는 보기 권한만 있습니다.':'Viewer 권한에서는 문서를 읽을 수만 있습니다.';title.readOnly=!canEdit();$('append-block').hidden=!canEdit();$('new-child-button').hidden=!canEdit();$('trash-button').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('upload-button').hidden=!canEdit();$('access-button').hidden=!state.current.can_manage_access;renderBlocks(state.current.blocks);resetHistory();setSaveState('saved');document.querySelectorAll('.tree-row').forEach(el=>el.classList.remove('active'));document.querySelector('[data-id="'+CSS.escape(id)+'"]>.tree-row')?.classList.add('active')}catch(error){state.current=null;$('block-editor').innerHTML='<div class="empty-state"><strong>문서를 열 수 없습니다.</strong><span>'+escapeText(error.message)+'</span></div>';setSaveState('failed')}finally{title.classList.remove('skeleton-title');finishLoading('block-editor')}}
+function resizeDocumentTitle(){const title=$('document-title');title.style.height='0px';title.style.height=title.scrollHeight+'px'}
+async function openDocument(id,pushUrl=true){if(state.current&&state.current.id===id){showPane('editor-view');return}if(state.dirty&&!await flushSave())return;if(pushUrl)history.pushState({},'','/doc/'+id);markNav('');showPane('editor-view');$('document-page-icon').hidden=true;const title=$('document-title');$('editor-view').classList.remove('database-page');$('document-page-icon').innerHTML=icon('files','document-page-icon-svg');title.value='';title.readOnly=true;title.classList.add('skeleton-title');showLoading('block-editor','document',5);$('append-block').hidden=true;try{const data=await api('/api/documents/'+id);state.current=data.document;if(needsAutomaticNotionRepair(state.current)){await repairLegacyNotionDocument(state.current);state.current=null;await openDocument(id,false);toast('이전 Notion 문서 형식을 자동 교정했습니다.');return}state.dirty=false;title.value=state.current.title;$('document-page-icon').innerHTML=documentIconMarkup(state.current,true);$('editor-view').classList.toggle('database-page',(state.current.blocks||[]).some(block=>block.type==='database'));resizeDocumentTitle();$('breadcrumb-title').textContent=state.current.title||'제목 없음';setFavoriteButton($('favorite-button'),!!state.current.is_favorite);$('readonly-notice').hidden=canEdit();$('readonly-notice').textContent=state.current.can_edit===false?'이 문서는 보기 권한만 있습니다.':'Viewer 권한에서는 문서를 읽을 수만 있습니다.';title.readOnly=!canEdit();$('append-block').hidden=!canEdit();$('new-child-button').hidden=!canEdit();$('trash-button').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('upload-button').hidden=!canEdit();$('access-button').hidden=!state.current.can_manage_access;renderBlocks(state.current.blocks);$('document-page-icon').hidden=false;resetHistory();setSaveState('saved');document.querySelectorAll('.tree-row').forEach(el=>el.classList.remove('active'));document.querySelector('[data-id="'+CSS.escape(id)+'"]>.tree-row')?.classList.add('active')}catch(error){state.current=null;$('editor-view').classList.remove('database-page');try{if(await importMissingNotionDatabase(id,error)){await openDocument(id,false);toast('연결된 Notion 데이터베이스를 가져왔습니다.');return}if(await importMissingNotionPage(id,error)){await openDocument(id,false);toast('연결된 Notion 페이지를 가져왔습니다.');return}}catch(importError){error=importError}const notionId=String(id).match(/^doc_notion(?:db)?_([0-9a-f]{32})$/i)?.[1];const fallback=notionId?'<a class="button secondary" href="https://www.notion.so/'+notionId+'" target="_blank" rel="noopener noreferrer">원본 Notion에서 열기</a>':'';$('block-editor').innerHTML='<div class="empty-state"><strong>문서를 열 수 없습니다.</strong><span>'+escapeText(error.message)+'</span>'+fallback+'</div>';setSaveState('failed')}finally{title.classList.remove('skeleton-title');finishLoading('block-editor')}}
 function escapeText(value){const el=document.createElement('span');el.textContent=value;return el.innerHTML}
 function updateDocumentChrome(value){const label=value.trim()||'제목 없음';$('breadcrumb-title').textContent=label;const treeTitle=document.querySelector('[data-id="'+CSS.escape(state.current.id)+'"]>.tree-row .tree-title');if(treeTitle){treeTitle.textContent=label;treeTitle.title=label}}
 $('document-title').addEventListener('input',()=>{if(!state.current||!canEdit())return;resizeDocumentTitle();updateDocumentChrome($('document-title').value);scheduleSave()});
@@ -600,25 +883,64 @@ function mergeDatabaseBlocksForDisplay(blocks){
   }
   return merged;
 }
-function renderBlocks(blocks){$('block-editor').replaceChildren();const visibleBlocks=mergeDatabaseBlocksForDisplay(blocks);(visibleBlocks.length?visibleBlocks:[newBlock()]).forEach((block,index)=>$('block-editor').append(blockRow(block,index)));renumberBlocks()}
+function normalizeImportedBlock(block){if(!block||block.type!=='text')return[block];const raw=String(block.content||'').trim();if(!/^</.test(raw))return[block];const template=document.createElement('template');template.innerHTML=raw;const nodes=[...template.content.childNodes].filter(node=>node.nodeType!==3||node.textContent.trim());if(nodes.length!==1||nodes[0].nodeType!==1)return[block];const node=nodes[0],tag=node.tagName.toLowerCase(),rich=value=>RICH_PREFIX+sanitizeRichHtml(value);if(/^h[1-6]$/.test(tag))return[{...block,type:'heading'+tag.slice(1),content:rich(node.innerHTML)}];if(tag==='table'){const rows=[...node.querySelectorAll('tr')].map(row=>[...row.children].map(cell=>cell.textContent.trim())).filter(row=>row.length);return[{...block,type:'table',content:JSON.stringify(rows)}]}if(tag==='p'||tag==='div'||tag==='blockquote')return[{...block,type:tag==='blockquote'?'quote':'text',content:rich(node.innerHTML)}];if(tag==='pre')return[{...block,type:'code',content:node.textContent||''}];if(tag==='hr')return[{...block,type:'divider',content:''}];if(tag==='ul'||tag==='ol'){return[...node.children].filter(item=>item.tagName?.toLowerCase()==='li').map((item,index)=>{const text=item.textContent||'',todo=text.match(/^\s*\[([ xX])\]\s*/);return{...block,id:block.id+'_'+index,type:todo?'todo':tag==='ol'?'numbered':'bullet',content:rich(todo?item.innerHTML.replace(/^\s*\[([ xX])\]\s*/,''):item.innerHTML),checked:todo?todo[1].toLowerCase()==='x':false}})}return[block]}
+function legacyLineIndent(line){let count=0,width=0;while(count<line.length&&(line[count]===' '||line[count]==='\t')){width+=line[count]==='\t'?2:1;count+=1}return{count,level:Math.min(4,Math.floor(width/2))}}
+function parseLegacyMarkdownBlocks(lines){const blocks=[],tick=String.fromCharCode(96).repeat(3);let code=null;const push=(type,content='',checked=false,indent_level=0)=>blocks.push({type,content:String(content).trimEnd(),checked,indent_level});for(const source of lines){for(const line of String(source||'').split('\n')){const leading=legacyLineIndent(line),value=line.slice(leading.count),trimmed=value.trim();if(trimmed.startsWith(tick)||trimmed.startsWith('~~~')){const marker=trimmed.startsWith(tick)?tick:'~~~',rest=trimmed.slice(marker.length).trim();if(code===null)code={marker,indent:leading.count,indent_level:leading.level,lines:[]};else if(marker===code.marker&&!rest){push('code',code.lines.join('\n'),false,code.indent_level);code=null}else if(code!==null)code.lines.push(line.slice(Math.min(code.indent,line.length)));continue}if(code!==null){code.lines.push(line.slice(Math.min(code.indent,line.length)));continue}if(!trimmed)continue;let heading=0;while(heading<value.length&&value[heading]==='#')heading+=1;if(heading&&value[heading]===' '&&heading<=6){push('heading'+heading,value.slice(heading+1),false,leading.level);continue}const list=value.length>1&&['-','*','+'].includes(value[0])&&value[1]===' ';if(list){const todo=value[2]==='['&&(value[3]===' '||String(value[3]).toLowerCase()==='x')&&value[4]===']'&&value[5]===' ';if(todo)push('todo',value.slice(6),String(value[3]).toLowerCase()==='x',leading.level);else push('bullet',value.slice(2),false,leading.level);continue}let digits=0;while(digits<value.length&&value.charCodeAt(digits)>=48&&value.charCodeAt(digits)<=57)digits+=1;if(digits&&['.',')'].includes(value[digits])&&value[digits+1]===' '){push('numbered',value.slice(digits+2),false,leading.level);continue}if(value[0]==='>'){push('quote',value.slice(value[1]===' '?2:1),false,leading.level);continue}if(trimmed.length>=3&&['-','*','_'].includes(trimmed[0])&&[...trimmed].every(char=>char===trimmed[0])){push('divider','',false,leading.level);continue}push('text',value,false,leading.level)}}if(code!==null)push('code',code.lines.join('\n'),false,code.indent_level);return blocks}
+function isLegacyNotionJsonFragment(value){const raw=String(value||'');return /<br\s*\/?\s*>/i.test(raw)&&(/\\[{}]/.test(raw)||/"(?:result|success|status|meta|playback)"\s*:/.test(raw))}
+function decodeLegacyNotionJson(value){return String(value||'').replace(/\\([{}])/g,'$1').replace(/<br\s*\/?>/gi,'\n').replace(/\\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()}
+function legacyNotionJsonRun(blocks,start){const first=blocks[start];if(first?.type!=='text'||!isLegacyNotionJsonFragment(first.content))return null;const parts=[];let end=start;let hasBookmark=false;while(end<blocks.length){const block=blocks[end];if(block?.type==='text')parts.push(String(block.content||''));else if(block?.type==='bookmark'&&end>start){parts.push(String(block.content||''));hasBookmark=true}else break;end+=1;const joined=parts.join('');if(end>start&&/\\}\s*$/.test(joined)&&/"success"\s*:\s*(?:true|false)/.test(joined))break}if(!parts.length||(!hasBookmark&&!/\\}\s*$/.test(parts.join(''))))return null;return{end,block:{...first,type:'code',content:decodeLegacyNotionJson(parts.join('')),checked:false}}}
+function normalizeImportedBlocks(blocks){const normalized=[],tick=String.fromCharCode(96).repeat(3);for(let index=0;index<blocks.length;){if(blocks[index]?.type==='text'){let candidate=index;while(candidate<blocks.length&&blocks[candidate]?.type==='text'&&!isLegacyNotionJsonFragment(blocks[candidate].content))candidate+=1;if(candidate>index&&candidate<blocks.length&&isLegacyNotionJsonFragment(blocks[candidate].content)){normalized.push(...blocks.slice(index,candidate).flatMap(normalizeImportedBlock));index=candidate;continue}}const legacy=legacyNotionJsonRun(blocks,index);if(legacy){normalized.push(legacy.block);index=legacy.end;continue}if(blocks[index]?.type!=='text'){normalized.push(...normalizeImportedBlock(blocks[index++]));continue}let end=index;while(end<blocks.length&&blocks[end]?.type==='text')end+=1;const group=blocks.slice(index,end),hasLegacy=group.some(block=>{const value=String(block.content||'').trim();return value.startsWith(tick)||value.startsWith('~~~')||/^[0-9]+[.)] /.test(value)||['- ','* ','+ '].some(marker=>value.startsWith(marker))||/^#{1,6} /.test(value)});if(!hasLegacy){normalized.push(...group.flatMap(normalizeImportedBlock))}else{const parsed=parseLegacyMarkdownBlocks(group.map(block=>String(block.content||'')));if(parsed.length)normalized.push(...parsed.map((block,offset)=>({...block,id:offset?newBlock().id:group[0].id})));else normalized.push(...group.flatMap(normalizeImportedBlock))}index=end}return normalized}
+function renderBlocks(blocks){$('block-editor').replaceChildren();const normalizedBlocks=normalizeImportedBlocks(blocks);const visibleBlocks=mergeDatabaseBlocksForDisplay(normalizedBlocks);(visibleBlocks.length?visibleBlocks:[newBlock()]).forEach((block,index)=>$('block-editor').append(blockRow(block,index)));syncLegacyToggleGroups($('block-editor'));renumberBlocks()}
 function newBlock(type='text'){return{id:'blk_'+crypto.randomUUID().replaceAll('-',''),type,content:'',checked:false,indent_level:0}}
-function blockRow(block,index){const row=document.createElement('div');row.className='block-row';row.draggable=false;row.dataset.id=block.id;row.dataset.indent=String(block.indent_level||0);row.style.setProperty('--indent',String(block.indent_level||0));const handle=document.createElement('button');handle.className='block-handle';handle.type='button';handle.innerHTML=icon('grip');handle.tabIndex=0;handle.draggable=canEdit();handle.setAttribute('aria-label','블록 순서 변경');handle.dataset.tooltip='드래그하거나 눌러 블록 메뉴 열기';let content;if(block.type==='todo'){const wrap=document.createElement('div');wrap.className='todo-wrap'+(block.checked?' checked':'');const check=document.createElement('input');check.type='checkbox';check.checked=!!block.checked;check.disabled=!canEdit();check.setAttribute('aria-label','할 일 완료 상태');check.onchange=()=>{wrap.classList.toggle('checked',check.checked);scheduleSave()};content=editable(block);wrap.append(check,content);row.append(handle,wrap)}else if(block.type==='toggle'){const parts=splitToggleContent(block.content);const wrap=document.createElement('div');wrap.className='toggle-wrap';const summaryLine=document.createElement('div');summaryLine.className='toggle-summary';const caret=document.createElement('button');caret.className='toggle-caret';caret.type='button';caret.innerHTML=icon('chevron-right');const toggleLabel=block.checked?'토글 접기':'토글 펼치기';caret.setAttribute('aria-label',toggleLabel);caret.dataset.tooltip=toggleLabel;caret.setAttribute('aria-expanded',block.checked?'true':'false');const summary=editable({...block,content:parts.summary},'summary');summary.dataset.placeholder='토글 제목';const body=editable({...block,content:parts.body},'body');body.classList.add('toggle-body');body.dataset.placeholder='토글 내용을 입력하세요';body.hidden=!block.checked;caret.onclick=()=>{const open=caret.getAttribute('aria-expanded')!=='true';const label=open?'토글 접기':'토글 펼치기';caret.setAttribute('aria-expanded',open?'true':'false');caret.setAttribute('aria-label',label);caret.dataset.tooltip=label;body.hidden=!open;if(canEdit())scheduleSave()};summaryLine.append(caret,summary);wrap.append(summaryLine,body);row.append(handle,wrap)}else if(block.type==='callout'){const wrap=document.createElement('div');wrap.className='callout-wrap';wrap.innerHTML=icon('alert');content=editable(block);content.dataset.placeholder='콜아웃 내용을 입력하세요';wrap.append(content);row.append(handle,wrap)}else if(block.type==='table'||block.type==='database'){content=structuredTableBlock(block,block.type==='database');row.append(handle,content)}else if(['image','video','audio','file','bookmark','embed','page_link'].includes(block.type)){content=mediaBlock(block);row.append(handle,content)}else if(block.type==='toc'){content=tocBlock();content.dataset.type='toc';row.append(handle,content)}else if(block.type==='math'){const wrap=document.createElement('div');wrap.className='math-block';content=editable(block);content.dataset.placeholder='수식을 입력하세요';wrap.append(content);row.append(handle,wrap)}else{content=editable(block);row.append(handle,content)}bindBlockInteractions(row,handle);return row}
+function codeBlock(block){
+  const wrap=document.createElement('div');
+  wrap.className='code-block-shell';
+  wrap.dataset.codeBlock='true';
+  const header=document.createElement('div');
+  header.className='code-block-header';
+  const label=document.createElement('span');
+  label.className='code-block-label';
+  label.textContent='코드';
+  const copy=document.createElement('button');
+  copy.type='button';
+  copy.className='code-copy-button';
+  copy.innerHTML=icon('copy')+'<span>복사</span>';
+  copy.setAttribute('aria-label','코드 복사');
+  copy.onclick=async()=>{
+    const value=content.innerText||content.textContent||'';
+    try{await navigator.clipboard.writeText(value);copy.classList.add('copied');copy.querySelector('span').textContent='복사됨';toast('코드를 복사했습니다.');setTimeout(()=>{if(copy.isConnected){copy.classList.remove('copied');copy.querySelector('span').textContent='복사'}},1400)}catch{toast('코드를 복사하지 못했습니다.')}
+  };
+  header.append(label,copy);
+  const content=editable(block);
+  content.classList.add('code-block-content');
+  content.dataset.placeholder='';
+  content.spellcheck=false;
+  content.setAttribute('aria-label','코드 블록');
+  wrap.append(header,content);
+  return wrap;
+}
+function blockRow(block,index){const row=document.createElement('div');row.className='block-row';row.draggable=false;row.dataset.id=block.id;row.dataset.indent=String(block.indent_level||0);row.style.setProperty('--indent',String(block.indent_level||0));const handle=document.createElement('button');handle.className='block-handle';handle.type='button';handle.innerHTML=icon('grip');handle.tabIndex=0;handle.draggable=canEdit();handle.setAttribute('aria-label','블록 순서 변경');handle.dataset.tooltip='드래그하거나 눌러 블록 메뉴 열기';let content;if(block.type==='code'){content=codeBlock(block);row.append(handle,content)}else if(block.type==='todo'){const wrap=document.createElement('div');wrap.className='todo-wrap'+(block.checked?' checked':'');const check=document.createElement('input');check.type='checkbox';check.checked=!!block.checked;check.disabled=!canEdit();check.setAttribute('aria-label','할 일 완료 상태');check.onchange=()=>{wrap.classList.toggle('checked',check.checked);scheduleSave()};content=editable(block);wrap.append(check,content);row.append(handle,wrap)}else if(block.type==='toggle'){const parts=splitToggleContent(block.content);const wrap=document.createElement('div');wrap.className='toggle-wrap';const summaryLine=document.createElement('div');summaryLine.className='toggle-summary';const caret=document.createElement('button');caret.className='toggle-caret';caret.type='button';caret.innerHTML=icon('chevron-right');const toggleLabel=block.checked?'토글 접기':'토글 펼치기';caret.setAttribute('aria-label',toggleLabel);caret.dataset.tooltip=toggleLabel;caret.setAttribute('aria-expanded',block.checked?'true':'false');if(parts.groupSize)row.dataset.toggleGroupSize=String(parts.groupSize);const summary=editable({...block,content:parts.summary},'summary');summary.dataset.placeholder='토글 제목';const body=editable({...block,content:parts.body},'body');body.classList.add('toggle-body');body.dataset.placeholder='토글 내용을 입력하세요';body.hidden=parts.groupSize?true:!block.checked;caret.onclick=()=>{const open=caret.getAttribute('aria-expanded')!=='true';const label=open?'토글 접기':'토글 펼치기';caret.setAttribute('aria-expanded',open?'true':'false');caret.setAttribute('aria-label',label);caret.dataset.tooltip=label;if(parts.groupSize)refreshLegacyToggleGroups(row.parentElement);else body.hidden=!open;if(canEdit())scheduleSave()};summaryLine.append(caret,summary);wrap.append(summaryLine,body);row.append(handle,wrap)}else if(block.type==='callout'){const wrap=document.createElement('div');wrap.className='callout-wrap';wrap.innerHTML=icon('alert');content=editable(block);content.dataset.placeholder='콜아웃 내용을 입력하세요';wrap.append(content);row.append(handle,wrap)}else if(block.type==='table'||block.type==='database'){content=structuredTableBlock(block,block.type==='database');row.append(handle,content)}else if(['image','video','audio','file','bookmark','embed','page_link'].includes(block.type)){content=mediaBlock(block);row.append(handle,content)}else if(block.type==='toc'){content=tocBlock();content.dataset.type='toc';row.append(handle,content)}else if(block.type==='math'){const wrap=document.createElement('div');wrap.className='math-block';content=editable(block);content.dataset.placeholder='수식을 입력하세요';wrap.append(content);row.append(handle,wrap)}else{content=editable(block);row.append(handle,content)}bindBlockInteractions(row,handle);return row}
 function parseGrid(value,database){try{const data=JSON.parse(value);if(Array.isArray(data)&&data.length&&data.every(row=>Array.isArray(row)))return data.slice(0,50).map(row=>row.slice(0,12).map(cell=>String(cell).slice(0,500)))}catch{}return database?[['이름','상태'],['','']]:[['열 1','열 2'],['','']]}
-function structuredTableBlock(block,database){if(database)return databaseBlock(block);const wrap=document.createElement('div');wrap.className='block-content structured-block';wrap.dataset.type=block.type;wrap.dataset.structured='grid';const table=document.createElement('table');table.className='block-table';const grid=parseGrid(block.content,false);grid.forEach((row,rowIndex)=>{const tr=document.createElement('tr');row.forEach((value,colIndex)=>{const cell=document.createElement(rowIndex===0?'th':'td');const input=document.createElement('input');input.value=value;input.disabled=!canEdit();input.maxLength=500;input.setAttribute('aria-label',rowIndex===0?'열 이름 '+(colIndex+1):'셀 '+rowIndex+'-'+(colIndex+1));input.oninput=scheduleSave;cell.append(input);tr.append(cell)});(rowIndex===0?table.createTHead():table.tBodies[0]||table.createTBody()).append(tr)});wrap.append(table);if(canEdit()){const actions=document.createElement('div');actions.className='block-table-actions';const addRow=document.createElement('button');addRow.type='button';addRow.textContent='행 추가';addRow.onclick=()=>{const cols=table.rows[0]?.cells.length||2;const tr=document.createElement('tr');for(let i=0;i<cols;i++){const td=document.createElement('td');const input=document.createElement('input');input.maxLength=500;input.setAttribute('aria-label','새 셀');input.oninput=scheduleSave;td.append(input);tr.append(td)}table.tBodies[0].append(tr);scheduleSave()};const addCol=document.createElement('button');addCol.type='button';addCol.textContent='열 추가';addCol.onclick=()=>{for(const [i,tr] of [...table.rows].entries()){const cell=document.createElement(i===0?'th':'td');const input=document.createElement('input');input.maxLength=500;input.value=i===0?'새 열':'';input.setAttribute('aria-label',i===0?'새 열 이름':'새 셀');input.oninput=scheduleSave;cell.append(input);tr.append(cell)}scheduleSave()};actions.append(addRow,addCol);wrap.append(actions)}return wrap}
+function structuredTableBlock(block,database){if(database)return databaseBlock(block);const wrap=document.createElement('div');wrap.className='block-content structured-block';wrap.dataset.type=block.type;wrap.dataset.structured='grid';const table=document.createElement('table');table.className='block-table';const grid=parseGrid(block.content,false);const notionProperties=grid[0]?.[0]==='속성'&&grid[0]?.[1]==='값';if(notionProperties)wrap.classList.add('notion-property-table');grid.forEach((row,rowIndex)=>{const tr=document.createElement('tr');row.forEach((value,colIndex)=>{const cell=document.createElement(rowIndex===0?'th':'td');const input=document.createElement('input');input.value=value;input.disabled=notionProperties||!canEdit();input.maxLength=500;input.setAttribute('aria-label',rowIndex===0?'열 이름 '+(colIndex+1):'셀 '+rowIndex+'-'+(colIndex+1));input.oninput=scheduleSave;cell.append(input);tr.append(cell)});(rowIndex===0?table.createTHead():table.tBodies[0]||table.createTBody()).append(tr)});wrap.append(table);if(canEdit()&&!notionProperties){const actions=document.createElement('div');actions.className='block-table-actions';const addRow=document.createElement('button');addRow.type='button';addRow.textContent='행 추가';addRow.onclick=()=>{const cols=table.rows[0]?.cells.length||2;const tr=document.createElement('tr');for(let i=0;i<cols;i++){const td=document.createElement('td');const input=document.createElement('input');input.maxLength=500;input.setAttribute('aria-label','새 셀');input.oninput=scheduleSave;td.append(input);tr.append(td)}table.tBodies[0].append(tr);scheduleSave()};const addCol=document.createElement('button');addCol.type='button';addCol.textContent='열 추가';addCol.onclick=()=>{for(const [i,tr] of [...table.rows].entries()){const cell=document.createElement(i===0?'th':'td');const input=document.createElement('input');input.maxLength=500;input.value=i===0?'새 열':'';input.setAttribute('aria-label',i===0?'새 열 이름':'새 셀');input.oninput=scheduleSave;cell.append(input);tr.append(cell)}scheduleSave()};actions.append(addRow,addCol);wrap.append(actions)}return wrap}
 const DATABASE_PROPERTY_TYPES={text:'텍스트',select:'선택',person:'담당자',multi_select:'다중 선택',status:'상태',people:'사용자',number:'숫자',date:'날짜',checkbox:'체크박스',url:'URL',email:'이메일',phone_number:'전화번호',files:'파일',relation:'관계형',rollup:'롤업',formula:'수식',unique_id:'고유 ID',created_time:'생성 시각',last_edited_time:'최종 편집 시각',created_by:'생성자',last_edited_by:'최종 편집자'};
 const DATABASE_MAX_ROWS=5000;
 const DATABASE_MAX_COLUMNS=100;
 function cleanNotionDatabaseTitle(value){return String(value||'').replace(/_all$/i,'').replace(/\s+[0-9a-f]{32}$/i,'').normalize('NFKC').trim().slice(0,120)||'데이터베이스'}
 function databaseStatusOptions(values){const preferred=['밀린 업무','진행 예정','진행 중','완료'];const unique=[...new Set(values.map(value=>String(value||'').trim()).filter(Boolean))];return [...preferred.filter(value=>unique.includes(value)),...unique.filter(value=>!preferred.includes(value))].slice(0,30)}
 function databaseUid(prefix){return prefix+'_'+crypto.randomUUID().replaceAll('-','').slice(0,18)}
-function defaultDatabaseModel(){const title='col_title',status='col_status',person='col_person',due='col_due';return{version:3,title:'팀 작업',columns:[{id:title,name:'작업',type:'text',options:[]},{id:status,name:'상태',type:'status',options:['밀린 업무','진행 예정','진행 중','완료']},{id:person,name:'담당자',type:'people',options:[]},{id:due,name:'마감일',type:'date',options:[]}],rows:[{id:databaseUid('row'),cells:{[title]:'새 작업',[status]:'진행 예정',[person]:'',[due]:''}}],views:[{id:'view_table',name:'표',type:'table',order:0,is_default:true},{id:'view_board',name:'보드',type:'board',order:1,groupBy:status},{id:'view_calendar',name:'캘린더',type:'calendar',order:2,datePropertyId:due}],view:{mode:'table',groupBy:status,datePropertyId:due,sortBy:'',sortDir:'asc',filter:{column:'',operator:'contains',value:''}}}}
-function parseDatabaseModel(value){let parsed;try{parsed=JSON.parse(value)}catch{}if(Array.isArray(parsed)&&parsed.length&&parsed.every(row=>Array.isArray(row))){const headers=parsed[0].slice(0,12);const columns=headers.map((name,index)=>{const label=String(name||('속성 '+(index+1))).slice(0,80);const status=/상태/.test(label);return{id:'col_'+index,name:label,type:status?'select':'text',options:status?['밀린 업무','진행 예정','진행 중','완료']:[]}});const rows=parsed.slice(1,DATABASE_MAX_ROWS+1).map(values=>({id:databaseUid('row'),cells:Object.fromEntries(columns.map((column,index)=>[column.id,String(values[index]??'').slice(0,500)]))}));const statusColumn=columns.find(column=>column.type==='select');return{version:2,title:'팀 작업',columns:columns.length?columns:defaultDatabaseModel().columns,rows:rows.length?rows:[],view:{mode:statusColumn?'board':'table',groupBy:statusColumn?.id||columns[0]?.id||'',sortBy:'',sortDir:'asc',filter:{column:'',operator:'contains',value:''}}}}if(!parsed||parsed.version!==2||!Array.isArray(parsed.columns)||!Array.isArray(parsed.rows))return defaultDatabaseModel();const columns=parsed.columns.slice(0,12).map((column,index)=>{const name=String(column.name||('속성 '+(index+1))).replace(/\r/g,'').slice(0,80);const type=DATABASE_PROPERTY_TYPES[column.type]?column.type:'text';const options=type==='select'&&/상태|status/i.test(name)?databaseStatusOptions(Array.isArray(column.options)?column.options:[]):[...new Set((Array.isArray(column.options)?column.options:[]).map(value=>String(value).slice(0,80)).filter(Boolean))].slice(0,30);return{id:/^[A-Za-z0-9_-]{3,40}$/.test(String(column.id||''))?String(column.id):'col_'+index,name,type,options}});if(!columns.length)return defaultDatabaseModel();const ids=new Set(columns.map(column=>column.id));const rows=parsed.rows.slice(0,DATABASE_MAX_ROWS).map(row=>({id:/^[A-Za-z0-9_-]{3,50}$/.test(String(row.id||''))?String(row.id):databaseUid('row'),cells:Object.fromEntries(columns.map(column=>[column.id,column.type==='checkbox'?(row.cells?.[column.id]===true||row.cells?.[column.id]===1||row.cells?.[column.id]==='1'||row.cells?.[column.id]==='true'):String(row.cells?.[column.id]??'').replace(/\r/g,'').slice(0,500)]))}));const view=parsed.view||{};const filter=view.filter&&typeof view.filter==='object'?view.filter:{};const filterColumn=ids.has(String(filter.column||''))?String(filter.column):'';const filterOperators=new Set(['contains','equals','not_equals','empty','not_empty','gte','lte']);return{version:2,title:cleanNotionDatabaseTitle(parsed.title),columns,rows,views:Array.isArray(parsed.views)?parsed.views.slice(0,12):[],view:{mode:view.mode==='board'?'board':'table',groupBy:ids.has(view.groupBy)?view.groupBy:(columns.find(column=>column.type==='select')?.id||columns[0].id),sortBy:ids.has(view.sortBy)?view.sortBy:'',sortDir:view.sortDir==='desc'?'desc':'asc',filter:{column:filterColumn,operator:filterOperators.has(String(filter.operator||''))?String(filter.operator):'contains',value:String(filter.value||'').slice(0,120)}}}}
-function databaseMiniButton(label,iconName,handler){const button=document.createElement('button');button.type='button';button.className='db-mini-button';button.innerHTML=icon(iconName);button.setAttribute('aria-label',label);button.dataset.tooltip=label;button.disabled=!canEdit();button.onclick=()=>{if(label==='행 삭제'&&!confirm('이 작업을 삭제할까요?'))return;if(label==='보드에서 제거'&&!confirm('이 카드를 보드에서 제거할까요?\n연결된 원본 페이지는 삭제되지 않습니다.'))return;handler()};return button}
+function defaultDatabaseModel(){const title='col_title',status='col_status',person='col_person',due='col_due';return{version:3,title:'작업 목록',columns:[{id:title,name:'작업',type:'text',options:[]},{id:status,name:'상태',type:'status',options:['밀린 업무','진행 예정','진행 중','완료']},{id:person,name:'담당자',type:'people',options:[]},{id:due,name:'마감일',type:'date',options:[]}],rows:[{id:databaseUid('row'),cells:{[title]:'새 작업',[status]:'진행 예정',[person]:'',[due]:''}}],views:[{id:'view_table',name:'표',type:'table',order:0,is_default:true},{id:'view_board',name:'보드',type:'board',order:1,groupBy:status},{id:'view_calendar',name:'캘린더',type:'calendar',order:2,datePropertyId:due}],view:{mode:'table',groupBy:status,datePropertyId:due,sortBy:'',sortDir:'asc',filter:{column:'',operator:'contains',value:''}}}}
+function parseDatabaseModel(value){let parsed;try{parsed=JSON.parse(value)}catch{}if(Array.isArray(parsed)&&parsed.length&&parsed.every(row=>Array.isArray(row))){const headers=parsed[0].slice(0,12);const columns=headers.map((name,index)=>{const label=String(name||('속성 '+(index+1))).slice(0,80);const status=/상태/.test(label);return{id:'col_'+index,name:label,type:status?'select':'text',options:status?['밀린 업무','진행 예정','진행 중','완료']:[]}});const rows=parsed.slice(1,DATABASE_MAX_ROWS+1).map(values=>({id:databaseUid('row'),cells:Object.fromEntries(columns.map((column,index)=>[column.id,String(values[index]??'').slice(0,500)]))}));const statusColumn=columns.find(column=>column.type==='select');return{version:2,title:'작업 목록',columns:columns.length?columns:defaultDatabaseModel().columns,rows:rows.length?rows:[],view:{mode:statusColumn?'board':'table',groupBy:statusColumn?.id||columns[0]?.id||'',sortBy:'',sortDir:'asc',filter:{column:'',operator:'contains',value:''}}}}if(!parsed||parsed.version!==2||!Array.isArray(parsed.columns)||!Array.isArray(parsed.rows))return defaultDatabaseModel();const columns=parsed.columns.slice(0,12).map((column,index)=>{const name=String(column.name||('속성 '+(index+1))).replace(/\r/g,'').slice(0,80);const type=DATABASE_PROPERTY_TYPES[column.type]?column.type:'text';const options=type==='select'&&/상태|status/i.test(name)?databaseStatusOptions(Array.isArray(column.options)?column.options:[]):[...new Set((Array.isArray(column.options)?column.options:[]).map(value=>String(value).slice(0,80)).filter(Boolean))].slice(0,30);return{id:/^[A-Za-z0-9_-]{3,40}$/.test(String(column.id||''))?String(column.id):'col_'+index,name,type,options}});if(!columns.length)return defaultDatabaseModel();const ids=new Set(columns.map(column=>column.id));const rows=parsed.rows.slice(0,DATABASE_MAX_ROWS).map(row=>({id:/^[A-Za-z0-9_-]{3,50}$/.test(String(row.id||''))?String(row.id):databaseUid('row'),cells:Object.fromEntries(columns.map(column=>[column.id,column.type==='checkbox'?(row.cells?.[column.id]===true||row.cells?.[column.id]===1||row.cells?.[column.id]==='1'||row.cells?.[column.id]==='true'):String(row.cells?.[column.id]??'').replace(/\r/g,'').slice(0,500)]))}));const view=parsed.view||{};const filter=view.filter&&typeof view.filter==='object'?view.filter:{};const filterColumn=ids.has(String(filter.column||''))?String(filter.column):'';const filterOperators=new Set(['contains','equals','not_equals','empty','not_empty','gte','lte']);return{version:2,title:cleanNotionDatabaseTitle(parsed.title),columns,rows,views:Array.isArray(parsed.views)?parsed.views.slice(0,12):[],view:{mode:view.mode==='board'?'board':'table',groupBy:ids.has(view.groupBy)?view.groupBy:(columns.find(column=>column.type==='select')?.id||columns[0].id),sortBy:ids.has(view.sortBy)?view.sortBy:'',sortDir:view.sortDir==='desc'?'desc':'asc',filter:{column:filterColumn,operator:filterOperators.has(String(filter.operator||''))?String(filter.operator):'contains',value:String(filter.value||'').slice(0,120)}}}}
+function databaseMiniButton(label,iconName,handler){const button=document.createElement('button');button.type='button';button.className='db-mini-button';button.innerHTML=icon(iconName);button.setAttribute('aria-label',label);button.title=label;button.disabled=!canEdit();button.onclick=()=>{if(label==='행 삭제'&&!confirm('이 작업을 삭제할까요?'))return;if(label==='보드에서 제거'&&!confirm('이 카드를 보드에서 제거할까요?\n연결된 원본 페이지는 삭제되지 않습니다.'))return;handler()};return button}
 function databaseRows(model,query=''){let rows=[...model.rows];const needle=query.trim().toLocaleLowerCase('ko');if(needle)rows=rows.filter(row=>model.columns.some(column=>String(row.cells[column.id]??'').toLocaleLowerCase('ko').includes(needle)));const filter=model.view.filter||{};const filterColumn=model.columns.find(column=>column.id===filter.column);const filterValue=String(filter.value??'').trim().toLocaleLowerCase('ko');if(filterColumn&&(['empty','not_empty'].includes(filter.operator)||filterValue)){rows=rows.filter(row=>{const raw=row.cells[filterColumn.id];const value=filterColumn.type==='checkbox'?(raw?'true':'false'):String(raw??'').trim();const lower=value.toLocaleLowerCase('ko');if(filter.operator==='empty')return !value;if(filter.operator==='not_empty')return !!value;if(filter.operator==='equals')return lower===filterValue;if(filter.operator==='not_equals')return lower!==filterValue;if(filter.operator==='gte'||filter.operator==='lte'){const left=filterColumn.type==='number'?Number(value):value;const right=filterColumn.type==='number'?Number(filterValue):filterValue;return filter.operator==='gte'?left>=right:left<=right}return lower.includes(filterValue)})}const sortColumn=model.columns.find(column=>column.id===model.view.sortBy);if(sortColumn)rows.sort((a,b)=>{const left=a.cells[sortColumn.id],right=b.cells[sortColumn.id];let result=0;if(sortColumn.type==='number')result=(Number(left)||0)-(Number(right)||0);else if(sortColumn.type==='checkbox')result=Number(!!left)-Number(!!right);else result=String(left??'').localeCompare(String(right??''),'ko',{numeric:true});return model.view.sortDir==='desc'?-result:result});return rows}
-function parseDatabaseModel(value){let parsed;try{parsed=JSON.parse(value)}catch{}if(Array.isArray(parsed)&&parsed.length&&parsed.every(row=>Array.isArray(row))){const headers=parsed[0].slice(0,DATABASE_MAX_COLUMNS);const columns=headers.map((name,index)=>{const label=String(name||('속성 '+(index+1))).slice(0,80);const status=/상태/.test(label);return{id:'col_'+index,name:label,type:status?'select':'text',options:status?['밀린 업무','진행 예정','진행 중','완료']:[]}});const rows=parsed.slice(1,DATABASE_MAX_ROWS+1).map(values=>({id:databaseUid('row'),cells:Object.fromEntries(columns.map((column,index)=>[column.id,String(values[index]??'').slice(0,500)]))}));const statusColumn=columns.find(column=>column.type==='select');return{version:3,title:'팀 작업',columns:columns.length?columns:defaultDatabaseModel().columns,rows:rows||[],views:[{id:'view_table',name:'전체 보기',type:'table',order:0,is_default:!statusColumn},...(statusColumn?[{id:'view_board',name:statusColumn.name+'별',type:'board',order:1,groupBy:statusColumn.id}]:[])],view:{mode:statusColumn?'board':'table',groupBy:statusColumn?.id||columns[0]?.id||'',sortBy:'',sortDir:'asc',filter:{column:'',operator:'contains',value:''}}}}if(!parsed||![2,3].includes(Number(parsed.version))||!Array.isArray(parsed.columns)||!Array.isArray(parsed.rows))return defaultDatabaseModel();const columns=parsed.columns.slice(0,DATABASE_MAX_COLUMNS).map((column,index)=>{const name=String(column.name||('속성 '+(index+1))).replace(/\r/g,'').slice(0,80);const type=DATABASE_PROPERTY_TYPES[column.type]?column.type:'text';const options=['select','multi_select','status'].includes(type)?[...new Set((Array.isArray(column.options)?column.options:[]).map(value=>String(value)).filter(Boolean))].slice(0,100):[];return{id:/^[A-Za-z0-9_-]{3,40}$/.test(String(column.id||''))?String(column.id):'col_'+index,name,type,sourceType:String(column.sourceType||column.source_type||type),sourceId:String(column.sourceId||column.source_id||''),options}});if(!columns.length)return defaultDatabaseModel();const ids=new Set(columns.map(column=>column.id));const rows=parsed.rows.slice(0,DATABASE_MAX_ROWS).map(row=>({id:/^[A-Za-z0-9_-]{3,50}$/.test(String(row.id||''))?String(row.id):databaseUid('row'),source_id:String(row.source_id||''),cells:Object.fromEntries(columns.map(column=>[column.id,column.type==='checkbox'?(row.cells?.[column.id]===true||row.cells?.[column.id]===1||row.cells?.[column.id]==='1'||row.cells?.[column.id]==='true'):String(row.cells?.[column.id]??'').replace(/\r/g,'').slice(0,500)]))}));const normalizeView=view=>{const raw=view&&typeof view==='object'?view:{};const type=String(raw.type||raw.mode||'table').toLowerCase();const filter=raw.filter&&typeof raw.filter==='object'?raw.filter:{};return{id:String(raw.id||'view_'+type),name:String(raw.name||raw.title||({'table':'표','board':'보드','calendar':'캘린더','timeline':'타임라인','gallery':'갤러리','list':'목록'}[type]||type)).slice(0,120),type:['table','board','calendar','timeline','gallery','list'].includes(type)?type:'table',order:Number.isFinite(Number(raw.order))?Number(raw.order):0,is_default:!!raw.is_default,groupBy:ids.has(String(raw.groupBy||''))?String(raw.groupBy):ids.has(String(raw.group_by||''))?String(raw.group_by):'',datePropertyId:ids.has(String(raw.datePropertyId||''))?String(raw.datePropertyId):ids.has(String(raw.date_property_id||''))?String(raw.date_property_id):'',filter,sorts:Array.isArray(raw.sorts)?raw.sorts:[],quick_filters:Array.isArray(raw.quick_filters)?raw.quick_filters:[],configuration:raw.configuration&&typeof raw.configuration==='object'?raw.configuration:{}}};const views=(Array.isArray(parsed.views)?parsed.views:[]).map(normalizeView).sort((a,b)=>a.order-b.order);const legacy=parsed.view&&typeof parsed.view==='object'?normalizeView(parsed.view):null;const selected=legacy||views.find(view=>view.is_default)||views[0]||{type:'table',groupBy:'',datePropertyId:'',filter:{column:'',operator:'contains',value:''},sorts:[],quick_filters:[]};const filter=selected.filter&&typeof selected.filter==='object'?selected.filter:{};const filterColumn=ids.has(String(filter.column||''))?String(filter.column):'';const filterOperators=new Set(['contains','equals','not_equals','empty','not_empty','gte','lte']);return{version:Number(parsed.version)===3?3:2,title:cleanNotionDatabaseTitle(parsed.title),source_id:String(parsed.source_id||''),columns,rows,views,view:{mode:['table','board','calendar','timeline','gallery','list'].includes(selected.type)?selected.type:'table',groupBy:selected.groupBy||columns.find(column=>['status','select'].includes(column.type))?.id||columns[0].id,datePropertyId:selected.datePropertyId||columns.find(column=>column.type==='date')?.id||'',sortBy:ids.has(String(selected.sortBy||''))?String(selected.sortBy):'',sortDir:selected.sortDir==='desc'?'desc':'asc',filter:{column:filterColumn,operator:filterOperators.has(String(filter.operator||''))?String(filter.operator):'contains',value:String(filter.value||'').slice(0,120)}}}}
+function parseDatabaseModel(value){let parsed;try{parsed=JSON.parse(value)}catch{}if(Array.isArray(parsed)&&parsed.length&&parsed.every(row=>Array.isArray(row))){const headers=parsed[0].slice(0,DATABASE_MAX_COLUMNS);const columns=headers.map((name,index)=>{const label=String(name||('속성 '+(index+1))).slice(0,80);const status=/상태/.test(label);return{id:'col_'+index,name:label,type:status?'select':'text',options:status?['밀린 업무','진행 예정','진행 중','완료']:[]}});const rows=parsed.slice(1,DATABASE_MAX_ROWS+1).map(values=>({id:databaseUid('row'),cells:Object.fromEntries(columns.map((column,index)=>[column.id,String(values[index]??'').slice(0,500)]))}));const statusColumn=columns.find(column=>column.type==='select');return{version:3,title:'작업 목록',columns:columns.length?columns:defaultDatabaseModel().columns,rows:rows||[],views:[{id:'view_table',name:'전체 보기',type:'table',order:0,is_default:!statusColumn},...(statusColumn?[{id:'view_board',name:statusColumn.name+'별',type:'board',order:1,groupBy:statusColumn.id}]:[])],view:{mode:statusColumn?'board':'table',groupBy:statusColumn?.id||columns[0]?.id||'',sortBy:'',sortDir:'asc',filter:{column:'',operator:'contains',value:''}}}}if(!parsed||![2,3].includes(Number(parsed.version))||!Array.isArray(parsed.columns)||!Array.isArray(parsed.rows))return defaultDatabaseModel();const columns=parsed.columns.slice(0,DATABASE_MAX_COLUMNS).map((column,index)=>{const name=String(column.name||('속성 '+(index+1))).replace(/\r/g,'').slice(0,80);const type=DATABASE_PROPERTY_TYPES[column.type]?column.type:'text';const options=['select','multi_select','status'].includes(type)?[...new Set((Array.isArray(column.options)?column.options:[]).map(value=>String(value)).filter(Boolean))].slice(0,100):[];return{id:/^[A-Za-z0-9_-]{3,40}$/.test(String(column.id||''))?String(column.id):'col_'+index,name,type,sourceType:String(column.sourceType||column.source_type||type),sourceId:String(column.sourceId||column.source_id||''),options}});if(!columns.length)return defaultDatabaseModel();const ids=new Set(columns.map(column=>column.id));const rows=parsed.rows.slice(0,DATABASE_MAX_ROWS).map(row=>({id:/^[A-Za-z0-9_-]{3,50}$/.test(String(row.id||''))?String(row.id):databaseUid('row'),source_id:String(row.source_id||''),cells:Object.fromEntries(columns.map(column=>[column.id,column.type==='checkbox'?(row.cells?.[column.id]===true||row.cells?.[column.id]===1||row.cells?.[column.id]==='1'||row.cells?.[column.id]==='true'):String(row.cells?.[column.id]??'').replace(/\r/g,'').slice(0,500)]))}));const normalizeView=view=>{const raw=view&&typeof view==='object'?view:{};const type=String(raw.type||raw.mode||'table').toLowerCase();const filter=raw.filter&&typeof raw.filter==='object'?raw.filter:{};return{id:String(raw.id||'view_'+type),name:String(raw.name||raw.title||({'table':'표','board':'보드','calendar':'캘린더','timeline':'타임라인','gallery':'갤러리','list':'목록'}[type]||type)).slice(0,120),type:['table','board','calendar','timeline','gallery','list'].includes(type)?type:'table',order:Number.isFinite(Number(raw.order))?Number(raw.order):0,is_default:!!raw.is_default,groupBy:ids.has(String(raw.groupBy||''))?String(raw.groupBy):ids.has(String(raw.group_by||''))?String(raw.group_by):'',datePropertyId:ids.has(String(raw.datePropertyId||''))?String(raw.datePropertyId):ids.has(String(raw.date_property_id||''))?String(raw.date_property_id):'',filter,sorts:Array.isArray(raw.sorts)?raw.sorts:[],quick_filters:Array.isArray(raw.quick_filters)?raw.quick_filters:[],configuration:raw.configuration&&typeof raw.configuration==='object'?raw.configuration:{}}};const views=(Array.isArray(parsed.views)?parsed.views:[]).map(normalizeView).sort((a,b)=>a.order-b.order);const legacy=parsed.view&&typeof parsed.view==='object'?normalizeView(parsed.view):null;const selected=legacy||views.find(view=>view.is_default)||views[0]||{type:'table',groupBy:'',datePropertyId:'',filter:{column:'',operator:'contains',value:''},sorts:[],quick_filters:[]};const filter=selected.filter&&typeof selected.filter==='object'?selected.filter:{};const filterColumn=ids.has(String(filter.column||''))?String(filter.column):'';const filterOperators=new Set(['contains','equals','not_equals','empty','not_empty','gte','lte']);return{version:Number(parsed.version)===3?3:2,title:cleanNotionDatabaseTitle(parsed.title),source_id:String(parsed.source_id||''),columns,rows,views,view:{mode:['table','board','calendar','timeline','gallery','list'].includes(selected.type)?selected.type:'table',groupBy:selected.groupBy||columns.find(column=>['status','select'].includes(column.type))?.id||columns[0].id,datePropertyId:selected.datePropertyId||columns.find(column=>column.type==='date')?.id||'',sortBy:ids.has(String(selected.sortBy||''))?String(selected.sortBy):'',sortDir:selected.sortDir==='desc'?'desc':'asc',filter:{column:filterColumn,operator:filterOperators.has(String(filter.operator||''))?String(filter.operator):'contains',value:String(filter.value||'').slice(0,120)}}}}
 
-function normalizeDatabaseView(model, raw){const view=raw||model.view||{};const mode=String(view.type||view.mode||'table').toLowerCase();return{...view,type:['table','board','calendar','timeline','gallery','list'].includes(mode)?mode:'table',mode:mode,groupBy:view.groupBy||view.group_by||model.view.groupBy||'',datePropertyId:view.datePropertyId||view.date_property_id||model.view.datePropertyId||'',filter:view.filter||{column:'',operator:'contains',value:''}}}
+const parseDatabaseModelBase=parseDatabaseModel;
+parseDatabaseModel=value=>{const model=parseDatabaseModelBase(value);if(Array.isArray(model.views)&&model.views.length){const selected=model.views.find(view=>String(view.type||view.mode).toLowerCase()===model.view.mode&&view.is_default)||model.views.find(view=>view.is_default)||model.views.find(view=>String(view.type||view.mode).toLowerCase()===model.view.mode)||model.views[0];model.view={...selected,...model.view,type:model.view.mode,sorts:Array.isArray(model.view.sorts)?model.view.sorts:Array.isArray(selected.sorts)?selected.sorts:[],quick_filters:Array.isArray(model.view.quick_filters)?model.view.quick_filters:Array.isArray(selected.quick_filters)?selected.quick_filters:[],configuration:{...(selected.configuration||{}),...(model.view.configuration||{})}}}return model};
+function normalizeDatabaseView(model, raw){const view=raw||model.view||{};const mode=String(view.type||view.mode||'table').toLowerCase();return{...view,type:['table','board','calendar','timeline','gallery','list'].includes(mode)?mode:'table',mode:mode,groupBy:view.groupBy||view.group_by||model.view.groupBy||'',datePropertyId:view.datePropertyId||view.date_property_id||model.view.datePropertyId||'',filter:view.filter||{column:'',operator:'contains',value:''},sorts:Array.isArray(view.sorts)?view.sorts:[],quick_filters:Array.isArray(view.quick_filters)?view.quick_filters:[],configuration:view.configuration&&typeof view.configuration==='object'?view.configuration:{}}}
 function databaseDateParts(value){const text=String(value||'').trim();if(!text)return[];return text.split(/\s+→\s+|\s+至\s+/).map(part=>{const match=part.match(/\d{4}-\d{2}-\d{2}/);return match?match[0]:''}).filter(Boolean)}
+function calendarDateKey(date){return date.toISOString().slice(0,10)}
+function calendarLocalTodayKey(){const date=new Date();return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-')}
+function calendarVisibleItems(rows,dateColumn,titleColumn,visibleStart,visibleEnd){return rows.map(row=>{const parts=databaseDateParts(row.cells[dateColumn.id]);return{row,parts,title:databaseDisplayValue(titleColumn,row.cells[titleColumn.id])||'제목 없음'}}).filter(item=>item.parts.length&&(item.parts[1]||item.parts[0])>=visibleStart&&item.parts[0]<=visibleEnd).sort((a,b)=>a.parts[0].localeCompare(b.parts[0])||(b.parts[1]||b.parts[0]).localeCompare(a.parts[1]||a.parts[0])||a.title.localeCompare(b.title)||String(a.row.source_id||a.row.id).localeCompare(String(b.row.source_id||b.row.id)))}
 function databaseDisplayValue(property,value){const text=String(value??'').trim();if(property.type==='people'||property.type==='person'){if(/^[0-9a-f]{24,}$/i.test(text)||text.split(',').some(item=>/^[0-9a-f-]{24,}$/i.test(item.trim())))return '사용자 정보 권한 필요';}return text}
 
 function databaseCellInput(wrap,row,column,{compact=false,onGroupChange=false}={}){let input;if(['select','status','multi_select'].includes(column.type)){input=document.createElement(column.type==='multi_select'?'input':'select');const current=String(row.cells[column.id]??'');if(input.tagName==='SELECT'){const values=[...new Set(['',...column.options,current])];for(const value of values){const option=document.createElement('option');option.value=value;option.textContent=value||'선택 안 함';input.append(option)}input.value=current}else{input.type='text';input.value=current;input.placeholder='쉼표로 여러 값 입력'} }else{input=document.createElement('input');input.type=column.type==='checkbox'?'checkbox':column.type==='number'?'number':column.type==='date'?'date':column.type==='url'?'url':'text';if(input.type==='checkbox')input.checked=!!row.cells[column.id];else input.value=String(row.cells[column.id]??'');if(['text','url'].includes(input.type))input.maxLength=500}input.className='db-cell-input type-'+column.type+(compact?' compact':'');input.disabled=!canEdit()||!['text','select','multi_select','number','date','url','checkbox'].includes(column.type);input.title=databaseDisplayValue(column,row.cells[column.id]);input.setAttribute('aria-label',column.name+' 값');const update=()=>{const value=input.type==='checkbox'?input.checked:input.value;row.cells[column.id]=value;if(['select','status'].includes(column.type)&&value&&!column.options.includes(value))column.options.push(value);scheduleSave();if(onGroupChange)renderDatabaseBody(wrap)};input.oninput=['select','checkbox'].includes(input.type)?null:update;input.onchange=update;return input}
@@ -634,33 +956,98 @@ function renderDatabaseBlock(wrap){const model=wrap._databaseModel;wrap.replaceC
 function databaseGroupValues(model,column,rows){const values=['select','multi_select','status'].includes(column.type)?[...column.options]:[];for(const row of rows){const value=String(row.cells[column.id]??'').trim();if(value&&!values.includes(value))values.push(value)}if(rows.some(row=>!String(row.cells[column.id]??'').trim()))values.push('');return values.slice(0,100)}
 function databaseBoardField(property,value){const field=document.createElement('div');field.className='db-card-field';const text=databaseDisplayValue(property,value);if(['people','person'].includes(property.type)){field.innerHTML='<span class="db-card-avatar">'+escapeText(text==='사용자 정보 권한 필요'?'?':text.slice(0,1).toUpperCase())+'</span><span class="db-card-value is-person">'+escapeText(text)+'</span>'}else if(['select','status','multi_select'].includes(property.type)){field.innerHTML='<span class="db-card-value is-tag">'+escapeText(text)+'</span>'}else{field.innerHTML=icon(/첨부|파일|attachment/i.test(property.name)?'files':property.type==='date'?'clock':'list')+'<span class="db-card-value">'+escapeText(text)+'</span>'}field.title=property.name+': '+String(value??'').trim();return field}
 function openDatabaseRowPage(row,titleColumn,button){const title=String(row.cells[titleColumn.id]||'').trim();if(row.source_id&&/^[0-9a-f]{32}$/i.test(row.source_id)){push('/doc/doc_notion_'+row.source_id.toLowerCase());return}if(!title)return toast('페이지를 찾으려면 카드 제목을 입력해 주세요.');if(row._documentId){push('/doc/'+row._documentId);return}if(row._opening)return;row._opening=true;button?.classList.add('loading-indicator');try{const params=new URLSearchParams({scope:'search',limit:'20',q:title});api('/api/documents?'+params).then(data=>{const key=databasePageTitleKey(title);const page=data.documents.find(document=>document.id!==state.current?.id&&!isImportArtifactDoc(document)&&databasePageTitleKey(document.title)===key);if(!page)toast('같은 제목의 원본 페이지를 찾지 못했습니다.');else{row._documentId=page.id;push('/doc/'+page.id)}}).catch(error=>toast(error.message)).finally(()=>{row._opening=false;button?.classList.remove('loading-indicator')})}catch(error){row._opening=false;button?.classList.remove('loading-indicator');toast(error.message)}}
-function renderDatabaseCalendar(wrap,body,view){const model=wrap._databaseModel;const dateColumn=model.columns.find(column=>column.id===view.datePropertyId)||model.columns.find(column=>column.type==='date');const shell=document.createElement('div');shell.className='db-calendar';if(!dateColumn){shell.innerHTML='<div class="db-empty">날짜 속성이 없어 캘린더를 표시할 수 없습니다.</div>';body.append(shell);return}if(!wrap._calendarCursor)wrap._calendarCursor=new Date();const cursor=new Date(Date.UTC(wrap._calendarCursor.getUTCFullYear(),wrap._calendarCursor.getUTCMonth(),1));const year=cursor.getUTCFullYear(),month=cursor.getUTCMonth();const heading=document.createElement('header');heading.className='db-calendar-heading';const title=document.createElement('strong');title.textContent=year+'년 '+(month+1)+'월';const controls=document.createElement('div');controls.className='db-calendar-controls';const prev=document.createElement('button');prev.type='button';prev.className='db-control';prev.textContent='‹';prev.setAttribute('aria-label','이전 달');prev.onclick=()=>{wrap._calendarCursor=new Date(Date.UTC(year,month-1,1));renderDatabaseBody(wrap)};const today=document.createElement('button');today.type='button';today.className='db-control';today.textContent='오늘';today.onclick=()=>{wrap._calendarCursor=new Date();renderDatabaseBody(wrap)};const next=document.createElement('button');next.type='button';next.className='db-control';next.textContent='›';next.setAttribute('aria-label','다음 달');next.onclick=()=>{wrap._calendarCursor=new Date(Date.UTC(year,month+1,1));renderDatabaseBody(wrap)};controls.append(prev,today,next);heading.append(title,controls);shell.append(heading);const grid=document.createElement('div');grid.className='db-calendar-grid';for(const label of ['일','월','화','수','목','금','토']){const day=document.createElement('div');day.className='db-calendar-weekday';day.textContent=label;grid.append(day)}const firstDay=new Date(Date.UTC(year,month,1)).getUTCDay();const lastDay=new Date(Date.UTC(year,month+1,0)).getUTCDate();const start=new Date(Date.UTC(year,month,1-firstDay));const rows=databaseRows(model,wrap._databaseQuery);for(let index=0;index<42;index+=1){const date=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),start.getUTCDate()+index));const key=date.toISOString().slice(0,10);const cell=document.createElement('div');cell.className='db-calendar-day'+(date.getUTCMonth()===month?'':' outside')+(key===new Date().toISOString().slice(0,10)?' today':'');const dayNumber=document.createElement('span');dayNumber.className='db-calendar-date';dayNumber.textContent=String(date.getUTCDate());cell.append(dayNumber);for(const row of rows){const parts=databaseDateParts(row.cells[dateColumn.id]);if(!parts.length||key<parts[0]||key>(parts[1]||parts[0]))continue;const chip=document.createElement('button');chip.type='button';chip.className='db-calendar-event';const titleColumn=model.columns.find(column=>column.type==='text')||model.columns[0];chip.textContent=databaseDisplayValue(titleColumn,row.cells[titleColumn.id])||'제목 없음';chip.title=String(row.cells[titleColumn.id]||'');chip.onclick=()=>openDatabaseRowPage(row,titleColumn,chip);cell.append(chip)}grid.append(cell)}shell.append(grid);const undated=rows.filter(row=>!databaseDateParts(row.cells[dateColumn.id]).length);if(undated.length){const noDate=document.createElement('div');noDate.className='db-calendar-undated';noDate.innerHTML='<strong>날짜 없음</strong>';const titleColumn=model.columns.find(column=>column.type==='text')||model.columns[0];for(const row of undated.slice(0,100)){const link=document.createElement('button');link.type='button';link.className='db-calendar-undated-item';link.textContent=String(row.cells[titleColumn.id]||'제목 없음');link.onclick=()=>openDatabaseRowPage(row,titleColumn,link);noDate.append(link)}shell.append(noDate)}body.append(shell)}
+function renderDatabaseCalendar(wrap,body,view){const model=wrap._databaseModel;const dateColumn=model.columns.find(column=>column.id===view.datePropertyId)||model.columns.find(column=>column.type==='date');const shell=document.createElement('div');shell.className='db-calendar';if(!dateColumn){shell.innerHTML='<div class="db-empty">날짜 속성이 없어 캘린더를 표시할 수 없습니다.</div>';body.append(shell);return}if(!wrap._calendarCursor){const now=new Date();wrap._calendarCursor=new Date(Date.UTC(now.getFullYear(),now.getMonth(),1))}const cursor=new Date(Date.UTC(wrap._calendarCursor.getUTCFullYear(),wrap._calendarCursor.getUTCMonth(),1));const year=cursor.getUTCFullYear(),month=cursor.getUTCMonth();const heading=document.createElement('header');heading.className='db-calendar-heading';const title=document.createElement('strong');title.textContent=year+'년 '+(month+1)+'월';const controls=document.createElement('div');controls.className='db-calendar-controls';const prev=document.createElement('button');prev.type='button';prev.className='db-control';prev.textContent='‹';prev.setAttribute('aria-label','이전 달');prev.onclick=()=>{wrap._calendarCursor=new Date(Date.UTC(year,month-1,1));renderDatabaseBody(wrap)};const today=document.createElement('button');today.type='button';today.className='db-control';today.textContent='오늘';today.onclick=()=>{const now=new Date();wrap._calendarCursor=new Date(Date.UTC(now.getFullYear(),now.getMonth(),1));renderDatabaseBody(wrap)};const next=document.createElement('button');next.type='button';next.className='db-control';next.textContent='›';next.setAttribute('aria-label','다음 달');next.onclick=()=>{wrap._calendarCursor=new Date(Date.UTC(year,month+1,1));renderDatabaseBody(wrap)};controls.append(prev,today,next);heading.append(title,controls);shell.append(heading);const weekdays=document.createElement('div');weekdays.className='db-calendar-weekdays';for(const label of ['일','월','화','수','목','금','토']){const day=document.createElement('div');day.className='db-calendar-weekday';day.textContent=label;weekdays.append(day)}shell.append(weekdays);const firstDay=new Date(Date.UTC(year,month,1)).getUTCDay();const start=new Date(Date.UTC(year,month,1-firstDay));const end=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),start.getUTCDate()+41));const visibleStart=calendarDateKey(start),visibleEnd=calendarDateKey(end);const rows=databaseRows(model,wrap._databaseQuery);const titleColumn=model.columns.find(column=>column.type==='text')||model.columns[0];const dated=calendarVisibleItems(rows,dateColumn,titleColumn,visibleStart,visibleEnd);const weeks=document.createElement('div');weeks.className='db-calendar-weeks';const todayKey=calendarLocalTodayKey();for(let weekIndex=0;weekIndex<6;weekIndex+=1){const week=document.createElement('div');week.className='db-calendar-week';const weekStart=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),start.getUTCDate()+weekIndex*7));const weekEnd=new Date(Date.UTC(weekStart.getUTCFullYear(),weekStart.getUTCMonth(),weekStart.getUTCDate()+6));const weekStartKey=calendarDateKey(weekStart),weekEndKey=calendarDateKey(weekEnd);for(let column=0;column<7;column+=1){const date=new Date(Date.UTC(weekStart.getUTCFullYear(),weekStart.getUTCMonth(),weekStart.getUTCDate()+column));const key=calendarDateKey(date);const cell=document.createElement('div');cell.style.gridColumn=String(column+1);cell.className='db-calendar-day'+(date.getUTCMonth()===month?'':' outside')+(key===todayKey?' today':'');const dayNumber=document.createElement('span');dayNumber.className='db-calendar-date';dayNumber.textContent=String(date.getUTCDate());cell.append(dayNumber);week.append(cell)}const lanes=[];for(const item of dated){const itemStart=item.parts[0],itemEnd=item.parts[1]||itemStart;if(itemEnd<weekStartKey||itemStart>weekEndKey)continue;const segmentStart=itemStart<weekStartKey?weekStartKey:itemStart;const segmentEnd=itemEnd>weekEndKey?weekEndKey:itemEnd;const startColumn=Math.round((Date.parse(segmentStart+'T00:00:00Z')-weekStart.getTime())/86400000);const endColumn=Math.round((Date.parse(segmentEnd+'T00:00:00Z')-weekStart.getTime())/86400000);let lane=lanes.findIndex(lastEnd=>startColumn>lastEnd);if(lane<0){lane=lanes.length;lanes.push(endColumn)}else lanes[lane]=endColumn;const chip=document.createElement('button');chip.type='button';chip.className='db-calendar-range'+(itemStart<weekStartKey?' continues-before':'')+(itemEnd>weekEndKey?' continues-after':'');chip.style.gridColumn=(startColumn+1)+' / '+(endColumn+2);chip.style.gridRow=String(lane+2);chip.innerHTML=icon('files')+'<span>'+escapeText(item.title)+'</span>';chip.title=item.title+' · '+itemStart+(itemEnd!==itemStart?' → '+itemEnd:'');chip.onclick=()=>openDatabaseRowPage(item.row,titleColumn,chip);week.append(chip)}week.style.gridTemplateRows='32px repeat('+Math.max(3,lanes.length)+',30px)';weeks.append(week)}shell.append(weeks);const undated=rows.filter(row=>!databaseDateParts(row.cells[dateColumn.id]).length);if(undated.length){const noDate=document.createElement('details');noDate.className='db-calendar-undated';const summary=document.createElement('summary');summary.textContent='날짜 없음 ('+undated.length+')';const list=document.createElement('div');list.className='db-calendar-undated-list';for(const row of undated.slice(0,100)){const link=document.createElement('button');link.type='button';link.className='db-calendar-undated-item';link.textContent=String(row.cells[titleColumn.id]||'제목 없음');link.onclick=()=>openDatabaseRowPage(row,titleColumn,link);list.append(link)}noDate.append(summary,list);shell.append(noDate)}body.append(shell)}
 function renderDatabaseBoard(wrap,body){const model=wrap._databaseModel;const rows=databaseRows(model,wrap._databaseQuery);const groupColumn=model.columns.find(column=>column.id===model.view.groupBy)||model.columns.find(column=>['status','select'].includes(column.type))||model.columns[0];const titleColumn=model.columns.find(column=>column.type==='text')||model.columns[0];const board=document.createElement('div');board.className='db-board';const tones={'밀린 업무':'red','진행 예정':'blue','진행 중':'yellow','완료':'green'};for(const groupValue of databaseGroupValues(model,groupColumn,rows)){const grouped=rows.filter(row=>String(row.cells[groupColumn.id]??'')===groupValue);const column=document.createElement('section');column.className='db-board-column';column.dataset.groupValue=groupValue;column.dataset.tone=tones[groupValue]||'gray';const heading=document.createElement('header');heading.className='db-board-heading';heading.innerHTML='<span><i class="db-status-dot"></i>'+escapeText(groupValue||'상태 없음')+'</span><span>'+escapeText(grouped.length>99?'99+':String(grouped.length))+'</span>';const list=document.createElement('div');list.className='db-board-list';const limit=wrap._boardLimit||100;for(const row of grouped.slice(0,limit)){const card=document.createElement('article');card.className='db-card';card.draggable=canEdit();card.dataset.rowId=row.id;card.ondragstart=event=>{card.classList.add('dragging');event.dataTransfer.setData('text/plain',row.id)};card.ondragend=()=>card.classList.remove('dragging');const titleRow=document.createElement('div');titleRow.className='db-card-title-row';const pageIcon=document.createElement('button');pageIcon.type='button';pageIcon.className='db-card-page-icon';pageIcon.innerHTML=icon('files');pageIcon.setAttribute('aria-label','원본 페이지 열기');pageIcon.onclick=()=>openDatabaseRowPage(row,titleColumn,pageIcon);const title=databaseCellInput(wrap,row,titleColumn,{compact:true});title.classList.add('db-card-title');title.title=String(row.cells[titleColumn.id]||'');titleRow.append(pageIcon,title);card.onclick=event=>{if(event.target.closest('input,button,select,a'))return;openDatabaseRowPage(row,titleColumn,pageIcon)};const meta=document.createElement('div');meta.className='db-card-meta';const visible=model.columns.filter(property=>property.id!==titleColumn.id&&property.id!==groupColumn.id&&String(row.cells[property.id]??'').trim()).sort((a,b)=>{const rank=property=>['people','person'].includes(property.type)?0:/우선순위|priority/i.test(property.name)?1:property.type==='date'?2:3;return rank(a)-rank(b)}).slice(0,4);for(const property of visible)meta.append(databaseBoardField(property,row.cells[property.id]));const footer=document.createElement('footer');footer.className='db-card-footer';const remove=databaseMiniButton('보드에서 제거','trash',()=>{row.cells[groupColumn.id]='';renderDatabaseBody(wrap);scheduleSave()});footer.append(remove);card.append(titleRow,meta,footer);list.append(card)}if(grouped.length>limit){const more=document.createElement('button');more.type='button';more.className='db-board-more';more.textContent='더 보기 ('+(grouped.length-limit)+'개)';more.onclick=()=>{wrap._boardLimit=limit+100;renderDatabaseBody(wrap)};list.append(more)}column.ondragover=event=>{if(!canEdit())return;event.preventDefault();column.classList.add('drag-over')};column.ondragleave=()=>column.classList.remove('drag-over');column.ondrop=event=>{event.preventDefault();column.classList.remove('drag-over');const row=model.rows.find(item=>item.id===event.dataTransfer.getData('text/plain'));if(!row)return;row.cells[groupColumn.id]=groupValue;renderDatabaseBody(wrap);scheduleSave()};const add=document.createElement('button');add.type='button';add.className='db-board-add';add.textContent='+ '+(groupValue||'상태 없음')+'에 작업 추가';add.hidden=!canEdit();add.onclick=()=>{if(model.rows.length>=DATABASE_MAX_ROWS)return toast('작업은 최대 '+DATABASE_MAX_ROWS+'개까지 추가할 수 있습니다.');const row={id:databaseUid('row'),cells:Object.fromEntries(model.columns.map(item=>[item.id,item.type==='checkbox'?false:'']))};row.cells[groupColumn.id]=groupValue;row.cells[titleColumn.id]='새 작업';model.rows.push(row);renderDatabaseBlock(wrap);scheduleSave()};column.append(heading,list,add);board.append(column)}body.append(board)}
-function renderDatabaseBody(wrap){const old=wrap.querySelector('.db-view-body');const body=document.createElement('div');body.className='db-view-body';const view=normalizeDatabaseView(wrap._databaseModel,wrap._databaseModel.view);if(view.type==='board')renderDatabaseBoard(wrap,body);else if(view.type==='calendar')renderDatabaseCalendar(wrap,body,view);else renderDatabaseTable(wrap,body);old?.replaceWith(body);const empty=wrap.querySelector('.db-empty');if(empty&&wrap._databaseModel.view.filter?.column&&!wrap._databaseQuery)empty.textContent='조건에 맞는 작업이 없습니다.'}
-function renderDatabaseBlock(wrap){const model=wrap._databaseModel;wrap.replaceChildren();const header=document.createElement('div');header.className='db-header';header.hidden=cleanNotionDatabaseTitle(model.title)===cleanNotionDatabaseTitle(state.current?.title);const title=document.createElement('input');title.className='db-title';title.value=model.title;title.maxLength=120;title.disabled=!canEdit();title.setAttribute('aria-label','데이터베이스 이름');title.oninput=()=>{model.title=title.value;scheduleSave()};const count=document.createElement('span');count.className='db-count';count.textContent=model.rows.length+'개 작업';header.append(title,count);const views=document.createElement('div');views.className='db-viewbar';const viewList=(Array.isArray(model.views)&&model.views.length?model.views:[{id:'view_table',name:'표',type:'table'},{id:'view_board',name:'보드',type:'board',groupBy:model.view.groupBy}]).slice().sort((a,b)=>(a.order||0)-(b.order||0));const labels={table:'표',board:'보드',calendar:'캘린더',timeline:'타임라인',gallery:'갤러리',list:'목록'};for(const raw of viewList){const view=normalizeDatabaseView(model,raw);const button=document.createElement('button');button.type='button';button.className='db-view-tab'+((model._activeViewId?model._activeViewId===raw.id:model.view.mode===view.type)?' active':'');button.innerHTML=icon(view.type==='calendar'?'calendar':view.type==='board'?'files':'list')+'<span>'+escapeText(raw.name||labels[view.type]||view.type)+'</span>';button.onclick=()=>{model._activeViewId=raw.id;model.view={...model.view,...view,mode:view.type,groupBy:view.groupBy||model.view.groupBy,datePropertyId:view.datePropertyId||model.view.datePropertyId,filter:view.filter||model.view.filter};renderDatabaseBlock(wrap);scheduleSave()};views.append(button)}const toolbar=document.createElement('div');toolbar.className='db-toolbar';const searchWrap=document.createElement('label');searchWrap.className='db-search-wrap';searchWrap.innerHTML=icon('search');const search=document.createElement('input');search.className='db-search';search.type='search';search.placeholder='작업 검색';search.value=wrap._databaseQuery||'';search.setAttribute('aria-label','데이터베이스 검색');search.oninput=()=>{wrap._databaseQuery=search.value;renderDatabaseBody(wrap)};searchWrap.append(search);const sort=document.createElement('select');sort.className='db-select';sort.setAttribute('aria-label','정렬 속성');sort.innerHTML='<option value="">정렬 안 함</option>'+model.columns.map(column=>'<option value="'+escapeText(column.id)+'"'+(model.view.sortBy===column.id?' selected':'')+'>'+escapeText(column.name)+' 순</option>').join('');sort.onchange=()=>{model.view.sortBy=sort.value;renderDatabaseBody(wrap);scheduleSave()};const direction=document.createElement('button');direction.type='button';direction.className='db-control';direction.innerHTML=icon(model.view.sortDir==='desc'?'arrow-down':'arrow-up')+'<span>'+(model.view.sortDir==='desc'?'내림차순':'오름차순')+'</span>';direction.onclick=()=>{model.view.sortDir=model.view.sortDir==='desc'?'asc':'desc';renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(searchWrap,sort,direction);databaseFilterControls(model,wrap,toolbar);if(model.view.mode==='board'){const group=document.createElement('select');group.className='db-select';group.setAttribute('aria-label','보드 분류 속성');for(const column of model.columns){const option=document.createElement('option');option.value=column.id;option.textContent=column.name+'별';option.selected=model.view.groupBy===column.id;group.append(option)}group.onchange=()=>{model.view.groupBy=group.value;renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(group)}const addProperty=document.createElement('button');addProperty.type='button';addProperty.className='db-control';addProperty.innerHTML=icon('plus')+'<span>속성 추가</span>';addProperty.hidden=!canEdit();addProperty.onclick=()=>{if(model.columns.length>=DATABASE_MAX_COLUMNS)return toast('속성은 최대 '+DATABASE_MAX_COLUMNS+'개까지 추가할 수 있습니다.');const id=databaseUid('col');model.columns.push({id,name:'새 속성',type:'text',options:[]});for(const row of model.rows)row.cells[id]='';renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(addProperty);const body=document.createElement('div');body.className='db-view-body';const footer=document.createElement('footer');footer.className='db-footer';const addRow=document.createElement('button');addRow.type='button';addRow.className='db-control primary';addRow.innerHTML=icon('plus')+'<span>새 작업</span>';addRow.hidden=!canEdit();addRow.onclick=()=>{if(model.rows.length>=DATABASE_MAX_ROWS)return toast('작업은 최대 '+DATABASE_MAX_ROWS+'개까지 추가할 수 있습니다.');const first=model.columns.find(column=>column.type==='text')||model.columns[0];const row={id:databaseUid('row'),cells:Object.fromEntries(model.columns.map(column=>[column.id,column.type==='checkbox'?false:'']))};row.cells[first.id]='새 작업';model.rows.push(row);renderDatabaseBlock(wrap);scheduleSave()};const note=document.createElement('span');note.className='db-footer-note';note.textContent=model.rows.length+'개 작업 · '+viewList.length+'개 뷰';footer.append(addRow,note);wrap.append(header,views,toolbar,body,footer);renderDatabaseBody(wrap)}
+const databaseRowsBase=databaseRows;
+function databaseViewColumn(model,reference){const key=String(reference||'');return model.columns.find(column=>column.id===key||column.sourceId===key||column.source_id===key||column.name===key)}
+function databaseComparable(column,value){if(column?.type==='number')return Number(value)||0;if(column?.type==='checkbox')return Number(!!value);if(column?.type==='date')return databaseDateParts(value)[0]||'';return databaseDisplayValue(column||{type:'text'},value).toLocaleLowerCase('ko')}
+function databaseStructuredFilter(model,row,filter){if(!filter||typeof filter!=='object')return true;const and=filter.and||filter.all,or=filter.or||filter.any;if(Array.isArray(and))return and.every(item=>databaseStructuredFilter(model,row,item));if(Array.isArray(or))return or.some(item=>databaseStructuredFilter(model,row,item));const reference=filter.property_id||filter.property||filter.column||filter.id;const column=databaseViewColumn(model,reference);if(!column)return true;let operator=filter.operator||filter.condition||'';let target=filter.value;for(const [key,value] of Object.entries(filter)){if(['equals','does_not_equal','contains','does_not_contain','is_empty','is_not_empty','greater_than_or_equal_to','less_than_or_equal_to','after','before'].includes(key)){operator=key;target=value;break}if(value&&typeof value==='object'&&!Array.isArray(value)){for(const [nestedKey,nestedValue] of Object.entries(value)){if(['equals','does_not_equal','contains','does_not_contain','is_empty','is_not_empty','greater_than_or_equal_to','less_than_or_equal_to','after','before'].includes(nestedKey)){operator=nestedKey;target=nestedValue;break}}}}const raw=row.cells[column.id],value=databaseComparable(column,raw),compare=databaseComparable(column,target);if(['is_empty','empty'].includes(operator))return String(raw??'').trim()==='';if(['is_not_empty','not_empty'].includes(operator))return String(raw??'').trim()!=='';if(['equals','equal'].includes(operator))return value===compare;if(['does_not_equal','not_equals'].includes(operator))return value!==compare;if(['does_not_contain'].includes(operator))return !String(value).includes(String(compare));if(['greater_than_or_equal_to','gte','after'].includes(operator))return value>=compare;if(['less_than_or_equal_to','lte','before'].includes(operator))return value<=compare;return String(value).includes(String(compare))}
+databaseRows=(model,query='')=>{let rows=databaseRowsBase(model,query);const view=model.view||{};if(view.filter&&!view.filter.column&&(view.filter.and||view.filter.or||view.filter.all||view.filter.any||view.filter.property||view.filter.property_id))rows=rows.filter(row=>databaseStructuredFilter(model,row,view.filter));if(!view.sortBy&&Array.isArray(view.sorts)&&view.sorts.length){const sorts=view.sorts.map(sort=>({column:databaseViewColumn(model,sort.property_id||sort.property||sort.column||sort.id),descending:String(sort.direction||sort.order||'').toLowerCase()==='descending'||String(sort.direction||sort.order||'').toLowerCase()==='desc'})).filter(sort=>sort.column);rows.sort((a,b)=>{for(const sort of sorts){const left=databaseComparable(sort.column,a.cells[sort.column.id]),right=databaseComparable(sort.column,b.cells[sort.column.id]);const result=typeof left==='number'?left-right:String(left).localeCompare(String(right),'ko',{numeric:true});if(result)return sort.descending?-result:result}return String(a.source_id||a.id).localeCompare(String(b.source_id||b.id))})}return rows};
+function databaseTitleColumn(model){return model.columns.find(column=>column.type==='title')||model.columns.find(column=>column.type==='text')||model.columns[0]}
+function databasePreviewColumns(model,view,limit=4){const title=databaseTitleColumn(model);const configured=view?.configuration?.visible_property_ids||view?.configuration?.visible_properties||view?.configuration?.properties;let ids=[];if(Array.isArray(configured))ids=configured.map(value=>typeof value==='string'?value:String(value?.property_id||value?.id||''));else if(configured&&typeof configured==='object')ids=Object.entries(configured).filter(([,value])=>value!==false&&value?.visible!==false).map(([key,value])=>String(value?.property_id||value?.id||key));const ranked=model.columns.filter(column=>column.id!==title.id).sort((a,b)=>{const ai=ids.indexOf(a.sourceId||a.id),bi=ids.indexOf(b.sourceId||b.id);if(ai>=0||bi>=0)return(ai<0?999:ai)-(bi<0?999:bi);const rank=column=>['people','person'].includes(column.type)?0:['status','select','multi_select'].includes(column.type)?1:column.type==='date'?2:3;return rank(a)-rank(b)});return ranked.slice(0,limit)}
+function databaseRowMeta(model,row,view,limit=4){const meta=document.createElement('div');meta.className='db-card-meta';for(const property of databasePreviewColumns(model,view,limit)){if(String(row.cells[property.id]??'').trim())meta.append(databaseBoardField(property,row.cells[property.id]))}return meta}
+function databaseMoreButton(wrap,className,remaining,key){const more=document.createElement('button');more.type='button';more.className=className;more.textContent='더 보기 ('+remaining+'개)';more.onclick=()=>{wrap[key]=(wrap[key]||100)+100;renderDatabaseBody(wrap)};return more}
+function renderDatabaseList(wrap,body,view){const model=wrap._databaseModel;const rows=databaseRows(model,wrap._databaseQuery);const titleColumn=databaseTitleColumn(model);const list=document.createElement('div');list.className='db-list';const limit=wrap._listLimit||100;for(const row of rows.slice(0,limit)){const item=document.createElement('article');item.className='db-list-item';const open=document.createElement('button');open.type='button';open.className='db-list-open';open.innerHTML=icon('files')+'<span>'+escapeText(databaseDisplayValue(titleColumn,row.cells[titleColumn.id])||'제목 없음')+'</span>';open.onclick=()=>openDatabaseRowPage(row,titleColumn,open);item.append(open,databaseRowMeta(model,row,view,3));list.append(item)}if(rows.length>limit)list.append(databaseMoreButton(wrap,'db-list-more',rows.length-limit,'_listLimit'));body.append(list);if(!rows.length)body.innerHTML='<div class="db-empty">표시할 페이지가 없습니다.</div>'}
+function renderDatabaseGallery(wrap,body,view){const model=wrap._databaseModel;const rows=databaseRows(model,wrap._databaseQuery);const titleColumn=databaseTitleColumn(model);const gallery=document.createElement('div');gallery.className='db-gallery';const limit=wrap._galleryLimit||60;for(const row of rows.slice(0,limit)){const card=document.createElement('article');card.className='db-gallery-card';const cover=document.createElement('button');cover.type='button';cover.className='db-gallery-cover';cover.innerHTML=icon('files');cover.setAttribute('aria-label',(databaseDisplayValue(titleColumn,row.cells[titleColumn.id])||'제목 없음')+' 열기');cover.onclick=()=>openDatabaseRowPage(row,titleColumn,cover);const copy=document.createElement('div');copy.className='db-gallery-copy';const title=document.createElement('button');title.type='button';title.className='db-gallery-title';title.textContent=databaseDisplayValue(titleColumn,row.cells[titleColumn.id])||'제목 없음';title.onclick=()=>openDatabaseRowPage(row,titleColumn,title);copy.append(title,databaseRowMeta(model,row,view,4));card.append(cover,copy);gallery.append(card)}if(rows.length>limit)gallery.append(databaseMoreButton(wrap,'db-gallery-more',rows.length-limit,'_galleryLimit'));body.append(gallery);if(!rows.length)body.innerHTML='<div class="db-empty">표시할 페이지가 없습니다.</div>'}
+function timelineCursor(wrap){if(!wrap._timelineCursor){const now=new Date();wrap._timelineCursor=new Date(Date.UTC(now.getFullYear(),now.getMonth(),1))}return new Date(Date.UTC(wrap._timelineCursor.getUTCFullYear(),wrap._timelineCursor.getUTCMonth(),1))}
+function renderDatabaseTimeline(wrap,body,view){const model=wrap._databaseModel;const dateColumn=model.columns.find(column=>column.id===view.datePropertyId)||model.columns.find(column=>column.type==='date');if(!dateColumn){body.innerHTML='<div class="db-empty">날짜 속성이 없어 타임라인을 표시할 수 없습니다.</div>';return}const cursor=timelineCursor(wrap),year=cursor.getUTCFullYear(),month=cursor.getUTCMonth();const start=new Date(Date.UTC(year,month,1)),days=42,end=new Date(Date.UTC(year,month,days));const startKey=calendarDateKey(start),endKey=calendarDateKey(end);const titleColumn=databaseTitleColumn(model);const rows=databaseRows(model,wrap._databaseQuery);const items=calendarVisibleItems(rows,dateColumn,titleColumn,startKey,endKey);const shell=document.createElement('div');shell.className='db-timeline';const heading=document.createElement('header');heading.className='db-timeline-heading';heading.innerHTML='<strong>'+year+'년 '+(month+1)+'월</strong>';const controls=document.createElement('div');controls.className='db-calendar-controls';for(const [label,move,name] of [['‹',-1,'이전 달'],['오늘',0,'오늘'],['›',1,'다음 달']]){const button=document.createElement('button');button.type='button';button.className='db-control';button.textContent=label;button.setAttribute('aria-label',name);button.onclick=()=>{const now=new Date();wrap._timelineCursor=move===0?new Date(Date.UTC(now.getFullYear(),now.getMonth(),1)):new Date(Date.UTC(year,month+move,1));renderDatabaseBody(wrap)};controls.append(button)}heading.append(controls);shell.append(heading);const scroller=document.createElement('div');scroller.className='db-timeline-scroll';const grid=document.createElement('div');grid.className='db-timeline-grid';grid.style.setProperty('--timeline-days',String(days));const corner=document.createElement('div');corner.className='db-timeline-corner';corner.textContent='페이지';grid.append(corner);for(let day=0;day<days;day+=1){const date=new Date(Date.UTC(year,month,day+1));const cell=document.createElement('div');cell.className='db-timeline-day'+([0,6].includes(date.getUTCDay())?' weekend':'')+(calendarDateKey(date)===calendarLocalTodayKey()?' today':'');cell.textContent=date.getUTCDate()+(date.getUTCDate()===1?'일':'');grid.append(cell)}const limit=wrap._timelineLimit||100;for(const item of items.slice(0,limit)){const label=document.createElement('button');label.type='button';label.className='db-timeline-label';label.innerHTML=icon('files')+'<span>'+escapeText(item.title)+'</span>';label.onclick=()=>openDatabaseRowPage(item.row,titleColumn,label);grid.append(label);const track=document.createElement('div');track.className='db-timeline-track';const itemStart=item.parts[0]<startKey?startKey:item.parts[0];const rawEnd=item.parts[1]||item.parts[0];const itemEnd=rawEnd>endKey?endKey:rawEnd;const startOffset=Math.max(0,Math.round((Date.parse(itemStart+'T00:00:00Z')-start.getTime())/86400000));const endOffset=Math.min(days-1,Math.round((Date.parse(itemEnd+'T00:00:00Z')-start.getTime())/86400000));const bar=document.createElement('button');bar.type='button';bar.className='db-timeline-bar';bar.style.gridColumn=(startOffset+1)+' / '+(endOffset+2);bar.innerHTML='<span>'+escapeText(item.title)+'</span>';bar.title=item.title+' · '+item.parts.join(' → ');bar.onclick=()=>openDatabaseRowPage(item.row,titleColumn,bar);track.append(bar);grid.append(track)}scroller.append(grid);shell.append(scroller);if(items.length>limit)shell.append(databaseMoreButton(wrap,'db-timeline-more',items.length-limit,'_timelineLimit'));const undated=rows.length-items.length;if(undated>0){const note=document.createElement('div');note.className='db-timeline-undated';note.textContent='현재 범위 밖 또는 날짜 없음 '+undated+'개';shell.append(note)}body.append(shell)}
+function renderDatabaseBody(wrap){const old=wrap.querySelector('.db-view-body');const body=document.createElement('div');body.className='db-view-body';const view=normalizeDatabaseView(wrap._databaseModel,wrap._databaseModel.view);if(view.type==='board')renderDatabaseBoard(wrap,body);else if(view.type==='calendar')renderDatabaseCalendar(wrap,body,view);else if(view.type==='timeline')renderDatabaseTimeline(wrap,body,view);else if(view.type==='gallery')renderDatabaseGallery(wrap,body,view);else if(view.type==='list')renderDatabaseList(wrap,body,view);else renderDatabaseTable(wrap,body);old?.replaceWith(body);const empty=wrap.querySelector('.db-empty');if(empty&&wrap._databaseModel.view.filter?.column&&!wrap._databaseQuery)empty.textContent='조건에 맞는 작업이 없습니다.'}
+function databaseDisplayViews(model){const list=(Array.isArray(model.views)&&model.views.length?model.views:[{id:'view_table',name:'표',type:'table'},{id:'view_board',name:'보드',type:'board',groupBy:model.view.groupBy}]).slice();const types=new Set(list.map(view=>String(view.type||view.mode||'').toLowerCase()));const notionPlanningOrder={calendar:0,table:1,board:2,timeline:3};if(['calendar','table','board','timeline'].every(type=>types.has(type)))return list.sort((a,b)=>(notionPlanningOrder[String(a.type||a.mode).toLowerCase()]??9)-(notionPlanningOrder[String(b.type||b.mode).toLowerCase()]??9));const orders=new Set(list.map(view=>Number(view.order)||0));if(orders.size>1)return list.sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));const fallback={calendar:0,table:1,board:2,timeline:3,gallery:4,list:5};return list.sort((a,b)=>(fallback[String(a.type||a.mode).toLowerCase()]??9)-(fallback[String(b.type||b.mode).toLowerCase()]??9))}
+function databaseViewLabel(raw,type,labels){const name=String(raw.name||'').trim();return !name||name.toLowerCase()===type?labels[type]||type:name}
+function renderDatabaseBlock(wrap){const model=wrap._databaseModel;wrap.replaceChildren();const header=document.createElement('div');header.className='db-header';header.hidden=cleanNotionDatabaseTitle(model.title)===cleanNotionDatabaseTitle(state.current?.title);const title=document.createElement('input');title.className='db-title';title.value=model.title;title.maxLength=120;title.disabled=!canEdit();title.setAttribute('aria-label','데이터베이스 이름');title.oninput=()=>{model.title=title.value;scheduleSave()};const count=document.createElement('span');count.className='db-count';count.textContent=model.rows.length+'개 작업';header.append(title,count);const views=document.createElement('div');views.className='db-viewbar';const viewList=databaseDisplayViews(model);const labels={table:'표',board:'보드',calendar:'캘린더',timeline:'타임라인',gallery:'갤러리',list:'목록'};for(const raw of viewList){const view=normalizeDatabaseView(model,raw);const button=document.createElement('button');button.type='button';button.className='db-view-tab'+((model._activeViewId?model._activeViewId===raw.id:model.view.mode===view.type)?' active':'');button.innerHTML=icon(view.type==='calendar'?'calendar':view.type==='board'?'files':'list')+'<span>'+escapeText(databaseViewLabel(raw,view.type,labels))+'</span>';button.onclick=()=>{model._activeViewId=raw.id;model.view={...model.view,...view,mode:view.type,groupBy:view.groupBy||model.view.groupBy,datePropertyId:view.datePropertyId||model.view.datePropertyId,filter:view.filter||model.view.filter};renderDatabaseBlock(wrap);scheduleSave()};views.append(button)}const toolbar=document.createElement('div');toolbar.className='db-toolbar';const searchWrap=document.createElement('label');searchWrap.className='db-search-wrap';searchWrap.innerHTML=icon('search');const search=document.createElement('input');search.className='db-search';search.type='search';search.placeholder='작업 검색';search.value=wrap._databaseQuery||'';search.setAttribute('aria-label','데이터베이스 검색');search.oninput=()=>{wrap._databaseQuery=search.value;renderDatabaseBody(wrap)};searchWrap.append(search);const sort=document.createElement('select');sort.className='db-select';sort.setAttribute('aria-label','정렬 속성');sort.innerHTML='<option value="">정렬 안 함</option>'+model.columns.map(column=>'<option value="'+escapeText(column.id)+'"'+(model.view.sortBy===column.id?' selected':'')+'>'+escapeText(column.name)+' 순</option>').join('');sort.onchange=()=>{model.view.sortBy=sort.value;renderDatabaseBody(wrap);scheduleSave()};const direction=document.createElement('button');direction.type='button';direction.className='db-control';direction.innerHTML=icon(model.view.sortDir==='desc'?'arrow-down':'arrow-up')+'<span>'+(model.view.sortDir==='desc'?'내림차순':'오름차순')+'</span>';direction.onclick=()=>{model.view.sortDir=model.view.sortDir==='desc'?'asc':'desc';renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(searchWrap,sort,direction);databaseFilterControls(model,wrap,toolbar);if(model.view.mode==='board'){const group=document.createElement('select');group.className='db-select';group.setAttribute('aria-label','보드 분류 속성');for(const column of model.columns){const option=document.createElement('option');option.value=column.id;option.textContent=column.name+'별';option.selected=model.view.groupBy===column.id;group.append(option)}group.onchange=()=>{model.view.groupBy=group.value;renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(group)}const addProperty=document.createElement('button');addProperty.type='button';addProperty.className='db-control';addProperty.innerHTML=icon('plus')+'<span>속성 추가</span>';addProperty.hidden=!canEdit();addProperty.onclick=()=>{if(model.columns.length>=DATABASE_MAX_COLUMNS)return toast('속성은 최대 '+DATABASE_MAX_COLUMNS+'개까지 추가할 수 있습니다.');const id=databaseUid('col');model.columns.push({id,name:'새 속성',type:'text',options:[]});for(const row of model.rows)row.cells[id]='';renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(addProperty);const body=document.createElement('div');body.className='db-view-body';const footer=document.createElement('footer');footer.className='db-footer';const addRow=document.createElement('button');addRow.type='button';addRow.className='db-control primary';addRow.innerHTML=icon('plus')+'<span>새 작업</span>';addRow.hidden=!canEdit();addRow.onclick=()=>{if(model.rows.length>=DATABASE_MAX_ROWS)return toast('작업은 최대 '+DATABASE_MAX_ROWS+'개까지 추가할 수 있습니다.');const first=model.columns.find(column=>column.type==='text')||model.columns[0];const row={id:databaseUid('row'),cells:Object.fromEntries(model.columns.map(column=>[column.id,column.type==='checkbox'?false:'']))};row.cells[first.id]='새 작업';model.rows.push(row);renderDatabaseBlock(wrap);scheduleSave()};const note=document.createElement('span');note.className='db-footer-note';note.textContent=model.rows.length+'개 작업 · '+viewList.length+'개 뷰';footer.append(addRow,note);wrap.append(header,views,toolbar,body,footer);renderDatabaseBody(wrap)}
+const renderDatabaseBlockBase=renderDatabaseBlock;
+renderDatabaseBlock=wrap=>{renderDatabaseBlockBase(wrap);const views=wrap.querySelector(':scope > .db-viewbar');const toolbar=wrap.querySelector(':scope > .db-toolbar');if(views&&toolbar){const chrome=document.createElement('div');chrome.className='db-chrome';views.before(chrome);chrome.append(views,toolbar);const iconNames={table:'list',board:'files',calendar:'calendar',timeline:'clock',gallery:'template',list:'list'};const viewList=databaseDisplayViews(wrap._databaseModel);[...views.querySelectorAll('.db-view-tab')].forEach((button,index)=>{const raw=viewList[index],view=normalizeDatabaseView(wrap._databaseModel,raw);const label=button.querySelector('span')?.textContent||view.type;button.innerHTML=icon(iconNames[view.type]||'list')+'<span>'+escapeText(label)+'</span>';button.title=label;button.onclick=()=>{wrap._databaseModel._activeViewId=raw.id;wrap._databaseModel.view={...wrap._databaseModel.view,...view,mode:view.type,groupBy:view.groupBy||wrap._databaseModel.view.groupBy,datePropertyId:view.datePropertyId||wrap._databaseModel.view.datePropertyId,filter:view.filter||wrap._databaseModel.view.filter};renderDatabaseBlock(wrap)}})}};
 function databaseBlock(block){const wrap=document.createElement('div');wrap.className='block-content structured-block database-block';wrap.dataset.type='database';wrap.dataset.database='true';wrap._databaseModel=parseDatabaseModel(block.content);wrap._databaseChunks=Array.isArray(block.__database_chunks)?block.__database_chunks:null;wrap._databaseQuery='';renderDatabaseBlock(wrap);return wrap}
+const parseDatabaseLinkedRowsBase=parseDatabaseModel;
+parseDatabaseModel=value=>{const model=parseDatabaseLinkedRowsBase(value);try{const raw=JSON.parse(value),links=new Map((raw.rows||[]).map(row=>[String(row.id||''),String(row.document_id||'')]));for(const row of model.rows||[])if(links.get(String(row.id)))row.document_id=links.get(String(row.id))}catch{}return model};
+function shiftCalendarValue(value,days=0){return String(value||'').replace(/\d{4}-\d{2}-\d{2}/g,key=>{const date=new Date(key+'T00:00:00Z');date.setUTCDate(date.getUTCDate()+days);return calendarDateKey(date)})}
+function shiftedCalendarValue(value,days=7){return shiftCalendarValue(value,days)}
+async function databaseLinkedDocumentId(row,titleColumn){if(row.document_id||row._documentId)return row.document_id||row._documentId;const notionId=String(row.source_id||'').replaceAll('-','').toLowerCase();if(/^[0-9a-f]{32}$/.test(notionId))return'doc_notion_'+notionId;const title=String(row.cells[titleColumn.id]||'').trim();if(!title)return'';const data=await api('/api/documents?'+new URLSearchParams({scope:'search',limit:'20',q:title}));const key=databasePageTitleKey(title);const page=data.documents.find(document=>document.id!==state.current?.id&&!isImportArtifactDoc(document)&&databasePageTitleKey(document.title)===key);if(page)row._documentId=page.id;return page?.id||''}
+openDatabaseRowPage=async(row,titleColumn,button)=>{if(row._opening)return;row._opening=true;button?.classList.add('loading-indicator');try{const id=await databaseLinkedDocumentId(row,titleColumn);if(!id)return toast('연결된 원본 페이지를 찾지 못했습니다.');push('/doc/'+id)}catch(error){toast(error.message)}finally{row._opening=false;button?.classList.remove('loading-indicator')}};
+async function duplicateDatabaseRowNextWeek({wrap,row,dateColumn,titleColumn}){if(!canEdit())return;try{const sourceId=await databaseLinkedDocumentId(row,titleColumn);if(!sourceId)return toast('복제할 원본 페이지를 찾지 못했습니다.');const copied=await api('/api/documents/'+sourceId+'/duplicate',{method:'POST'});const cells={...row.cells,[dateColumn.id]:shiftedCalendarValue(row.cells[dateColumn.id])};wrap._databaseModel.rows.push({id:databaseUid('row'),document_id:copied.document.id,cells});renderDatabaseBlock(wrap);scheduleSave();if(await saveDocument()){loadTree();toast('일정과 페이지를 다음 주로 복제했습니다.')}}catch(error){toast(error.message)}}
+function calendarRowFromChip(wrap,chip){const model=wrap._databaseModel,view=normalizeDatabaseView(model,model.view),dateColumn=model.columns.find(column=>column.id===view.datePropertyId)||model.columns.find(column=>column.type==='date'),titleColumn=databaseTitleColumn(model),dates=String(chip.title||'').match(/\d{4}-\d{2}-\d{2}/g)||[],title=chip.querySelector('span')?.textContent?.trim()||'';const row=model.rows.find(item=>databaseDisplayValue(titleColumn,item.cells[titleColumn.id])===title&&databaseDateParts(item.cells[dateColumn?.id]).join('|')===dates.join('|'));return row&&dateColumn?{wrap,row,dateColumn,titleColumn,button:chip}:null}
+function showCalendarRowMenu(context,x,y){hideBlockMenu();hideSlashMenu();hideTreeMenu();const menu=$('block-menu');const item=(label,iconName,handler)=>{const button=document.createElement('button');button.type='button';button.role='menuitem';button.innerHTML=icon(iconName)+'<span>'+escapeText(label)+'</span>';button.onclick=()=>{hideBlockMenu();handler()};return button};const items=[item('페이지 열기','files',()=>openDatabaseRowPage(context.row,context.titleColumn,context.button))];if(canEdit())items.push(separator(),item('다음 주로 복제','copy',()=>duplicateDatabaseRowNextWeek(context)));menu.replaceChildren(...items);menu.hidden=false;menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.querySelector('button')?.focus();menu.onkeydown=event=>{const buttons=[...menu.querySelectorAll('button')],index=buttons.indexOf(document.activeElement);if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();buttons[(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus()}else if(event.key==='Escape'){event.preventDefault();hideBlockMenu();context.button.focus()}}}
+function bindCalendarDrag(wrap){const shell=wrap.querySelector('.db-calendar');if(!shell||!canEdit())return;const clear=()=>shell.querySelectorAll('.db-calendar-day.drag-over').forEach(cell=>cell.classList.remove('drag-over'));const cellAt=(week,clientX)=>{const cells=[...week.querySelectorAll('.db-calendar-day')];if(!cells.length)return null;const rect=week.getBoundingClientRect();const ratio=(clientX-rect.left)/Math.max(1,rect.width);return cells[Math.max(0,Math.min(6,Math.floor(ratio*7)))]};const move=(context,target)=>{const current=databaseDateParts(context.row.cells[context.dateColumn.id]);if(!current.length)return;const delta=Math.round((Date.parse(target+'T00:00:00Z')-Date.parse(current[0]+'T00:00:00Z'))/86400000);if(!Number.isFinite(delta))return;if(delta){context.row.cells[context.dateColumn.id]=shiftCalendarValue(context.row.cells[context.dateColumn.id],delta);wrap._calendarDragMoved=true;renderDatabaseBody(wrap);scheduleSave();toast('일정을 '+target+'로 이동했습니다.')}wrap._calendarDrag=null;clear()};shell.querySelectorAll('.db-calendar-range').forEach(chip=>{chip.draggable=true;chip.addEventListener('dragstart',event=>{const context=calendarRowFromChip(wrap,chip);if(!context){event.preventDefault();return}wrap._calendarDrag={...context,sourceStart:databaseDateParts(context.row.cells[context.dateColumn.id])[0]};chip.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',context.row.id)});chip.addEventListener('dragend',()=>{chip.classList.remove('dragging');wrap._calendarDrag=null;clear();setTimeout(()=>{wrap._calendarDragMoved=false},0)});chip.addEventListener('click',event=>{if(!wrap._calendarDragMoved)return;event.preventDefault();event.stopImmediatePropagation();wrap._calendarDragMoved=false},true)});shell.querySelectorAll('.db-calendar-week').forEach(week=>{week.addEventListener('dragover',event=>{if(!wrap._calendarDrag)return;event.preventDefault();event.dataTransfer.dropEffect='move';clear();cellAt(week,event.clientX)?.classList.add('drag-over')});week.addEventListener('drop',event=>{if(!wrap._calendarDrag)return;event.preventDefault();event.stopPropagation();const cell=cellAt(week,event.clientX);const target=cell?.dataset.date;if(target)move(wrap._calendarDrag,target)});week.addEventListener('dragleave',event=>{if(!week.contains(event.relatedTarget))clear()})})}
+const renderDatabaseBodyBase=renderDatabaseBody;renderDatabaseBody=wrap=>{renderDatabaseBodyBase(wrap);bindCalendarDrag(wrap)};
+function assignCalendarDropDates(wrap){const shell=wrap.querySelector('.db-calendar');if(!shell||!wrap._calendarCursor)return;const cursor=wrap._calendarCursor,start=new Date(Date.UTC(cursor.getUTCFullYear(),cursor.getUTCMonth(),1-cursor.getUTCDay()));shell.querySelectorAll('.db-calendar-week').forEach((week,weekIndex)=>{const weekStart=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),start.getUTCDate()+weekIndex*7));week.querySelectorAll('.db-calendar-day').forEach((cell,column)=>{cell.dataset.date=calendarDateKey(new Date(Date.UTC(weekStart.getUTCFullYear(),weekStart.getUTCMonth(),weekStart.getUTCDate()+column)))})})}
+const bindCalendarDragBase=bindCalendarDrag;bindCalendarDrag=wrap=>{assignCalendarDropDates(wrap);bindCalendarDragBase(wrap)};
+const databaseBlockContextBase=databaseBlock;
+databaseBlock=block=>{const wrap=databaseBlockContextBase(block);wrap.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();const chip=event.target.closest('.db-calendar-range');const context=chip&&calendarRowFromChip(wrap,chip);if(context)showCalendarRowMenu(context,event.clientX,event.clientY);else hideBlockMenu()});return wrap};
 function safeWebUrl(value){try{const url=new URL(String(value||'').trim());return ['http:','https:'].includes(url.protocol)?url.href:''}catch{return''}}
-function safeEmbedUrl(value){const href=safeWebUrl(value);if(!href)return'';const url=new URL(href);const host=url.hostname.toLowerCase();if(host==='youtu.be')return'https://www.youtube.com/embed/'+url.pathname.slice(1);if(host.endsWith('youtube.com')){const id=url.searchParams.get('v');return id?'https://www.youtube.com/embed/'+encodeURIComponent(id):''}if(host==='vimeo.com')return'https://player.vimeo.com/video/'+url.pathname.split('/').filter(Boolean).at(-1);if(['www.figma.com','figma.com','www.loom.com','loom.com','codepen.io','replit.com','www.google.com'].some(item=>host===item||host.endsWith('.'+item)))return href;return''}
+function safeInlineHref(value){const raw=String(value||'').trim();const web=safeWebUrl(raw);if(web)return web;if(/^mailto:[^\s<>"']+$/i.test(raw)&&!/[\r\n]/.test(raw))return raw;if(/^tel:\+?[0-9().\-\s]{3,32}$/i.test(raw)&&!/[\r\n]/.test(raw))return raw;return''}
+function safeEmbedUrl(value){const href=safeWebUrl(value);if(!href)return'';const url=new URL(href);const host=url.hostname.toLowerCase();if(host==='youtu.be')return'https://www.youtube.com/embed/'+url.pathname.slice(1);if(host.endsWith('youtube.com')){const id=url.searchParams.get('v');return id?'https://www.youtube.com/embed/'+encodeURIComponent(id):''}if(host==='vimeo.com')return'https://player.vimeo.com/video/'+url.pathname.split('/').filter(Boolean).at(-1);if(['www.figma.com','figma.com','www.loom.com','loom.com','codepen.io','replit.com','www.google.com','public.flourish.studio'].some(item=>host===item||host.endsWith('.'+item)))return href;return''}
 function hideUrlPasteMenu(){const menu=$('url-paste-menu');menu.hidden=true;menu.replaceChildren();state.urlPaste=null;state.urlPasteIndex=0}
 function updateUrlPasteSelection(){const buttons=[...$('url-paste-menu').querySelectorAll('button')];buttons.forEach((button,index)=>button.classList.toggle('active',index===state.urlPasteIndex));buttons[state.urlPasteIndex]?.focus({preventScroll:true})}
-function applyUrlPasteChoice(choice){const pending=state.urlPaste;if(!pending||!pending.el.isConnected)return hideUrlPasteMenu();const {el,url}=pending;const row=el.closest('.block-row');hideUrlPasteMenu();if(choice==='preview'){const type=safeEmbedUrl(url)?'embed':'bookmark';const next=blockRow({id:row.dataset.id,type,content:url,checked:false,indent_level:Number(row.dataset.indent||0)},0);row.replaceWith(next);renumberBlocks();focusBlock(next);scheduleSave();return}if(choice==='link'){const anchor=document.createElement('a');anchor.href=url;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.textContent=url;el.replaceChildren(anchor);el.dataset.rich='true'}else{el.textContent=url;delete el.dataset.rich}placeCaret(el,true);scheduleSave()}
+function applyUrlPasteChoice(choice){const pending=state.urlPaste;if(!pending||!pending.el.isConnected)return hideUrlPasteMenu();const {el,url}=pending;const row=el.closest('.block-row');hideUrlPasteMenu();if(choice==='preview'){const type=safeEmbedUrl(url)?'embed':'bookmark';const next=blockRow({id:row.dataset.id,type,content:url,checked:false,indent_level:Number(row.dataset.indent||0)},0);row.replaceWith(next);renumberBlocks();focusBlock(next);scheduleSave();return}if(choice==='link'){const anchor=document.createElement('a');anchor.href=url;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.textContent=url;el.replaceChildren(anchor);el.dataset.rich='true';bindEditableLinks(el)}else{el.textContent=url;delete el.dataset.rich}placeCaret(el,true);scheduleSave()}
 function openUrlPasteMenu(el,url){hideSlashMenu();hideBlockMenu();hideUrlPasteMenu();state.urlPaste={el,url};const menu=$('url-paste-menu');const supported=!!safeEmbedUrl(url);const choices=[['preview','code','미리보기로 삽입',supported?'지원되는 서비스 임베드':'링크 카드로 미리보기'],['link','files','링크로 삽입','클릭할 수 있는 링크'],['text','type','주소 텍스트로 붙여넣기','서식 없는 일반 텍스트']];menu.innerHTML='<div class="url-paste-heading">URL을 어떻게 붙여넣을까요?</div>'+choices.map(([choice,iconName,label,description],index)=>'<button type="button" role="menuitem" data-url-choice="'+choice+'" class="'+(index===0?'active':'')+'"><span class="url-paste-icon">'+icon(iconName)+'</span><span class="url-paste-copy"><strong>'+label+'</strong><small>'+description+'</small></span></button>').join('');menu.querySelectorAll('button').forEach((button,index)=>{button.onmouseenter=()=>{state.urlPasteIndex=index;updateUrlPasteSelection()};button.onmousedown=event=>event.preventDefault();button.onclick=()=>applyUrlPasteChoice(button.dataset.urlChoice)});menu.onkeydown=event=>{const buttons=[...menu.querySelectorAll('button')];if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();state.urlPasteIndex=(state.urlPasteIndex+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;updateUrlPasteSelection()}else if(event.key==='Enter'){event.preventDefault();applyUrlPasteChoice(buttons[state.urlPasteIndex].dataset.urlChoice)}else if(event.key==='Escape'){event.preventDefault();const target=state.urlPaste?.el;hideUrlPasteMenu();target?.focus()}};menu.hidden=false;const rect=el.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(rect.left,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-menu.offsetHeight-8))+'px';updateUrlPasteSelection()}
-function mediaBlock(block){const wrap=document.createElement('div');wrap.className='block-content media-block';wrap.dataset.type=block.type;wrap.dataset.urlBlock='true';const input=document.createElement('input');input.className='media-url';input.type='url';input.value=block.content||'';const mediaLabels={image:'이미지',video:'동영상',audio:'오디오',file:'파일',bookmark:'웹 북마크',embed:'임베드',page_link:'문서 링크'};input.placeholder=({image:'이미지 URL을 붙여넣으세요',video:'동영상 URL을 붙여넣으세요',audio:'오디오 URL을 붙여넣으세요',file:'파일 URL을 붙여넣으세요',bookmark:'웹페이지 URL을 붙여넣으세요',embed:'YouTube, Figma, Loom 등 URL',page_link:'JoripNote 문서 URL을 붙여넣으세요'})[block.type];input.setAttribute('aria-label',(mediaLabels[block.type]||'미디어')+' URL');input.disabled=!canEdit();input.maxLength=2000;const preview=document.createElement('div');preview.className='media-preview';preview.setAttribute('aria-live','polite');const refresh=()=>renderMediaPreview(preview,block.type,input.value);input.oninput=()=>{refresh();scheduleSave()};wrap.append(input,preview);refresh();if(!canEdit()&&safeWebUrl(input.value))input.hidden=true;return wrap}
-function renderMediaPreview(preview,type,value){preview.replaceChildren();const href=safeWebUrl(value);if(!href){preview.textContent='URL을 입력하면 미리보기가 표시됩니다.';return}if(type==='image'){const img=document.createElement('img');img.src=href;img.alt='문서 이미지';img.loading='lazy';preview.append(img);return}if(type==='video'){const video=document.createElement('video');video.src=href;video.controls=true;video.preload='metadata';preview.append(video);return}if(type==='audio'){const audio=document.createElement('audio');audio.src=href;audio.controls=true;audio.preload='metadata';preview.append(audio);return}if(type==='embed'){const embed=safeEmbedUrl(href);if(embed){const frame=document.createElement('iframe');frame.src=embed;frame.loading='lazy';frame.referrerPolicy='no-referrer';frame.allow='fullscreen; picture-in-picture';frame.sandbox='allow-scripts allow-same-origin allow-presentation';preview.append(frame);return}}const link=document.createElement('a');link.href=href;link.target='_blank';link.rel='noopener noreferrer';link.innerHTML=icon(type==='bookmark'?'star':'files')+'<span>'+(type==='page_link'?'연결된 문서 열기':type==='file'?'파일 열기':'웹페이지 열기')+'</span>';preview.append(link)}
-const renderMediaPreviewBase=renderMediaPreview;renderMediaPreview=(preview,type,value)=>{renderMediaPreviewBase(preview,type,value);if(type==='embed'){const frame=preview.querySelector('iframe');if(frame){const src=frame.src;frame.referrerPolicy='strict-origin-when-cross-origin';frame.removeAttribute('src');frame.src=src}}};
+function pageLinkValue(value){try{const parsed=JSON.parse(value);if(parsed&&typeof parsed==='object')return{url:String(parsed.url||''),title:String(parsed.title||'연결된 문서'),documentId:String(parsed.document_id||''),iconEmoji:String(parsed.page_icon_emoji||parsed.icon_emoji||''),iconUrl:String(parsed.page_icon_url||parsed.icon_url||'')}}catch{}return{url:String(value||''),title:'연결된 문서',documentId:'',iconEmoji:'',iconUrl:''}}
+function pageLinkIconMarkup(meta){const emoji=String(meta?.iconEmoji||'').trim();if(emoji)return '<span class="page-link-icon-emoji" aria-hidden="true">'+escapeText(emoji)+'</span>';const url=safeWebUrl(meta?.iconUrl||'');if(url)return '<img class="page-link-icon-image" src="'+escapeText(url)+'" alt="" loading="lazy" decoding="async" aria-hidden="true">';return icon('files','page-link-icon-svg')}
+function mediaBlock(block){const wrap=document.createElement('div');wrap.className='block-content media-block';wrap.dataset.type=block.type;wrap.dataset.urlBlock='true';const pageLink=block.type==='page_link'?pageLinkValue(block.content):null;if(pageLink){wrap.classList.add('notion-page-link');wrap.dataset.pageLinkTitle=pageLink.title;wrap.dataset.pageLinkDocumentId=pageLink.documentId;if(pageLink.iconEmoji)wrap.dataset.pageLinkIconEmoji=pageLink.iconEmoji;if(pageLink.iconUrl)wrap.dataset.pageLinkIconUrl=pageLink.iconUrl}const input=document.createElement('input');input.className='media-url';input.type='url';input.value=pageLink?pageLink.url:(block.content||'');const mediaLabels={image:'이미지',video:'동영상',audio:'오디오',file:'파일',bookmark:'웹 북마크',embed:'임베드',page_link:'문서 링크'};input.placeholder=({image:'이미지 URL을 붙여넣으세요',video:'동영상 URL을 붙여넣으세요',audio:'오디오 URL을 붙여넣으세요',file:'파일 URL을 붙여넣으세요',bookmark:'웹페이지 URL을 붙여넣으세요',embed:'YouTube, Figma, Loom 등 URL',page_link:'JoripNote 문서 URL을 붙여넣으세요'})[block.type];input.setAttribute('aria-label',(mediaLabels[block.type]||'미디어')+' URL');input.disabled=!canEdit();input.maxLength=2000;const preview=document.createElement('div');preview.className='media-preview';preview.setAttribute('aria-live','polite');const refresh=()=>{renderMediaPreview(preview,block.type,input.value,pageLink&&pageLink.title,pageLink);if(pageLink){const link=preview.querySelector('a');const label=link?.querySelector('span');if(label)label.textContent=pageLink.title;if(link&&pageLink.documentId){link.href='/doc/'+pageLink.documentId;link.target='';link.rel='';link.onclick=event=>{event.preventDefault();push(link.getAttribute('href'))}}}};input.oninput=()=>{refresh();scheduleSave()};wrap.append(input,preview);refresh();if((pageLink||!canEdit())&&safeWebUrl(input.value))input.hidden=true;return wrap}
+function mediaFilename(value){try{const url=new URL(value);const name=url.pathname.split('/').filter(Boolean).at(-1)||'';return decodeURIComponent(name)}catch{return''}}
+function renderMediaPreview(preview,type,value,pageTitle,pageIcon){preview.replaceChildren();const href=safeWebUrl(value);if(!href){preview.textContent='URL을 입력하면 미리보기가 표시됩니다.';return}if(type==='image'){const img=document.createElement('img');img.src=href;img.alt='문서 이미지';img.loading='lazy';img.onerror=()=>{if(!img.isConnected)return;const link=document.createElement('a');link.className='media-unavailable';link.href=href;link.target='_blank';link.rel='noopener noreferrer';link.innerHTML=icon('files')+'<span>이미지를 불러올 수 없습니다.<br>원본 링크가 만료되었거나 접근 권한이 없습니다.</span>';img.replaceWith(link)};preview.append(img);return}if(type==='video'){const video=document.createElement('video');video.src=href;video.controls=true;video.preload='metadata';preview.append(video);return}if(type==='audio'){const audio=document.createElement('audio');audio.src=href;audio.controls=true;audio.preload='metadata';preview.append(audio);return}if(type==='embed'){const embed=safeEmbedUrl(href);if(embed){const frame=document.createElement('iframe');frame.src=embed;frame.loading='lazy';frame.referrerPolicy='no-referrer';frame.allow='fullscreen; picture-in-picture';frame.sandbox='allow-scripts allow-same-origin allow-presentation';preview.append(frame);return}}const link=document.createElement('a');const notionMatch=type==='page_link'?href.match(/[0-9a-f]{32}|[0-9a-f-]{36}/ig):null;const notionId=notionMatch?.length?notionMatch[notionMatch.length-1].replaceAll('-','').toLowerCase():'';if(notionId){link.href='/doc/doc_notion_'+notionId;link.onclick=event=>{event.preventDefault();push(link.getAttribute('href'))}}else{link.href=href;link.target='_blank';link.rel='noopener noreferrer'}const leading=type==='page_link'?pageLinkIconMarkup(pageIcon):icon(type==='bookmark'?'star':'files');link.innerHTML=leading+'<span>'+escapeText(type==='page_link'?(pageTitle||'연결된 문서'):type==='file'?(mediaFilename(href)||'파일 열기'):'웹페이지 열기')+'</span>';if(type==='bookmark'){const src=linkFaviconUrl(href);if(src){const favicon=document.createElement('img');favicon.className='inline-link-favicon';favicon.src=src;favicon.alt='';favicon.loading='lazy';favicon.decoding='async';favicon.setAttribute('aria-hidden','true');favicon.onerror=()=>favicon.remove();link.prepend(favicon)}}preview.append(link)}
+const renderMediaPreviewBase=renderMediaPreview;renderMediaPreview=(preview,type,value,pageTitle,pageIcon)=>{renderMediaPreviewBase(preview,type,value,pageTitle,pageIcon);if(type==='embed'){const frame=preview.querySelector('iframe');if(frame){const src=frame.src;frame.referrerPolicy='strict-origin-when-cross-origin';frame.removeAttribute('src');frame.src=src}}};
 function tocBlock(){const wrap=document.createElement('div');wrap.className='block-content toc-block';wrap.contentEditable='false';wrap.innerHTML='<strong>목차</strong>';queueMicrotask(()=>refreshTableOfContents(wrap));return wrap}
 function refreshTableOfContents(target){if(!target?.isConnected)return;target.querySelectorAll('a').forEach(a=>a.remove());const headings=[...target.closest('.document-editor')?.querySelectorAll('.block-content[data-type^="heading"]')||[]];for(const [index,heading] of headings.entries()){if(!heading.id)heading.id='heading-'+index+'-'+Math.random().toString(36).slice(2,7);const link=document.createElement('a');link.href='#'+heading.id;link.textContent=heading.textContent||'제목 없음';link.style.paddingLeft=((Number(heading.dataset.type.slice(-1))||1)-1)*10+'px';target.append(link)}if(!headings.length){const empty=document.createElement('span');empty.className='muted';empty.textContent='제목 블록을 추가하면 자동으로 표시됩니다.';target.append(empty)}}
 function clearDropTargets(){document.querySelectorAll('.block-row.drop-before,.block-row.drop-after').forEach(row=>row.classList.remove('drop-before','drop-after'))}
-function clearBlockSelection(){state.selectedBlocks.clear();document.querySelectorAll('.block-row.selected').forEach(row=>row.classList.remove('selected'))}
-function toggleBlockSelection(row,additive){if(!additive)clearBlockSelection();if(state.selectedBlocks.has(row.dataset.id)){state.selectedBlocks.delete(row.dataset.id);row.classList.remove('selected')}else{state.selectedBlocks.add(row.dataset.id);row.classList.add('selected')}}
+function syncBlockSelection(){document.querySelectorAll('#block-editor>.block-row').forEach(row=>{const selected=state.selectedBlocks.has(row.dataset.id);row.classList.toggle('selected',selected);row.setAttribute('aria-selected',selected?'true':'false')})}
+function clearBlockSelection(){state.selectedBlocks.clear();syncBlockSelection()}
+function toggleBlockSelection(row,additive){if(!additive)clearBlockSelection();if(state.selectedBlocks.has(row.dataset.id))state.selectedBlocks.delete(row.dataset.id);else state.selectedBlocks.add(row.dataset.id);syncBlockSelection()}
+function selectBlock(row,additive=false){if(additive){toggleBlockSelection(row,true);return}state.selectedBlocks=new Set([row.dataset.id]);syncBlockSelection()}
 function selectedRows(){return [...$('block-editor').children].filter(row=>state.selectedBlocks.has(row.dataset.id))}
-function bindBlockInteractions(row,handle){if(!canEdit())return;handle.addEventListener('dragstart',(event)=>{handle.dataset.dragging='true';state.dragRow=row;row.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',row.dataset.id);hideBlockMenu()});handle.addEventListener('dragend',()=>{row.classList.remove('dragging');state.dragRow=null;clearDropTargets();setTimeout(()=>delete handle.dataset.dragging,0)});handle.addEventListener('click',(event)=>{if(handle.dataset.dragging)return;if(event.shiftKey||event.ctrlKey||event.metaKey){toggleBlockSelection(row,true);hideBlockMenu();return}clearBlockSelection();const rect=handle.getBoundingClientRect();showBlockMenu(row,rect.left,rect.bottom+4)});row.addEventListener('dragover',(event)=>{if(!state.dragRow||state.dragRow===row)return;event.preventDefault();event.dataTransfer.dropEffect='move';clearDropTargets();row.classList.add(event.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2?'drop-after':'drop-before')});row.addEventListener('dragleave',(event)=>{if(!row.contains(event.relatedTarget))row.classList.remove('drop-before','drop-after')});row.addEventListener('drop',(event)=>{if(!state.dragRow||state.dragRow===row)return;event.preventDefault();const after=row.classList.contains('drop-after');const dragged=state.dragRow;after?row.after(dragged):row.before(dragged);dragged.classList.remove('dragging');state.dragRow=null;clearDropTargets();renumberBlocks();scheduleSave();dragged.querySelector('.block-content')?.focus()});row.addEventListener('contextmenu',(event)=>{event.preventDefault();showBlockMenu(row,event.clientX,event.clientY)})}
+function bindBlockInteractions(row,handle){if(!canEdit())return;const image=row.querySelector('.media-preview img:not(.inline-link-favicon)');if(image)image.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();selectBlock(row,event.shiftKey||event.ctrlKey||event.metaKey)});handle.addEventListener('dragstart',(event)=>{handle.dataset.dragging='true';state.dragRow=row;row.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',row.dataset.id);hideBlockMenu()});handle.addEventListener('dragend',()=>{row.classList.remove('dragging');state.dragRow=null;clearDropTargets();setTimeout(()=>delete handle.dataset.dragging,0)});handle.addEventListener('click',(event)=>{if(handle.dataset.dragging)return;if(event.shiftKey||event.ctrlKey||event.metaKey){toggleBlockSelection(row,true);hideBlockMenu();return}clearBlockSelection();const rect=handle.getBoundingClientRect();showBlockMenu(row,rect.left,rect.bottom+4)});row.addEventListener('dragover',(event)=>{if(!state.dragRow||state.dragRow===row)return;event.preventDefault();event.dataTransfer.dropEffect='move';clearDropTargets();row.classList.add(event.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2?'drop-after':'drop-before')});row.addEventListener('dragleave',(event)=>{if(!row.contains(event.relatedTarget))row.classList.remove('drop-before','drop-after')});row.addEventListener('drop',(event)=>{if(!state.dragRow||state.dragRow===row)return;event.preventDefault();const after=row.classList.contains('drop-after');const dragged=state.dragRow;after?row.after(dragged):row.before(dragged);dragged.classList.remove('dragging');state.dragRow=null;clearDropTargets();renumberBlocks();scheduleSave();dragged.querySelector('.block-content')?.focus()});row.addEventListener('contextmenu',(event)=>{event.preventDefault();showBlockMenu(row,event.clientX,event.clientY)})}
 function moveBlockRow(row,direction){const sibling=direction<0?row.previousElementSibling:row.nextElementSibling;if(!sibling)return false;direction<0?sibling.before(row):sibling.after(row);renumberBlocks();scheduleSave();row.querySelector('.block-content')?.focus();return true}
 function splitToggleContent(value){const parts=String(value||'').split('\n');return{summary:parts.shift()||'',body:parts.join('\n')}}
 const RICH_PREFIX='@qwerty-rich:';
-function sanitizeRichHtml(html){const template=document.createElement('template');template.innerHTML=String(html||'');for(const node of [...template.content.querySelectorAll('*')]){const tag=node.tagName.toLowerCase();if(!['b','strong','i','em','u','s','code','a','br'].includes(tag)){node.replaceWith(...node.childNodes);continue}const href=tag==='a'?safeWebUrl(node.getAttribute('href')):'';for(const attr of [...node.attributes])node.removeAttribute(attr.name);if(tag==='a'){if(href){node.href=href;node.target='_blank';node.rel='noopener noreferrer'}else node.replaceWith(...node.childNodes)}}return template.innerHTML}
-const BLOCK_A11Y_LABELS={text:'텍스트',heading1:'제목 1',heading2:'제목 2',heading3:'제목 3',heading4:'제목 4',bullet:'글머리 목록',numbered:'번호 목록',todo:'할 일',toggle:'토글',callout:'콜아웃',quote:'인용문',code:'코드',math:'수학 공식',divider:'구분선'};
-function editable(block,part='main'){const el=document.createElement('div');const editableMode=canEdit()&&block.type!=='divider';el.className='block-content';el.contentEditable=editableMode?'true':'false';el.dataset.type=block.type;if(part!=='main')el.dataset.togglePart=part;el.dataset.placeholder=block.type==='text'?'내용을 입력하거나 / 명령어를 사용하세요':'';const label=(BLOCK_A11Y_LABELS[block.type]||'문서')+(part==='summary'?' 제목':part==='body'?' 내용':' 블록');if(editableMode){el.setAttribute('role','textbox');el.setAttribute('aria-multiline','true');el.setAttribute('aria-label',label)}else if(block.type==='divider'){el.setAttribute('role','separator')}else if(/^heading[1-4]$/.test(block.type)){el.setAttribute('role','heading');el.setAttribute('aria-level',block.type.slice(-1))}const raw=String(block.content||'');if(part==='main'&&raw.startsWith(RICH_PREFIX)){el.innerHTML=sanitizeRichHtml(raw.slice(RICH_PREFIX.length));el.dataset.rich='true'}else el.textContent=raw;el.addEventListener('input',()=>{if(part==='main'&&el.textContent.startsWith('/'))showSlashMenu(el);else hideSlashMenu();scheduleSave();document.querySelectorAll('.toc-block').forEach(refreshTableOfContents)});el.addEventListener('keydown',(event)=>handleBlockKey(event,el));return el}
+const LEGACY_TOGGLE_GROUP_PREFIX='@qwerty-toggle-group:';
+splitToggleContent=value=>{const raw=String(value||''),marker=raw.match(/^@qwerty-toggle-group:(\d+)\n([\s\S]*)$/);if(marker)return{summary:marker[2]||'세부 내용',body:'',groupSize:Number(marker[1])||0};const parts=raw.split('\n');return{summary:parts.shift()||'',body:parts.join('\n'),groupSize:0}};
+function refreshLegacyToggleGroups(root){if(!root)return;const rows=[...root.children];for(const [index,row] of rows.entries()){let hidden=false;for(let groupIndex=0;groupIndex<index;groupIndex+=1){const group=rows[groupIndex],size=Number(group.dataset.toggleGroupSize||0);if(size&&index<=groupIndex+size&&group.querySelector('.toggle-caret')?.getAttribute('aria-expanded')!=='true'){hidden=true;break}}row.hidden=hidden}}
+function syncLegacyToggleGroups(root){if(!root)return;const rows=[...root.children];for(const [index,row] of rows.entries()){const size=Number(row.dataset.toggleGroupSize||0);row._legacyGroupRows=size?rows.slice(index+1,index+1+size):[]}refreshLegacyToggleGroups(root)}
+function importedLinkLabelText(value){return String(value||'').replace(/\\([\[\]])/g,'$1').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/__([^_]+)__/g,'$1').replace(/\x60([^\x60]+)\x60/g,'$1').trim()}
+function importedPageLinkValue(block){if(!block||block.type!=='text')return null;const raw=String(block.content||'').trim();if(!raw)return null;const html=raw.startsWith(RICH_PREFIX)?sanitizeRichHtml(raw.slice(RICH_PREFIX.length)):importedInlineHtml(raw);const template=document.createElement('template');template.innerHTML=html;const nodes=[...template.content.childNodes].filter(node=>node.nodeType!==3||node.textContent.trim());if(nodes.length!==1||nodes[0].nodeType!==1||nodes[0].tagName.toLowerCase()!=='a')return null;const anchor=nodes[0],href=notionInlineHref(anchor.getAttribute('href')||'');if(!href.startsWith('/doc/'))return null;const match=href.match(/^\/doc\/(doc_[A-Za-z0-9_-]{8,80})$/i);const title=importedLinkLabelText(anchor.textContent)||'연결된 문서';return{url:match?location.origin+href:href,title,document_id:match?match[1]:''}}
+const mediaBlockVisualBase=mediaBlock;
+mediaBlock=block=>{const wrap=mediaBlockVisualBase(block);wrap.classList.add('media-'+String(block.type||'file'));wrap.querySelector('.media-preview')?.classList.add('media-preview-'+String(block.type||'file'));return wrap};
+const mediaBlockPageIconBase=mediaBlock;
+mediaBlock=block=>{const wrap=mediaBlockPageIconBase(block);if(block.type==='page_link'&&(block.page_icon_emoji||block.page_icon_url)){const link=wrap.querySelector('.media-preview a');const old=link?.querySelector('.page-link-icon-svg');if(link&&old){old.outerHTML=pageLinkIconMarkup({iconEmoji:block.page_icon_emoji,iconUrl:block.page_icon_url})}}return wrap};
+const blockRowImportedBase=blockRow;
+blockRow=(block,index)=>{const pageLink=importedPageLinkValue(block);if(!pageLink)return blockRowImportedBase(block,index);const row=blockRowImportedBase({...block,type:'page_link',content:JSON.stringify(pageLink)},index);row.classList.add('imported-page-link-row');return row};
+document.addEventListener('pointerdown',()=>document.body.classList.add('pointer-mode'),true);document.addEventListener('keydown',()=>document.body.classList.remove('pointer-mode'),true);
+function sanitizeRichHtml(html){const template=document.createElement('template');template.innerHTML=String(html||'');for(const node of [...template.content.querySelectorAll('*')]){const tag=node.tagName.toLowerCase();if(!['b','strong','i','em','u','s','del','code','a','br'].includes(tag)){node.replaceWith(...node.childNodes);continue}const href=tag==='a'?notionInlineHref(node.getAttribute('href')):'';for(const attr of [...node.attributes])node.removeAttribute(attr.name);if(tag==='a'){if(href){node.href=href;if(href.startsWith('/doc/'))node.dataset.internalPage='true';else if(/^https?:/i.test(href)){node.target='_blank';node.rel='noopener noreferrer'}else{node.removeAttribute('target');node.removeAttribute('rel')}}else node.replaceWith(...node.childNodes)}}return template.innerHTML}
+const BLOCK_A11Y_LABELS={text:'텍스트',heading1:'제목 1',heading2:'제목 2',heading3:'제목 3',heading4:'제목 4',heading5:'제목 5',heading6:'제목 6',bullet:'글머리 목록',numbered:'번호 목록',todo:'할 일',toggle:'토글',callout:'콜아웃',quote:'인용문',code:'코드',math:'수학 공식',divider:'구분선'};
+function editable(block,part='main'){const el=document.createElement('div');const editableMode=canEdit()&&block.type!=='divider';el.className='block-content';el.contentEditable=editableMode?'true':'false';el.dataset.type=block.type;if(part!=='main')el.dataset.togglePart=part;el.dataset.placeholder=block.type==='text'?'내용을 입력하거나 / 명령어를 사용하세요':'';const label=(BLOCK_A11Y_LABELS[block.type]||'문서')+(part==='summary'?' 제목':part==='body'?' 내용':' 블록');if(editableMode){el.setAttribute('role','textbox');el.setAttribute('aria-multiline','true');el.setAttribute('aria-label',label)}else if(block.type==='divider'){el.setAttribute('role','separator')}else if(/^heading[1-6]$/.test(block.type)){el.setAttribute('role','heading');el.setAttribute('aria-level',block.type.slice(-1))}const raw=String(block.content||'');if(part==='main'&&raw.startsWith(RICH_PREFIX)){el.innerHTML=sanitizeRichHtml(raw.slice(RICH_PREFIX.length));el.dataset.rich='true'}else el.textContent=raw;el.addEventListener('input',()=>{if(part==='main'&&el.textContent.startsWith('/'))showSlashMenu(el);else hideSlashMenu();scheduleSave();document.querySelectorAll('.toc-block').forEach(refreshTableOfContents)});el.addEventListener('keydown',(event)=>handleBlockKey(event,el));return el}
+function notionInlineHref(value){const raw=String(value||'').trim().replaceAll('&amp;','&');if(/^\/doc\/[A-Za-z0-9_-]+(?:[/?#].*)?$/.test(raw))return raw;const href=safeInlineHref(raw);if(!href)return'';if(/^(?:mailto|tel):/i.test(href))return href;try{const url=new URL(href),host=url.hostname.toLowerCase();if(!['app.notion.com','notion.so','www.notion.so','notion.site','www.notion.site'].includes(host)&&!host.endsWith('.notion.so')&&!host.endsWith('.notion.site'))return href;const match=href.match(/([0-9a-f]{32})(?:[^0-9a-f]|$)/i)||href.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[^0-9a-f]|$)/i);return match?'/doc/doc_notion_'+match[1].replaceAll('-','').toLowerCase():href}catch{return href}}
+function importedInlineHtml(value){const raw=String(value||'');if(raw.startsWith(RICH_PREFIX))return sanitizeRichHtml(raw.slice(RICH_PREFIX.length));let html=escapeText(raw).replace(/\r?\n/g,'<br>');const link=(url,label)=>{const safe=safeInlineHref(String(url||'').replaceAll('&amp;','&'));if(!safe)return label;const href=notionInlineHref(safe),internal=href.startsWith('/doc/');return'<a href="'+escapeText(href)+'"'+(internal?' data-internal-page="true"':' target="_blank" rel="noopener noreferrer"')+'>'+label+'</a>'};html=html.replace(/&lt;page\b[\s\S]*?\burl\s*=\s*(["'])(.*?)\1[\s\S]*?&gt;([\s\S]*?)&lt;\/page&gt;/gi,(_m,_q,url,label)=>link(url,label));html=html.replace(/&lt;(?:mention-page|unknown)\b[\s\S]*?\burl\s*=\s*(["'])(.*?)\1[\s\S]*?\/?&gt;/gi,(_m,_q,url)=>link(url,'연결된 Notion 페이지'));html=html.replace(/&lt;a\b[\s\S]*?\bhref\s*=\s*(["'])(.*?)\1[\s\S]*?&gt;([\s\S]*?)&lt;\/a&gt;/gi,(_m,_q,url,label)=>link(url,label));html=html.replace(/!?\[([^\]\r\n]+)\]\((https?:\/\/[^)\s]+)\)/gi,(_m,label,url)=>link(url,label));const anchors=[];html=html.replace(/<a\b[\s\S]*?<\/a>/gi,match=>{anchors.push(match);return'\u0000'+(anchors.length-1)+'\u0000'});html=html.replace(/(?<!["'=])(https?:\/\/[^\s<>&"']+)/gi,match=>link(match,escapeText(match)));html=html.replace(/\x60([^\x60]+)\x60/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>').replace(/~~([^~]+)~~/g,'<del>$1</del>').replace(/\*([^*]+)\*/g,'<em>$1</em>');return html.replace(/\u0000(\d+)\u0000/g,(_m,index)=>anchors[Number(index)]||'')}
+const editableImportedBase=editable;
+editable=(block,part='main')=>{const el=editableImportedBase(block,part),raw=String(block.content||'');if(block.type!=='code'&&!isLegacyNotionJsonFragment(raw)&&!raw.startsWith(RICH_PREFIX)){const html=importedInlineHtml(raw);if(html!==escapeText(raw)){el.innerHTML=html;el.dataset.rich='true'}}if(el.querySelector('a[data-internal-page]'))el.addEventListener('click',event=>{const link=event.target.closest('a[data-internal-page]');if(link){event.preventDefault();push(link.getAttribute('href'))}},true);return el};
+const editableLinkLabelBase=editable;
+editable=(block,part='main')=>{const el=editableLinkLabelBase(block,part);el.querySelectorAll('a').forEach(anchor=>{if(/(?:\*\*|__|\x60)/.test(anchor.textContent||''))anchor.textContent=importedLinkLabelText(anchor.textContent)});return el};
+const editableEscapedMarkdownBase=editable;
+editable=(block,part='main')=>{const raw=String(block.content||'');if(part==='main'&&!raw.startsWith(RICH_PREFIX)&&/\\[\[\]]/.test(raw))return editableEscapedMarkdownBase({...block,content:raw.replace(/\\([\[\]])/g,'$1')},part);return editableEscapedMarkdownBase(block,part)};
+function linkFaviconUrl(value){try{const url=new URL(String(value||''),location.origin);if(!['http:','https:'].includes(url.protocol))return'';const host=url.hostname.toLowerCase();if(host==='open.kakao.com')return'https://iopen.kakaocdn.net/favicon.ico';return'https://www.google.com/s2/favicons?domain='+encodeURIComponent(host)+'&sz=16'}catch{return''}}
+function bindEditableLinks(el){el.querySelectorAll('a').forEach(anchor=>{anchor.contentEditable='false';if(anchor.dataset.internalPage||String(anchor.getAttribute('href')||'').startsWith('/doc/'))return;if(anchor.querySelector('.inline-link-favicon'))return;const src=linkFaviconUrl(anchor.href||anchor.getAttribute('href')||'');if(!src)return;const favicon=document.createElement('img');favicon.className='inline-link-favicon';favicon.src=src;favicon.alt='';favicon.loading='lazy';favicon.decoding='async';favicon.setAttribute('aria-hidden','true');favicon.onerror=()=>favicon.remove();anchor.prepend(favicon)});return el}
+const editableLinkInteractionBase=editable;
+editable=(block,part='main')=>bindEditableLinks(editableLinkInteractionBase(block,part));
+const openDocumentNotionClassBase=openDocument;
+openDocument=async(id,pushUrl=true)=>{clearBlockSelection();const result=await openDocumentNotionClassBase(id,pushUrl);$('editor-view').classList.toggle('notion-imported',/^doc_notion(?:db)?_/i.test(String(id||'')));return result};
 function caretOffset(el){const selection=getSelection();if(!selection||!selection.rangeCount||!selection.isCollapsed||!el.contains(selection.anchorNode))return null;const range=selection.getRangeAt(0).cloneRange();range.selectNodeContents(el);range.setEnd(selection.anchorNode,selection.anchorOffset);return range.toString().length}
 function selectionAtEnd(el){return caretOffset(el)===el.textContent.length}
 function placeCaret(el,atEnd){el.focus();const range=document.createRange();range.selectNodeContents(el);range.collapse(!atEnd);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)}
@@ -674,14 +1061,16 @@ function mergeWithPrevious(row,el){const previous=row.previousElementSibling;con
 function placeCaretAtOffset(el,offset){el.focus();const range=document.createRange();const node=el.firstChild||el.appendChild(document.createTextNode(''));range.setStart(node,Math.min(offset,node.textContent.length));range.collapse(true);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)}
 function handleBlockKey(event,el){if(!canEdit())return;if((event.ctrlKey||event.metaKey)&&['b','i','u'].includes(event.key.toLowerCase())){event.preventDefault();document.execCommand(({b:'bold',i:'italic',u:'underline'})[event.key.toLowerCase()]);el.dataset.rich='true';scheduleSave();return}if(!$('slash-menu').hidden&&handleSlashKey(event))return;if(applyInputShortcut(event,el))return;const row=el.closest('.block-row');if(event.key==='Tab'){if(changeListIndent(row,event.shiftKey?-1:1))event.preventDefault();return}if(event.key==='Enter'&&event.shiftKey&&el.dataset.type!=='code'){event.preventDefault();document.execCommand('insertLineBreak');scheduleSave();return}if(event.altKey&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();moveBlockRow(row,event.key==='ArrowUp'?-1:1);return}const offset=caretOffset(el);if(!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&((event.key==='ArrowUp'&&offset===0)||(event.key==='ArrowLeft'&&offset===0))){event.preventDefault();moveCaretToAdjacent(el,-1);return}if(!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&((event.key==='ArrowDown'&&offset===el.textContent.length)||(event.key==='ArrowRight'&&offset===el.textContent.length))){event.preventDefault();moveCaretToAdjacent(el,1);return}if(el.dataset.togglePart==='body'){if(event.key==='Escape'){hideSlashMenu();hideBlockMenu()}return}if(event.key==='Enter'&&!event.shiftKey&&el.dataset.type!=='code'){event.preventDefault();const type=el.dataset.type;if(CONTINUING_BLOCK_TYPES.has(type)&&!el.textContent.trim()){replaceBlockType(el,'text');return}splitEditableBlock(row,el)}else if(event.key==='Backspace'&&offset===0&&row.previousElementSibling){event.preventDefault();mergeWithPrevious(row,el);hideSlashMenu()}else if(event.key==='Backspace'&&!el.textContent&&$('block-editor').children.length>1){event.preventDefault();const focus=row.previousElementSibling||row.nextElementSibling;row.remove();renumberBlocks();if(focus)placeCaret(focus.querySelector('.block-content'),true);scheduleSave();hideSlashMenu()}else if(event.key==='Escape'){hideSlashMenu();hideBlockMenu()}}
 $('append-block').onclick=()=>{const row=blockRow(newBlock(),0);$('block-editor').append(row);renumberBlocks();row.querySelector('.block-content').focus();scheduleSave()};
+function slashSearchText(type,symbol,label,desc,category){const aliases={text:'text paragraph plain 텍스트 문단',heading1:'h1 heading title 제목',heading2:'h2 heading title 제목',heading3:'h3 heading title 제목',heading4:'h4 heading title 제목',heading5:'h5 heading title 제목',heading6:'h6 heading title 제목',bullet:'bullet bulleted list 목록 리스트 글머리',numbered:'numbered ordered list 목록 리스트 번호',todo:'todo task checklist 할 일 체크',toggle:'toggle collapsible 토글 접기',callout:'callout 강조 안내',quote:'quote blockquote 인용',table:'table grid 표',divider:'divider separator horizontal 구분선',page_link:'page link subpage 페이지 링크 하위 페이지',image:'image 사진 이미지',video:'video 동영상',audio:'audio 오디오',code:'code codeblock 코드 소스',file:'file attachment 파일 첨부',bookmark:'bookmark web 북마크 웹',database:'database data table 데이터베이스',toc:'toc table of contents 목차',math:'math equation formula 수식',embed:'embed iframe 임베드'};return(type+' '+symbol+' '+label+' '+desc+' '+category+' '+(aliases[type]||'')).normalize('NFKC').toLocaleLowerCase('ko-KR')}
+function positionSlashMenu(menu,anchor){const rect=anchor.getBoundingClientRect();const width=Math.min(Math.max(menu.offsetWidth||280,260),Math.max(260,innerWidth-16));const height=menu.offsetHeight||320;const left=Math.max(8,Math.min(rect.left,innerWidth-width-8));const below=innerHeight-(rect.bottom+6);const top=below>=height||rect.top<height+8?rect.bottom+6:rect.top-height-6;menu.style.left=Math.round(left)+'px';menu.style.top=Math.round(Math.max(8,Math.min(top,innerHeight-height-8)))+'px'}
 function updateSlashSelection(){const buttons=[...$('slash-menu').querySelectorAll('.slash-item')];buttons.forEach((button,index)=>button.classList.toggle('active',index===state.slashIndex));const active=buttons[state.slashIndex];if(active){state.slashBlock?.setAttribute('aria-activedescendant',active.id);active.scrollIntoView({block:'nearest'})}}
-function showSlashMenu(el){state.slashBlock=el;const query=el.textContent.slice(1).toLowerCase();const items=blockLabels.filter(([,symbol,label,desc,category])=>(label+' '+desc+' '+symbol+' '+category).toLowerCase().includes(query));const menu=$('slash-menu');state.slashIndex=0;const nodes=[];let category='';let buttonIndex=0;for(const [type,symbol,label,desc,nextCategory] of items){if(nextCategory!==category){category=nextCategory;const heading=document.createElement('div');heading.className='slash-category';heading.textContent=category;heading.role='presentation';nodes.push(heading)}const index=buttonIndex++;const button=document.createElement('button');button.type='button';button.role='menuitem';button.id='slash-option-'+index;button.tabIndex=-1;button.className='slash-item'+(index===0?' active':'');button.dataset.blockType=type;button.innerHTML='<span class="slash-icon">'+icon(blockIconName[type]||'type')+'</span><span><strong>'+escapeText(label)+'</strong><small>'+escapeText(desc)+'</small></span>';button.onmouseenter=()=>{state.slashIndex=index;updateSlashSelection()};button.onmousedown=(event)=>{event.preventDefault();changeBlockType(el,type)};nodes.push(button)}menu.replaceChildren(...nodes);const rect=el.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(rect.left,innerWidth-276))+'px';menu.style.top=Math.max(8,Math.min(rect.bottom+4,innerHeight-350))+'px';menu.hidden=!items.length;el.setAttribute('aria-haspopup','menu');el.setAttribute('aria-controls','slash-menu');el.setAttribute('aria-expanded',items.length?'true':'false');if(items.length)updateSlashSelection()}
-function handleSlashKey(event){const buttons=[...$('slash-menu').querySelectorAll('.slash-item')];if(!buttons.length)return false;if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();state.slashIndex=(state.slashIndex+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;updateSlashSelection();return true}if(event.key==='Enter'){event.preventDefault();changeBlockType(state.slashBlock,buttons[state.slashIndex].dataset.blockType);return true}if(event.key==='Escape'){event.preventDefault();hideSlashMenu();return true}return false}
+function showSlashMenu(el){state.slashBlock=el;const raw=el.textContent.startsWith('/')?el.textContent.slice(1):el.textContent;const query=raw.normalize('NFKC').toLocaleLowerCase('ko-KR').trim();const items=blockLabels.filter(([type,symbol,label,desc,category])=>slashSearchText(type,symbol,label,desc,category).includes(query));const menu=$('slash-menu');state.slashIndex=0;const nodes=[];let category='';let buttonIndex=0;for(const [type,symbol,label,desc,nextCategory] of items){if(nextCategory!==category){category=nextCategory;const heading=document.createElement('div');heading.className='slash-category';heading.textContent=category;heading.role='presentation';nodes.push(heading)}const index=buttonIndex++;const button=document.createElement('button');button.type='button';button.role='menuitem';button.id='slash-option-'+index;button.tabIndex=-1;button.className='slash-item'+(index===0?' active':'');button.dataset.blockType=type;button.innerHTML='<span class="slash-icon">'+icon(blockIconName[type]||'type')+'</span><span><strong>'+escapeText(label)+'</strong><small>'+escapeText(desc)+'</small></span>';button.onmouseenter=()=>{state.slashIndex=index;updateSlashSelection()};button.onmousedown=(event)=>{event.preventDefault();changeBlockType(el,type)};nodes.push(button)}if(!items.length){const empty=document.createElement('div');empty.className='slash-empty';empty.textContent='일치하는 블록이 없습니다.';nodes.push(empty)}menu.replaceChildren(...nodes);menu.hidden=false;positionSlashMenu(menu,el);el.setAttribute('aria-haspopup','menu');el.setAttribute('aria-controls','slash-menu');el.setAttribute('aria-expanded',items.length?'true':'false');if(items.length)updateSlashSelection()}
+function handleSlashKey(event){const buttons=[...$('slash-menu').querySelectorAll('.slash-item')];if(!buttons.length){if(event.key==='Escape'){event.preventDefault();hideSlashMenu();return true}return false}if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();state.slashIndex=(state.slashIndex+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;updateSlashSelection();return true}if(event.key==='Enter'){event.preventDefault();changeBlockType(state.slashBlock,buttons[state.slashIndex].dataset.blockType);return true}if(event.key==='Escape'){event.preventDefault();hideSlashMenu();return true}return false}
 function hideSlashMenu(){const target=state.slashBlock;if(target){target.setAttribute('aria-expanded','false');target.removeAttribute('aria-activedescendant')}$('slash-menu').hidden=true;state.slashBlock=null;state.slashIndex=0}
 function focusBlock(row,atEnd=false){const target=row.querySelector('.block-content[contenteditable="true"],.media-url:not(:disabled),.block-table input:not(:disabled),.db-title:not(:disabled),.db-cell-input:not(:disabled)');if(!target)return;if(target.matches('input,select'))target.focus();else placeCaret(target,atEnd)}
 function replaceBlockType(el,type,checked=false){const row=el.closest('.block-row');const id=row.dataset.id;const next=blockRow({id,type,content:'',checked},0);row.replaceWith(next);renumberBlocks();if(type==='divider'){const following=blockRow(newBlock(),0);next.after(following);focusBlock(following)}else focusBlock(next);scheduleSave();hideSlashMenu()}
 function changeBlockType(el,type){replaceBlockType(el,type,false)}
-function blockDataFromRow(row){const el=row.querySelector('.block-content');const type=el.dataset.type;let content=el.textContent;let checked=row.querySelector('input[type=checkbox]')?.checked||false;if(el.dataset.database==='true'){
+function blockDataFromRow(row){const el=row.querySelector('.block-content');const type=el.dataset.type;let content=type==='code'?(el.innerText||el.textContent||''):el.textContent;let checked=row.querySelector('input[type=checkbox]')?.checked||false;if(el.dataset.database==='true'){
   const model=el._databaseModel;
   const chunks=Array.isArray(el._databaseChunks)&&el._databaseChunks.length>1?el._databaseChunks:null;
   if(chunks){
@@ -696,14 +1085,18 @@ function blockDataFromRow(row){const el=row.querySelector('.block-content');cons
     });
   }
   content=JSON.stringify(model);
-}else if(el.dataset.structured==='grid'){content=JSON.stringify([...el.querySelectorAll('.block-table tr')].map(tr=>[...tr.querySelectorAll('input')].map(input=>input.value)))}else if(el.dataset.urlBlock==='true')content=el.querySelector('.media-url')?.value||'';else if(type==='toc'||type==='divider')content='';else if(type==='toggle'){const body=row.querySelector('[data-toggle-part="body"]');content=el.textContent+(body?.textContent?'\n'+body.textContent:'');checked=row.querySelector('.toggle-caret')?.getAttribute('aria-expanded')==='true'}else if(el.dataset.rich==='true'||el.querySelector('b,strong,i,em,u,s,code,a'))content=RICH_PREFIX+sanitizeRichHtml(el.innerHTML);return{id:row.dataset.id,type,content:content.slice(0,type==='database'?100000:20000),checked,indent_level:Number(row.dataset.indent||0)}}
+}else if(el.dataset.structured==='grid'){content=JSON.stringify([...el.querySelectorAll('.block-table tr')].map(tr=>[...tr.querySelectorAll('input')].map(input=>input.value)))}else if(el.dataset.urlBlock==='true'){const url=el.querySelector('.media-url')?.value||'';content=type==='page_link'&&el.dataset.pageLinkTitle?JSON.stringify({url,title:el.dataset.pageLinkTitle,...(el.dataset.pageLinkDocumentId?{document_id:el.dataset.pageLinkDocumentId}:{}),...(el.dataset.pageLinkIconEmoji?{page_icon_emoji:el.dataset.pageLinkIconEmoji}:{}),...(el.dataset.pageLinkIconUrl?{page_icon_url:el.dataset.pageLinkIconUrl}:{})}):url}else if(type==='toc'||type==='divider')content='';else if(type==='toggle'){const body=row.querySelector('[data-toggle-part="body"]');content=el.textContent+(body?.textContent?'\n'+body.textContent:'');checked=row.querySelector('.toggle-caret')?.getAttribute('aria-expanded')==='true'}else if(el.dataset.rich==='true'||el.querySelector('b,strong,i,em,u,s,code,a'))content=RICH_PREFIX+sanitizeRichHtml(el.innerHTML);return{id:row.dataset.id,type,content:content.slice(0,type==='database'?100000:20000),checked,indent_level:Number(row.dataset.indent||0)}}
+const blockDataFromRowLegacyBase=blockDataFromRow;
+blockDataFromRow=row=>{const data=blockDataFromRowLegacyBase(row);if(Array.isArray(data)||data?.type!=='toggle'||!Number(row.dataset.toggleGroupSize||0))return data;const groupRows=(row._legacyGroupRows||[]).filter(item=>item.isConnected),summary=row.querySelector('[data-toggle-part=\"summary\"]')?.textContent||'세부 내용';data.content=LEGACY_TOGGLE_GROUP_PREFIX+groupRows.length+'\n'+summary;return data};
 function hideBlockMenu(){$('block-menu').hidden=true;state.contextRow=null}
 function blockMenuButton(label,iconName,action,danger=false){const button=document.createElement('button');button.type='button';button.role='menuitem';button.innerHTML=icon(iconName)+'<span>'+escapeText(label)+'</span>';if(danger)button.classList.add('danger-text');button.onclick=()=>runBlockMenuAction(action);return button}
-function showBlockMenu(row,x,y){if(!canEdit())return;state.contextRow=row;hideSlashMenu();const menu=$('block-menu');const items=[blockMenuButton('일반 텍스트로 전환','type','type:text'),blockMenuButton('할 일로 전환','check-square','type:todo'),blockMenuButton('글머리 목록으로 전환','list','type:bullet'),blockMenuButton('번호 목록으로 전환','list-ordered','type:numbered'),blockMenuButton('토글로 전환','chevron-right','type:toggle'),separator(),blockMenuButton('위에 블록 추가','plus','insert-above'),blockMenuButton('아래에 블록 추가','plus','insert-below'),blockMenuButton('블록 복제','copy','duplicate'),separator(),blockMenuButton('위로 이동','arrow-up','move-up'),blockMenuButton('아래로 이동','arrow-down','move-down'),blockMenuButton('블록 삭제','trash','delete',true)];menu.replaceChildren(...items);menu.hidden=false;const width=menu.offsetWidth;const height=menu.offsetHeight;menu.style.left=Math.max(8,Math.min(x,innerWidth-width-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-height-8))+'px';menu.querySelector('button')?.focus();menu.onkeydown=(event)=>{const buttons=[...menu.querySelectorAll('button')];const index=buttons.indexOf(document.activeElement);if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();buttons[(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus()}else if(event.key==='Escape'){event.preventDefault();hideBlockMenu();row.querySelector('.block-content')?.focus()}}}
+function showBlockMenu(row,x,y){if(!canEdit())return;state.contextRow=row;hideSlashMenu();hideTreeMenu();const menu=$('block-menu');const items=[blockMenuButton('일반 텍스트로 전환','type','type:text'),blockMenuButton('할 일로 전환','check-square','type:todo'),blockMenuButton('글머리 목록으로 전환','list','type:bullet'),blockMenuButton('번호 목록으로 전환','list-ordered','type:numbered'),blockMenuButton('토글로 전환','chevron-right','type:toggle'),separator(),blockMenuButton('위에 블록 추가','plus','insert-above'),blockMenuButton('아래에 블록 추가','plus','insert-below'),blockMenuButton('블록 복제','copy','duplicate'),separator(),blockMenuButton('위로 이동','arrow-up','move-up'),blockMenuButton('아래로 이동','arrow-down','move-down'),blockMenuButton('블록 삭제','trash','delete',true)];menu.replaceChildren(...items);menu.hidden=false;const width=menu.offsetWidth;const height=menu.offsetHeight;menu.style.left=Math.max(8,Math.min(x,innerWidth-width-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-height-8))+'px';menu.querySelector('button')?.focus();menu.onkeydown=(event)=>{const buttons=[...menu.querySelectorAll('button')];const index=buttons.indexOf(document.activeElement);if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();buttons[(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus()}else if(event.key==='Escape'){event.preventDefault();hideBlockMenu();row.querySelector('.block-content')?.focus()}}}
 function separator(){const line=document.createElement('div');line.className='block-menu-separator';line.role='separator';return line}
 function runBlockMenuAction(action){const row=state.contextRow;if(!row||!row.isConnected)return hideBlockMenu();if(action.startsWith('type:')){const data=blockDataFromRow(row);data.type=action.slice(5);data.checked=data.type==='toggle'?data.checked:false;const next=blockRow(data,0);row.replaceWith(next);focusBlock(next,true)}else if(action==='insert-above'||action==='insert-below'){const next=blockRow(newBlock(),0);action==='insert-above'?row.before(next):row.after(next);focusBlock(next)}else if(action==='duplicate'){const data=blockDataFromRow(row);data.id='blk_'+crypto.randomUUID().replaceAll('-','');const next=blockRow(data,0);row.after(next);focusBlock(next,true)}else if(action==='move-up'||action==='move-down'){moveBlockRow(row,action==='move-up'?-1:1);hideBlockMenu();return}else if(action==='delete'){const focus=row.previousElementSibling||row.nextElementSibling;if($('block-editor').children.length===1){const next=blockRow(newBlock(),0);row.replaceWith(next);focusBlock(next)}else{row.remove();if(focus)focusBlock(focus,true)}}renumberBlocks();scheduleSave();hideBlockMenu()}
-document.addEventListener('mousedown',(event)=>{if(!$('slash-menu').contains(event.target)&&event.target!==state.slashBlock)hideSlashMenu();if(!$('block-menu').contains(event.target)&&!event.target.closest('.block-handle'))hideBlockMenu();if(!$('url-paste-menu').contains(event.target))hideUrlPasteMenu()});
-function renumberBlocks(){let numbered=0;for(const row of $('block-editor').children){const el=row.querySelector('.block-content');if(el.dataset.type==='numbered'){numbered+=1;el.dataset.number=numbered}else numbered=0}}
+document.addEventListener('mousedown',(event)=>{if(!$('slash-menu').contains(event.target)&&event.target!==state.slashBlock)hideSlashMenu();if(!$('block-menu').contains(event.target)&&!event.target.closest('.block-handle'))hideBlockMenu();if(!$('tree-menu').contains(event.target))hideTreeMenu();if(!$('url-paste-menu').contains(event.target))hideUrlPasteMenu()});
+function renumberBlocks(root=$('block-editor')){const counters=new Map();let listActive=false;for(const row of root.children){const el=row.querySelector('.block-content');if(!el)continue;const type=el.dataset.type,indent=Number(row.dataset.indent||0);if(type==='numbered'){if(!listActive)counters.clear();for(const level of counters.keys())if(level>indent)counters.delete(level);const number=(counters.get(indent)||0)+1;counters.set(indent,number);el.dataset.number=number;listActive=true;continue}delete el.dataset.number;if(type==='code'||type==='quote')continue;if((type==='bullet'||type==='todo')&&indent>0)continue;counters.clear();listActive=false}}
+const renumberBlocksLegacyBase=renumberBlocks;
+renumberBlocks=(root=$('block-editor'))=>{syncLegacyToggleGroups(root);return renumberBlocksLegacyBase(root)};
 function collectBlocks(){const output=[];for(const row of $('block-editor').children){const data=blockDataFromRow(row);if(Array.isArray(data))output.push(...data);else output.push(data)}return output.map((block,index)=>({...block,position:index}))}
 function historySnapshot(){return JSON.stringify({title:$('document-title').value,blocks:collectBlocks()})}
 function resetHistory(){clearTimeout(state.historyTimer);state.selectedBlocks.clear();state.undoStack=[historySnapshot()];state.undoIndex=0}
@@ -716,10 +1109,11 @@ async function saveDocument(){if(!state.current||!state.dirty||state.saving||!ca
 async function flushSave(){while(state.saving)await new Promise(resolve=>setTimeout(resolve,30));if(!state.dirty)return true;const saved=await saveDocument();if(saved||state.saveFailed)return saved;return flushSave()}
 window.addEventListener('beforeunload',(event)=>{if(state.dirty){event.preventDefault();event.returnValue=''}});
 window.addEventListener('resize',resizeDocumentTitle);
-async function showMembers(){if(state.dirty&&!await flushSave())return;state.current=null;markNav('members');showPane('members-view');state.membersCursor=null;state.invitesCursor=null;$('member-list').replaceChildren();$('invite-list').replaceChildren();loadMembers(false);if(canManage())loadInvites(false);else $('invite-list').innerHTML='<div class="empty-state">초대 관리 권한이 없습니다.</div>'}
+async function showMembers(){if(state.dirty&&!await flushSave())return;state.current=null;markNav('members');showPane('members-view');state.membersCursor=null;state.invitesCursor=null;$('member-list').replaceChildren();$('notion-member-list').replaceChildren();$('invite-list').replaceChildren();loadMembers(false);loadNotionMembers();if(canManage())loadInvites(false);else $('invite-list').innerHTML='<div class="empty-state">초대 관리 권한이 없습니다.</div>'}
 async function loadMembers(append){if(!append)showLoading('member-list','member',4);else setLoadButton('load-more-members',true);const params=new URLSearchParams({limit:'20'});if(state.membersCursor)params.set('cursor',state.membersCursor);try{const data=await api('/api/members?'+params);if(!append)$('member-list').replaceChildren();data.members.forEach((member)=>$('member-list').append(memberRow(member)));state.membersCursor=data.next_cursor;$('load-more-members').hidden=!state.membersCursor;$('member-count').textContent=data.members.length+(state.membersCursor?'+':'')+'명'}catch(error){if(!append)$('member-list').innerHTML='<div class="empty-state">'+escapeText(error.message)+'</div>'}finally{finishLoading('member-list');setLoadButton('load-more-members',false)}}
 $('load-more-members').onclick=()=>loadMembers(true);
 function memberRow(member){const row=document.createElement('div');row.className='member-row';const info=document.createElement('div');info.className='member-info';const avatar=document.createElement('span');avatar.className='avatar';avatar.textContent=member.username.slice(0,1).toUpperCase();avatar.setAttribute('aria-hidden','true');const copy=document.createElement('div');const name=document.createElement('strong');name.textContent=member.username+(member.user_id===state.user.id?' (나)':'');const joined=document.createElement('small');joined.textContent='참여 '+new Date(member.joined_at*1000).toLocaleDateString();copy.append(name,joined);info.append(avatar,copy);const controls=document.createElement('div');controls.className='member-controls';if(canManage()&&member.user_id!==state.user.id){const select=document.createElement('select');select.setAttribute('aria-label',member.username+' 역할');const allowed=state.role==='owner'?['owner','admin','member','viewer']:['member','viewer'];const visibleRoles=allowed.includes(member.role)?allowed:[member.role,...allowed];for(const role of visibleRoles){const option=document.createElement('option');option.value=role;option.textContent=roleLabel[role];option.selected=role===member.role;select.append(option)}if(!allowed.includes(member.role))select.disabled=true;select.onchange=async()=>{try{await api('/api/members/'+member.user_id,{method:'PATCH',body:{role:select.value}});toast('역할을 변경했습니다.')}catch(error){select.value=member.role;toast(error.message)}};controls.append(select);if(state.role==='owner'){const remove=actionButton('제거',async()=>{if(!confirm(member.username+' 멤버를 제거할까요?'))return;try{await api('/api/members/'+member.user_id,{method:'DELETE'});showMembers()}catch(error){toast(error.message)}},true);controls.append(remove)}}else{const role=document.createElement('span');role.className='muted';role.textContent=roleLabel[member.role];controls.append(role)}row.append(info,controls);return row}
+async function loadNotionMembers(){showLoading('notion-member-list','member',3);try{const data=await api('/api/notion-members');const list=$('notion-member-list');list.replaceChildren();for(const member of data.members){const row=document.createElement('div');row.className='member-row';const info=document.createElement('div');info.className='member-info';const avatar=document.createElement('span');avatar.className='avatar';avatar.textContent=(member.name||member.email||'?').slice(0,1).toUpperCase();const copy=document.createElement('div');const name=document.createElement('strong');name.textContent=member.name||'이름 정보 없음';const email=document.createElement('small');email.textContent=member.email||'이메일 권한 필요';copy.append(name,email);info.append(avatar,copy);const type=document.createElement('span');type.className='muted';type.textContent=member.user_type==='bot'?'Notion 봇':'Notion 멤버';row.append(info,type);list.append(row)}if(!data.members.length)list.innerHTML='<div class="empty-state">동기화된 Notion 멤버가 없습니다.</div>';$('notion-member-count').textContent=data.members.length+'명'}catch(error){$('notion-member-list').innerHTML='<div class="empty-state">'+escapeText(error.message)+'</div>'}finally{finishLoading('notion-member-list')}}
 async function loadInvites(append){if(!append)showLoading('invite-list','member',3);else setLoadButton('load-more-invites',true);const params=new URLSearchParams({limit:'20'});if(state.invitesCursor)params.set('cursor',state.invitesCursor);try{const data=await api('/api/invitations?'+params);if(!append)$('invite-list').replaceChildren();data.invitations.forEach((invite)=>$('invite-list').append(inviteRow(invite)));state.invitesCursor=data.next_cursor;$('load-more-invites').hidden=!state.invitesCursor;$('invite-count').textContent=data.invitations.length+(state.invitesCursor?'+':'')+'건';if(!$('invite-list').children.length)$('invite-list').innerHTML='<div class="empty-state">대기 중인 초대가 없습니다.</div>'}catch(error){if(!append)$('invite-list').innerHTML='<div class="empty-state">'+escapeText(error.message)+'</div>'}finally{finishLoading('invite-list');setLoadButton('load-more-invites',false)}}
 $('load-more-invites').onclick=()=>loadInvites(true);
 function inviteRow(invite){const row=document.createElement('div');row.className='member-row';const info=document.createElement('div');info.className='member-info';const avatar=document.createElement('span');avatar.className='avatar';avatar.textContent='@';const copy=document.createElement('div');const email=document.createElement('strong');email.textContent=invite.email;const meta=document.createElement('small');meta.textContent=roleLabel[invite.role]+' · 만료 '+new Date(invite.expires_at*1000).toLocaleString();copy.append(email,meta);info.append(avatar,copy);const controls=document.createElement('div');controls.className='member-controls';controls.append(actionButton('재발송',async()=>{try{const data=await api('/api/invitations/'+invite.id+'/resend',{method:'POST'});showInviteLink(data.invite_url,data.delivery);toast(data.delivery==='sent'?'초대 메일을 다시 보냈습니다.':'새 초대 링크를 만들었습니다.')}catch(error){toast(error.message)}}),actionButton('취소',async()=>{try{await api('/api/invitations/'+invite.id,{method:'DELETE'});showMembers()}catch(error){toast(error.message)}},true));row.append(info,controls);return row}
@@ -731,9 +1125,8 @@ function renderIpTags(){const tags=$('ip-tags');if(!tags)return;tags.replaceChil
 function addIpEntries(value){const entries=normalizeIpEntries(value);if(!entries.length)return;state.ipAllowlist=normalizeIpEntries([...state.ipAllowlist,...entries]);renderIpTags()}
 function flushIpInput(){const input=$('ip-allowlist-input');if(!input)return;addIpEntries(input.value);input.value=''}
 function setupIpTagEditor(value){state.ipAllowlist=normalizeIpEntries(value);renderIpTags();const input=$('ip-allowlist-input');if(!input||input.dataset.bound==='true')return;input.dataset.bound='true';input.onkeydown=event=>{if(event.key==='Enter'||event.key===','){event.preventDefault();flushIpInput()}else if(event.key==='Backspace'&&!input.value&&state.ipAllowlist.length){state.ipAllowlist.pop();renderIpTags()}};input.onblur=flushIpInput;input.onpaste=event=>{const text=event.clipboardData?.getData('text')||'';if(/[\s,]/.test(text)){event.preventDefault();addIpEntries(text);input.value=''}};$('add-current-ip').onclick=()=>{const current=$('current-request-ip').textContent.trim();if(current&&current!=='확인 중')addIpEntries(current);input.focus()}}
-async function showSettings(){state.current=null;markNav('settings');showPane('settings-view');try{const data=await api('/api/settings');state.workspaceSettings=data;$('public-signup-enabled').checked=data.public_signup_enabled;$('public-signup-role').value=data.public_signup_role;$('ip-allowlist-enabled').checked=data.ip_allowlist_enabled;setupIpTagEditor(data.ip_allowlist);$('current-request-ip').textContent=data.current_ip;for(const form of [$('workspace-access-form'),$('ip-access-form')]){form.querySelectorAll('input,select,textarea,button').forEach(el=>el.disabled=!data.can_manage_security);form.querySelector('.owner-only-badge').textContent=data.can_manage_security?'Owner 전용':'읽기 전용'}}catch(error){toast(error.message)}}
-$('workspace-access-form').onsubmit=async event=>{event.preventDefault();try{const data=await api('/api/settings',{method:'PATCH',body:{public_signup_enabled:$('public-signup-enabled').checked,public_signup_role:$('public-signup-role').value}});state.workspaceSettings=data;state.publicSignup=data.public_signup_enabled;toast('가입 정책을 저장했습니다.')}catch(error){toast(error.message)}};
-$('ip-access-form').onsubmit=async event=>{event.preventDefault();flushIpInput();try{const data=await api('/api/settings',{method:'PATCH',body:{ip_allowlist_enabled:$('ip-allowlist-enabled').checked,ip_allowlist:state.ipAllowlist.join('\n')}});state.workspaceSettings=data;setupIpTagEditor(data.ip_allowlist);toast('IP 접근 정책을 저장했습니다.')}catch(error){if(error.details?.current_ip)$('current-request-ip').textContent=error.details.current_ip;toast(error.message)}};
+async function showSettings(){state.current=null;markNav('settings');showPane('settings-view');try{const data=await api('/api/settings');state.workspaceSettings=data;applySpaceProfile(data);$('space-name').value=data.space_name;$('space-mode').value=data.space_mode;$('public-signup-enabled').checked=data.public_signup_enabled;$('public-signup-role').value=data.public_signup_role;$('ip-allowlist-enabled').checked=data.ip_allowlist_enabled;setupIpTagEditor(data.ip_allowlist);$('current-request-ip').textContent=data.current_ip;document.querySelectorAll('.owner-setting').forEach(section=>{section.querySelectorAll('input,select,textarea,button').forEach(el=>el.disabled=!data.can_manage_security);section.querySelector('.owner-only-badge').textContent=data.can_manage_security?'Owner 전용':'읽기 전용'});$('settings-save-button').disabled=!data.can_manage_security;$('settings-save-note').textContent=data.can_manage_security?'':'Owner만 공간 설정을 변경할 수 있습니다.'}catch(error){toast(error.message)}}
+$('workspace-settings-form').onsubmit=async event=>{event.preventDefault();flushIpInput();const button=$('settings-save-button');button.disabled=true;button.textContent='저장 중…';try{const data=await api('/api/settings',{method:'PATCH',body:{space_name:$('space-name').value,space_mode:$('space-mode').value,public_signup_enabled:$('public-signup-enabled').checked,public_signup_role:$('public-signup-role').value,ip_allowlist_enabled:$('ip-allowlist-enabled').checked,ip_allowlist:state.ipAllowlist.join('\n')}});state.workspaceSettings=data;state.publicSignup=data.public_signup_enabled;applySpaceProfile(data);setupIpTagEditor(data.ip_allowlist);loadTree();toast('설정 변경사항을 저장했습니다.')}catch(error){if(error.details?.current_ip)$('current-request-ip').textContent=error.details.current_ip;toast(error.message)}finally{button.disabled=state.workspaceSettings?.can_manage_security===false;button.textContent='변경사항 저장'}};
 $('notion-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;if(file.size>2*1024*1024){toast('Markdown 파일은 2MB 이하만 가져올 수 있습니다.');input.value='';return}try{const content=await file.text();const data=await api('/api/import/markdown',{method:'POST',body:{filename:file.name,content}});await loadTree();push('/doc/'+data.document.id);toast('Markdown 파일을 가져왔습니다.')}catch(error){toast(error.message)}finally{input.value=''}};
 function notionProgress(message){$('notion-import-progress').textContent=message;$('notion-zip-import-label').textContent=message||'Notion ZIP 업로드'}
 function zipU16(view,offset){return view.getUint16(offset,true)}
@@ -803,20 +1196,26 @@ async function importLargeNotionZip(file){
   const completed=await api('/api/import/notion-sessions/'+session.import_id+'/complete',{method:'POST',body:{}});return completed;
 }
 $('notion-zip-import-input').onchange=async(event)=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file)return;const button=$('notion-zip-import-button');input.disabled=true;button.classList.add('loading-indicator');button.setAttribute('aria-disabled','true');try{const data=await importLargeNotionZip(file);await loadTree();notionProgress('가져오기 완료');toast('Notion 가져오기 완료: 문서 '+data.imported+', 실패 '+data.failed)}catch(error){const message=String(error?.message||'가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{input.disabled=false;button.classList.remove('loading-indicator');button.removeAttribute('aria-disabled');input.value=''}};
-async function importAllFromNotionApi(){const button=$('notion-api-import-button');button.disabled=true;button.classList.add('loading-indicator');let cursor='',discovered=0,imported=0,skipped=0,failed=0;const seen=new Set();const itemKey=item=>item.object+':'+String(item.id||'').replaceAll('-','').toLowerCase();const importItem=async(item,hasMore=false)=>{const key=itemKey(item);if(seen.has(key))return;seen.add(key);discovered+=1;if(item.object==='page'&&item.imported){skipped+=1;notionProgress('API 가져오기 '+(imported+skipped+failed)+' / '+discovered+(hasMore?' +':''));return}notionProgress('API 가져오기 '+(imported+skipped+failed+1)+' / '+discovered+(hasMore?' +':''));try{const data=await api('/api/import/notion-api/'+(item.object==='page'?'pages/':'data-sources/')+encodeURIComponent(item.id),{method:'POST',body:{}});imported+=1;if(item.object==='data_source')for(const pageId of data.page_ids||[])await importItem({id:pageId,object:'page',imported:false},hasMore)}catch(error){failed+=1;console.warn('Notion API item import failed',item.id,error.message)}};try{const status=await api('/api/import/notion-api/status');if(!status.configured)throw new Error('NOTION_API_TOKEN Secret을 먼저 등록해 주세요.');do{const page=await api('/api/import/notion-api/search',{method:'POST',body:{cursor:cursor||null}});cursor=page.next_cursor||'';for(const item of page.items)await importItem(item,!!cursor)}while(cursor);await api('/api/import/notion-api/reconcile',{method:'POST',body:{}});await loadTree();notionProgress('API 가져오기 완료 · '+imported+'개 · 기존 '+skipped+'개'+(failed?' · 실패 '+failed+'개':''));toast('Notion API 가져오기 완료: '+imported+'개, 기존 '+skipped+'개'+(failed?', 실패 '+failed+'개':''))}catch(error){const message=String(error?.message||'Notion API 가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{button.disabled=false;button.classList.remove('loading-indicator')}}
+async function importNotionApiSourceByAgent(sourceId){const normalized=String(sourceId||'').replaceAll('-','').toLowerCase();if(!/^[0-9a-f]{32}$/.test(normalized))return;try{const data=await api('/api/import/notion-api/data-sources/'+normalized,{method:'POST',body:{}});await loadTree();toast('Notion 데이터소스 동기화 완료: '+(data.rows||0)+'개 행')}catch(error){toast('Notion 데이터소스 동기화 실패: '+String(error?.message||'알 수 없는 오류'))}}
+async function importAllFromNotionApi(){const button=$('notion-api-import-button');button.disabled=true;button.classList.add('loading-indicator');let cursor='',discovered=0,imported=0,skipped=0,failed=0,memberWarning='';const seen=new Set();const itemKey=item=>item.object+':'+String(item.id||'').replaceAll('-','').toLowerCase();const importItem=async(item,hasMore=false)=>{const key=itemKey(item);if(seen.has(key))return;seen.add(key);discovered+=1;if(item.object==='page'&&item.imported){skipped+=1;notionProgress('API 가져오기 '+(imported+skipped+failed)+' / '+discovered+(hasMore?' +':''));return}notionProgress('API 가져오기 '+(imported+skipped+failed+1)+' / '+discovered+(hasMore?' +':''));try{const data=await api('/api/import/notion-api/'+(item.object==='page'?'pages/':'data-sources/')+encodeURIComponent(item.id),{method:'POST',body:{}});imported+=1;if(item.object==='data_source')for(let offset=0;offset<(data.page_ids||[]).length;offset+=2)await Promise.all((data.page_ids||[]).slice(offset,offset+2).map(pageId=>importItem({id:pageId,object:'page',imported:false},hasMore)))}catch(error){failed+=1;console.warn('Notion API item import failed',item.id,error.message)}};try{const status=await api('/api/import/notion-api/status');if(!status.configured)throw new Error('NOTION_API_TOKEN Secret을 먼저 등록해 주세요.');notionProgress('Notion 멤버와 이메일 동기화 중');try{const members=await api('/api/import/notion-api/users',{method:'POST',body:{}});if(!members.email_complete)memberWarning=' · 멤버 이메일 권한 필요';else notionProgress('Notion 멤버 '+members.people+'명 동기화 완료')}catch(error){memberWarning=' · 멤버 이메일 권한 필요';console.warn('Notion member sync unavailable',error.message)}do{const page=await api('/api/import/notion-api/search',{method:'POST',body:{cursor:cursor||null}});cursor=page.next_cursor||'';for(let offset=0;offset<page.items.length;offset+=2)await Promise.all(page.items.slice(offset,offset+2).map(item=>importItem(item,!!cursor)))}while(cursor);for(let round=0;round<20;round+=1){const linked=await api('/api/import/notion-api/linked-missing',{method:'POST',body:{}});if(!(linked.items||[]).length)break;notionProgress('연결된 페이지 '+linked.items.length+'개 추가 확인 중');for(let offset=0;offset<linked.items.length;offset+=2)await Promise.all(linked.items.slice(offset,offset+2).map(item=>importItem(item,true)))}await api('/api/import/notion-api/reconcile',{method:'POST',body:{}});await loadTree();notionProgress('API 가져오기 완료 · '+imported+'개 · 기존 '+skipped+'개'+(failed?' · 실패 '+failed+'개':'')+memberWarning);toast('Notion API 가져오기 완료: '+imported+'개, 기존 '+skipped+'개'+(failed?', 실패 '+failed+'개':'')+memberWarning)}catch(error){const message=String(error?.message||'Notion API 가져오기에 실패했습니다.');notionProgress('오류: '+message.slice(0,140));toast(message)}finally{button.disabled=false;button.classList.remove('loading-indicator')}}
 $('notion-api-import-button').onclick=importAllFromNotionApi;
+async function resetAndImportAllFromNotionApi(){const button=$('notion-remigrate-button');button.disabled=true;let deletedFiles=0;try{for(let step=0;step<100;step+=1){notionProgress('기존 첨부파일 정리 중 · '+deletedFiles+'개');const result=await api('/api/admin/reset-notion-migration',{method:'POST',body:{confirm:'cf-notion-st'}});deletedFiles+=Number(result.deleted_files||0);if(result.done){notionProgress('기존 데이터 정리 완료 · Notion 재가져오기 시작');await loadTree();await importAllFromNotionApi();return}}throw new Error('초기화 작업이 안전 반복 한도를 초과했습니다.')}catch(error){notionProgress('오류: '+String(error.message||error).slice(0,140));toast(error.message||String(error))}finally{button.disabled=false}}
+$('notion-remigrate-button').onclick=resetAndImportAllFromNotionApi;
 document.addEventListener('selectionchange',()=>{if(!canEdit())return;const selection=getSelection();const toolbar=$('inline-toolbar');if(!selection||selection.isCollapsed||!selection.rangeCount){toolbar.hidden=true;return}const origin=selection.anchorNode?.nodeType===1?selection.anchorNode:selection.anchorNode?.parentElement;const el=origin?.closest?.('.block-content[contenteditable="true"]');if(!el||!el.contains(selection.focusNode)){toolbar.hidden=true;return}state.inlineTarget=el;state.inlineRange=selection.getRangeAt(0).cloneRange();const rect=state.inlineRange.getBoundingClientRect();toolbar.style.left=Math.max(8,Math.min(rect.left,innerWidth-toolbar.offsetWidth-8))+'px';toolbar.style.top=Math.max(8,rect.top-42)+'px';toolbar.hidden=false});
 function restoreInlineSelection(target,range){if(!target?.isConnected||!range)return false;target.focus();const selection=getSelection();selection.removeAllRanges();selection.addRange(range);return true}
 function openLinkDialog(target,range){if(!target||!range)return;state.linkTarget=target;state.linkRange=range.cloneRange();alertBox('link-alert','');const origin=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;const currentLink=origin?.closest?.('a');$('link-url').value=currentLink&&target.contains(currentLink)?currentLink.getAttribute('href')||'':'';$('inline-toolbar').hidden=true;$('link-dialog').returnValue='';$('link-dialog').showModal();requestAnimationFrame(()=>{$('link-url').focus();$('link-url').select()})}
 function closeLinkDialog(result='cancel'){$('link-dialog').close(result)}
 $('link-form').onsubmit=event=>{event.preventDefault();const href=safeWebUrl($('link-url').value);if(!href){alertBox('link-alert','http 또는 https로 시작하는 올바른 웹 주소를 입력하세요.');$('link-url').focus();return}const target=state.linkTarget,range=state.linkRange;if(!restoreInlineSelection(target,range)){closeLinkDialog('cancel');return}document.execCommand('createLink',false,href);for(const link of target.querySelectorAll('a')){link.target='_blank';link.rel='noopener noreferrer'}target.dataset.rich='true';scheduleSave();closeLinkDialog('applied');$('inline-toolbar').hidden=true;target.focus()};
 function applyLinkToSelection(target,range,href){if(!restoreInlineSelection(target,range))return false;const selection=getSelection();if(!selection||selection.isCollapsed||!selection.rangeCount)return false;const activeRange=selection.getRangeAt(0);const anchor=document.createElement('a');anchor.href=href;anchor.target='_blank';anchor.rel='noopener noreferrer';try{activeRange.surroundContents(anchor)}catch{const fragment=activeRange.extractContents();anchor.append(fragment);activeRange.insertNode(anchor)}selection.removeAllRanges();const appliedRange=document.createRange();appliedRange.selectNodeContents(anchor);selection.addRange(appliedRange);return !!target.querySelector('a')}
-$('link-form').onsubmit=event=>{event.preventDefault();const href=safeWebUrl($('link-url').value);if(!href){alertBox('link-alert','http 또는 https로 시작하는 올바른 웹 주소를 입력하세요.');$('link-url').focus();return}const target=state.linkTarget,range=state.linkRange;if(!applyLinkToSelection(target,range,href)){alertBox('link-alert','선택한 텍스트에 링크를 적용하지 못했습니다. 다시 선택해 주세요.');return}target.dataset.rich='true';scheduleSave();closeLinkDialog('applied');$('inline-toolbar').hidden=true;target.focus()};
+$('link-form').onsubmit=event=>{event.preventDefault();const href=safeWebUrl($('link-url').value);if(!href){alertBox('link-alert','http 또는 https로 시작하는 올바른 웹 주소를 입력하세요.');$('link-url').focus();return}const target=state.linkTarget,range=state.linkRange;if(!applyLinkToSelection(target,range,href)){alertBox('link-alert','선택한 텍스트에 링크를 적용하지 못했습니다. 다시 선택해 주세요.');return}target.dataset.rich='true';bindEditableLinks(target);scheduleSave();closeLinkDialog('applied');$('inline-toolbar').hidden=true;target.focus()};
 $('close-link-dialog').onclick=() => closeLinkDialog();$('cancel-link-dialog').onclick=() => closeLinkDialog();
 $('link-dialog').addEventListener('close',()=>{const target=state.linkTarget,range=state.linkRange,result=$('link-dialog').returnValue;state.linkTarget=null;state.linkRange=null;if(result!=='applied')restoreInlineSelection(target,range)});
 $('inline-toolbar').querySelectorAll('button').forEach(button=>{button.onmousedown=event=>event.preventDefault();button.onclick=()=>{const el=state.inlineTarget,range=state.inlineRange;if(!el||!range)return;const command=button.dataset.inlineCommand;if(command==='createLink'){openLinkDialog(el,range);return}const selection=getSelection();selection.removeAllRanges();selection.addRange(range);if(command==='inlineCode'){const text=selection.toString();document.execCommand('insertHTML',false,'<code>'+escapeText(text)+'</code>')}else document.execCommand(command);el.dataset.rich='true';scheduleSave();$('inline-toolbar').hidden=true;el.focus()}});
+function searchQueryTerms(value){return[...new Set(String(value||'').normalize('NFKC').trim().split(/\s+/).filter(Boolean))].sort((a,b)=>b.length-a.length)}
+function appendSearchHighlight(node,value,query){const text=String(value||'');node.replaceChildren();const terms=searchQueryTerms(query);if(!terms.length){node.textContent=text;return}const pattern=new RegExp('('+terms.map(term=>term.replace(/[\\^$.*+?()[\]{}|]/g,'\\$&')).join('|')+')','giu');let cursor=0;for(const match of text.matchAll(pattern)){const index=match.index??0;if(index>cursor)node.append(document.createTextNode(text.slice(cursor,index)));const mark=document.createElement('mark');mark.textContent=match[0];node.append(mark);cursor=index+match[0].length}if(cursor<text.length)node.append(document.createTextNode(text.slice(cursor)))}
+function searchResultContext(doc,query){const path=doc.parent_title?doc.parent_title+' · ':'';const match=doc.search_match==='content'?'본문 일치':doc.search_match==='title'?'제목 일치':'최근 수정';return path+match+' · 수정 '+formatDate(doc.updated_at)}
 function openGlobalSearch(){if(!state.user)return;const dialog=$('global-search-dialog');state.globalSearchIndex=0;if(!dialog.open)dialog.showModal();$('global-search-input').value='';loadGlobalSearch('');$('global-search-input').focus()}
-async function loadGlobalSearch(query){const results=$('global-search-results');showLoading('global-search-results','search',4);try{const params=new URLSearchParams({scope:query?'search':'recent',limit:'20'});if(query)params.set('q',query);const data=await api('/api/documents?'+params);results.replaceChildren(...data.documents.map((doc,index)=>{const button=document.createElement('button');button.type='button';button.id='global-search-option-'+index;button.role='option';button.tabIndex=-1;button.setAttribute('aria-selected',index===0?'true':'false');button.className='global-search-item'+(index===0?' active':'');button.dataset.documentId=doc.id;button.innerHTML='<strong>'+escapeText(doc.title||'제목 없음')+'</strong><small>수정 '+escapeText(formatDate(doc.updated_at))+'</small>';button.onmouseenter=()=>{state.globalSearchIndex=index;updateGlobalSearchSelection()};button.onclick=()=>{dialogCloseAndOpen(doc.id)};return button}));if(!data.documents.length)results.innerHTML='<div class="global-search-empty">검색 결과가 없습니다.</div>';updateGlobalSearchSelection()}catch(error){results.innerHTML='<div class="global-search-empty">'+escapeText(error.message)+'</div>'}finally{finishLoading('global-search-results')}}
+async function loadGlobalSearch(query){const results=$('global-search-results');const request=++state.globalSearchRequest;showLoading('global-search-results','search',4);try{const params=new URLSearchParams({scope:query?'search':'recent',limit:'20'});if(query)params.set('q',query);const data=await api('/api/documents?'+params);if(request!==state.globalSearchRequest)return;results.replaceChildren(...data.documents.map((doc,index)=>{const button=document.createElement('button');button.type='button';button.id='global-search-option-'+index;button.role='option';button.tabIndex=-1;button.setAttribute('aria-selected',index===0?'true':'false');button.className='global-search-item'+(index===0?' active':'');button.dataset.documentId=doc.id;const title=document.createElement('strong');appendSearchHighlight(title,doc.title||'제목 없음',query);const meta=document.createElement('span');meta.className='global-search-meta';meta.textContent=searchResultContext(doc,query);button.append(title,meta);if(doc.preview){const preview=document.createElement('span');preview.className='global-search-preview';appendSearchHighlight(preview,doc.preview,query);button.append(preview)}button.onmouseenter=()=>{state.globalSearchIndex=index;updateGlobalSearchSelection()};button.onclick=()=>{dialogCloseAndOpen(doc.id)};return button}));if(!data.documents.length)results.innerHTML='<div class="global-search-empty">검색 결과가 없습니다.</div>';updateGlobalSearchSelection()}catch(error){if(request===state.globalSearchRequest)results.innerHTML='<div class="global-search-empty">'+escapeText(error.message)+'</div>'}finally{if(request===state.globalSearchRequest)finishLoading('global-search-results')}}
 function updateGlobalSearchSelection(){const items=[...$('global-search-results').querySelectorAll('.global-search-item')];items.forEach((item,index)=>{const active=index===state.globalSearchIndex;item.classList.toggle('active',active);item.setAttribute('aria-selected',active?'true':'false')});const active=items[state.globalSearchIndex];if(active){$('global-search-input').setAttribute('aria-activedescendant',active.id);active.scrollIntoView({block:'nearest'})}else $('global-search-input').removeAttribute('aria-activedescendant')}
 function dialogCloseAndOpen(id){$('global-search-dialog').close();push('/doc/'+id)}
 $('global-search-input').oninput=event=>{clearTimeout(state.globalSearchTimer);const query=event.currentTarget.value.trim();state.globalSearchTimer=setTimeout(()=>{state.globalSearchIndex=0;loadGlobalSearch(query)},180)};
@@ -831,7 +1230,7 @@ async function openPublicationDialog(){if(!state.current||!canManage())return;al
 function renderPublication(){const published=!!state.publication?.published;const url=state.publication?.public_url||location.origin+'/public/'+state.current.id;$('publication-title').textContent=published?'웹에 게시됨':'비공개';$('publication-description').textContent=published?'링크를 가진 누구나 읽을 수 있습니다.':'현재 워크스페이스 멤버만 볼 수 있습니다.';$('publication-toggle').textContent=published?'게시 취소':'게시';$('publication-toggle').className='button '+(published?'subtle danger-text':'primary')+' compact';const link=$('publication-link');link.hidden=!published;link.querySelector('input').value=url;link.querySelector('button').onclick=async()=>{await navigator.clipboard.writeText(url);toast('공개 링크를 복사했습니다.')}}
 $('publish-button').onclick=openPublicationDialog;$('close-publish').onclick=()=>$('publish-dialog').close();
 $('publication-toggle').onclick=async()=>{if(!state.current)return;const published=!!state.publication?.published;if(!confirm(published?'공개 게시를 취소할까요? 기존 링크에서 더 이상 문서를 볼 수 없습니다.':'이 문서를 웹에 게시할까요? 링크를 가진 누구나 로그인 없이 읽을 수 있습니다.'))return;const button=$('publication-toggle');button.disabled=true;try{state.publication=await api('/api/documents/'+state.current.id+'/publication',{method:published?'DELETE':'PUT'});renderPublication();toast(published?'공개 게시를 취소했습니다.':'문서를 웹에 게시했습니다.')}catch(error){alertBox('publish-alert',error.message)}finally{button.disabled=false}};
-async function openPublicDocument(id){$('boot-view').hidden=false;$('auth-view').hidden=true;$('app-view').hidden=true;try{const data=await api('/api/public/documents/'+id);state.role='viewer';state.current=data.document;$('public-title').textContent=data.document.title||'제목 없음';const editor=$('public-block-editor');editor.replaceChildren(...data.document.blocks.map((block,index)=>blockRow(block,index)));let numbered=0;for(const row of editor.children){const el=row.querySelector('.block-content');if(el?.dataset.type==='numbered'){numbered+=1;el.dataset.number=numbered}else numbered=0}$('boot-view').hidden=true;$('public-view').hidden=false}catch(error){$('boot-view').innerHTML='<div class="empty-state"><strong>공개 문서를 열 수 없습니다.</strong><span>'+escapeText(error.message)+'</span></div>'}}
+async function openPublicDocument(id){$('boot-view').hidden=false;$('auth-view').hidden=true;$('app-view').hidden=true;try{const data=await api('/api/public/documents/'+id);state.role='viewer';state.current=data.document;$('public-title').textContent=data.document.title||'제목 없음';const editor=$('public-block-editor'),blocks=normalizeImportedBlocks(data.document.blocks);editor.replaceChildren(...blocks.map((block,index)=>blockRow(block,index)));renumberBlocks(editor);$('boot-view').hidden=true;$('public-view').hidden=false}catch(error){$('boot-view').innerHTML='<div class="empty-state"><strong>공개 문서를 열 수 없습니다.</strong><span>'+escapeText(error.message)+'</span></div>'}}
 async function refreshNotificationBadge(){try{const data=await api('/api/notifications?limit=1');const badge=$('notification-badge');badge.textContent=String(data.unread_count||'');badge.hidden=!data.unread_count}catch{}}
 async function showNotifications(){if(state.dirty&&!await flushSave())return;state.current=null;markNav('notifications');showPane('notifications-view');showLoading('notification-list','list',4);showLoading('activity-list','list',4);try{const [notifications,activity]=await Promise.all([api('/api/notifications?limit=50'),api('/api/activity?limit=50')]);$('notification-list').replaceChildren(...notifications.notifications.map(notificationItem));$('activity-list').replaceChildren(...activity.events.map(activityItem));if(!notifications.notifications.length)$('notification-list').innerHTML='<div class="empty-state">새 알림이 없습니다.</div>';if(!activity.events.length)$('activity-list').innerHTML='<div class="empty-state">아직 활동이 없습니다.</div>'}catch(error){$('notification-list').innerHTML='<div class="empty-state">'+escapeText(error.message)+'</div>'}finally{finishLoading('notification-list');finishLoading('activity-list')}}
 function notificationItem(item){const el=document.createElement('article');el.className='feed-item'+(item.read_at?'':' unread');el.innerHTML='<strong>'+escapeText(item.actor_username||'JoripNote')+'</strong><span>'+escapeText(item.message)+'</span><small>'+escapeText(formatDate(item.created_at))+'</small>';if(item.document_id)el.onclick=()=>push('/doc/'+item.document_id);return el}
@@ -851,8 +1250,106 @@ $('comments-button').onclick=openCommentsDialog;$('close-comments').onclick=()=>
 async function openAccessDialog(){if(!state.current?.can_manage_access)return;$('access-dialog').showModal();try{state.access=await api('/api/documents/'+state.current.id+'/access');$('access-visibility').value=state.access.visibility;const grants=new Map(state.access.grants.map(item=>[item.user_id,item.permission]));$('grant-list').replaceChildren(...state.access.members.filter(member=>member.user_id!==state.user.id).map(member=>{const row=document.createElement('label');row.className='grant-row';const name=document.createElement('span');name.textContent=member.username+' · '+roleLabel[member.role];const select=document.createElement('select');select.dataset.userId=member.user_id;for(const [value,label] of [['','접근 안 함'],['viewer','보기'],['editor','편집']]){const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=(grants.get(member.user_id)||'')===value;select.append(option)}row.append(name,select);return row}))}catch(error){toast(error.message);$('access-dialog').close()}}
 $('save-access').onclick=async()=>{try{const grants=[...$('grant-list').querySelectorAll('select')].filter(el=>el.value).map(el=>({user_id:el.dataset.userId,permission:el.value}));await api('/api/documents/'+state.current.id+'/access',{method:'PUT',body:{visibility:$('access-visibility').value,grants}});$('access-dialog').close();toast('문서별 권한을 저장했습니다.')}catch(error){toast(error.message)}};
 $('access-button').onclick=openAccessDialog;$('close-access').onclick=()=>$('access-dialog').close();
-$('file-upload-input').onchange=async event=>{const input=event.currentTarget;const file=input.files&&input.files[0];if(!file||!state.current)return;if(file.size>10*1024*1024){toast('파일은 10MB 이하만 올릴 수 있습니다.');input.value='';return}const form=new FormData();form.append('file',file);try{const response=await fetch('/api/documents/'+state.current.id+'/files',{method:'POST',credentials:'same-origin',headers:{accept:'application/json'},body:form});const data=await response.json();if(!response.ok)throw new Error(data.error||'파일을 올리지 못했습니다.');const type=file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'file';const row=blockRow({id:'blk_'+crypto.randomUUID().replaceAll('-',''),type,content:data.file.url,checked:false,indent_level:0},0);$('block-editor').append(row);renumberBlocks();scheduleSave();toast('파일을 올리고 문서에 추가했습니다.')}catch(error){toast(error.message)}finally{input.value=''}};
-bootstrap();`;
+function editorFileBlockType(file){const type=String(file?.type||'').toLowerCase();return type.startsWith('image/')?'image':type.startsWith('video/')?'video':type.startsWith('audio/')?'audio':'file'}
+async function uploadEditorFile(file){if(!file||!state.current||!canEdit())return null;if(file.size>10*1024*1024){toast('파일은 10MB 이하만 올릴 수 있습니다.');return null}const form=new FormData();form.append('file',file,file.name||'pasted-file');try{const response=await fetch('/api/documents/'+state.current.id+'/files',{method:'POST',credentials:'same-origin',headers:{accept:'application/json'},body:form});const data=await response.json();if(!response.ok)throw new Error(data.error||'파일을 올리지 못했습니다.');return{type:editorFileBlockType(file),content:data.file.url}}catch(error){toast(error.message||'파일을 올리지 못했습니다.');return null}}
+async function insertEditorFiles(files,anchorRow=null){if(!canEdit()||!state.current)return false;let anchor=anchorRow?.isConnected?anchorRow:null;let inserted=0;let lastRow=null;for(const file of files){const uploaded=await uploadEditorFile(file);if(!uploaded)continue;const row=blockRow({id:'blk_'+crypto.randomUUID().replaceAll('-',''),...uploaded,checked:false,indent_level:Number(anchor?.dataset.indent||0)},0);if(anchor?.isConnected)anchor.after(row);else $('block-editor').append(row);anchor=row;lastRow=row;inserted+=1}if(!inserted)return false;renumberBlocks();scheduleSave();focusBlock(lastRow);toast(inserted===1?'파일을 올리고 문서에 추가했습니다.':'파일 '+inserted+'개를 올리고 문서에 추가했습니다.');return true}
+$('file-upload-input').onchange=async event=>{const input=event.currentTarget;await insertEditorFiles(input.files&&[...input.files]);input.value=''};
+document.addEventListener('paste',event=>{if(!canEdit()||!state.current)return;const items=[...(event.clipboardData?.items||[])];const files=items.filter(item=>item.kind==='file'&&/^image\//i.test(item.type)).map(item=>item.getAsFile()).filter(Boolean);if(!files.length)return;const target=event.target?.closest?.('.block-content[contenteditable="true"]');if(!target)return;event.preventDefault();void insertEditorFiles(files,target.closest('.block-row'))},true);
+document.addEventListener('dragover',event=>{if(!canEdit()||!state.current||!event.target?.closest?.('.document-editor'))return;const types=event.dataTransfer?.types;const hasFiles=event.dataTransfer?.files?.length||types?.includes?.('Files');if(hasFiles)event.preventDefault()},true);
+document.addEventListener('drop',event=>{if(!canEdit()||!state.current||!event.target?.closest?.('.document-editor'))return;const files=[...(event.dataTransfer?.files||[])];if(!files.length)return;event.preventDefault();event.stopPropagation();const row=event.target.closest('.block-row');void insertEditorFiles(files,row)},true);
+
+// One modifier-aware drag contract shared by blocks and database views.
+function setDragIntent(event){state.dragCopy=!!event.altKey;try{event.dataTransfer.effectAllowed='copyMove';event.dataTransfer.setData('application/x-joripspace-drag-intent',state.dragCopy?'copy':'move')}catch{} }
+function resetUniversalDrag(){state.dragCopy=false;state.databaseDrag=null;state.timelineDrag=null;state.dragRow=null}
+if(!state._dragModifierBound){state._dragModifierBound=true;window.addEventListener('keydown',event=>{if(event.key==='Alt')state.dragCopy=true},true);window.addEventListener('keyup',event=>{if(event.key==='Alt')state.dragCopy=false},true);window.addEventListener('blur',()=>{state.dragCopy=false},true)}
+function cloneDatabaseRowForDrag(row){return{id:databaseUid('row'),cells:{...(row.cells||{})}}}
+async function copyDatabaseRowForDrag(context,targetDate=''){const copy=cloneDatabaseRowForDrag(context.row);const sourceId=await databaseLinkedDocumentId(context.row,context.titleColumn);if(sourceId){const result=await api('/api/documents/'+sourceId+'/duplicate',{method:'POST'});if(result.document?.id)copy.document_id=result.document.id}if(context.dateColumn&&targetDate){const parts=databaseDateParts(context.row.cells[context.dateColumn.id]);if(parts.length){const delta=Math.round((Date.parse(targetDate+'T00:00:00Z')-Date.parse(parts[0]+'T00:00:00Z'))/86400000);if(Number.isFinite(delta))copy.cells[context.dateColumn.id]=shiftCalendarValue(context.row.cells[context.dateColumn.id],delta)}}return copy}
+function calendarDropDateAt(week,clientX){const cells=[...week.querySelectorAll('.db-calendar-day')];return cells.find(cell=>{const rect=cell.getBoundingClientRect();return clientX>=rect.left&&clientX<=rect.right})?.dataset.date||''}
+async function handleDatabaseCopyDrop(wrap,event,column){const drag=state.databaseDrag;if(!drag||!column)return;event.preventDefault();event.stopImmediatePropagation();try{const copy=await copyDatabaseRowForDrag({wrap,row:drag.row,titleColumn:drag.titleColumn});const groupColumn=drag.groupColumn;copy.cells[groupColumn.id]=column.dataset.groupValue||'';const index=wrap._databaseModel.rows.indexOf(drag.row);wrap._databaseModel.rows.splice(index<0?wrap._databaseModel.rows.length:index+1,0,copy);renderDatabaseBlock(wrap);scheduleSave();await flushSave();toast('카드를 복사했습니다.')}catch(error){toast(error.message||'카드를 복사하지 못했습니다.')}finally{resetUniversalDrag()}}
+function bindUniversalDatabaseDrag(wrap){if(!canEdit()||wrap._universalDragBound)return;wrap._universalDragBound=true;const model=wrap._databaseModel;const board=wrap.querySelector('.db-board');if(board){board.addEventListener('dragstart',event=>{const card=event.target.closest('.db-card');if(!card)return;const row=model.rows.find(item=>item.id===card.dataset.rowId);if(!row)return;state.databaseDrag={wrap,row,titleColumn:databaseTitleColumn(model),groupColumn:model.columns.find(column=>column.id===model.view.groupBy)||model.columns[0]};setDragIntent(event)},true);board.addEventListener('dragover',event=>{if(!state.databaseDrag)return;if(event.altKey)state.dragCopy=true;event.preventDefault();event.dataTransfer.dropEffect=state.dragCopy?'copy':'move'},true);board.addEventListener('drop',event=>{if(!state.databaseDrag)return;const column=event.target.closest('.db-board-column');if(state.dragCopy){handleDatabaseCopyDrop(wrap,event,column)}},true);board.addEventListener('dragend',resetUniversalDrag,true)}const calendar=wrap.querySelector('.db-calendar');if(calendar){calendar.addEventListener('dragstart',event=>{if(event.target.closest('.db-calendar-range'))setDragIntent(event)},true);calendar.addEventListener('dragover',event=>{if(!wrap._calendarDrag)return;if(event.altKey)state.dragCopy=true;if(state.dragCopy){event.preventDefault();event.dataTransfer.dropEffect='copy'}},true);calendar.addEventListener('drop',async event=>{if(!wrap._calendarDrag||!state.dragCopy&&!event.altKey)return;const week=event.target.closest('.db-calendar-week'),target=week&&calendarDropDateAt(week,event.clientX);if(!target)return;event.preventDefault();event.stopImmediatePropagation();try{const drag=wrap._calendarDrag;const copy=await copyDatabaseRowForDrag(drag,target);const index=model.rows.indexOf(drag.row);model.rows.splice(index<0?model.rows.length:index+1,0,copy);renderDatabaseBlock(wrap);scheduleSave();await flushSave();toast('일정을 복사했습니다.')}catch(error){toast(error.message||'일정을 복사하지 못했습니다.')}finally{wrap._calendarDrag=null;resetUniversalDrag()}},true);calendar.addEventListener('dragend',resetUniversalDrag,true)}bindTimelineDrag(wrap)}
+function bindTimelineDrag(wrap){const shell=wrap.querySelector('.db-timeline');if(!shell||!canEdit()||shell.dataset.dragBound)return;shell.dataset.dragBound='1';const model=wrap._databaseModel,view=normalizeDatabaseView(model,model.view),dateColumn=model.columns.find(column=>column.id===view.datePropertyId)||model.columns.find(column=>column.type==='date'),titleColumn=databaseTitleColumn(model),rows=databaseRows(model,wrap._databaseQuery),bars=[...shell.querySelectorAll('.db-timeline-bar')],days=[...shell.querySelectorAll('.db-timeline-day')];days.forEach((cell,index)=>{const cursor=timelineCursor(wrap);cell.dataset.date=calendarDateKey(new Date(Date.UTC(cursor.getUTCFullYear(),cursor.getUTCMonth(),index+1)))});for(const bar of bars){const title=bar.querySelector('span')?.textContent?.trim()||'',dates=String(bar.title||'').match(/\d{4}-\d{2}-\d{2}/g)||[],row=rows.find(item=>databaseDisplayValue(titleColumn,item.cells[titleColumn.id])===title&&databaseDateParts(item.cells[dateColumn?.id]).join('|')===dates.join('|'));if(!row)continue;bar.draggable=true;bar.dataset.rowId=row.id;bar.addEventListener('dragstart',event=>{state.timelineDrag={wrap,row,dateColumn,titleColumn};bar.classList.add('dragging');setDragIntent(event)},true);bar.addEventListener('dragend',()=>{bar.classList.remove('dragging');resetUniversalDrag()},true);bar.addEventListener('click',event=>{if(wrap._timelineDragMoved){event.preventDefault();event.stopImmediatePropagation();wrap._timelineDragMoved=false}},true)}const targetDate=clientX=>days.find(cell=>{const rect=cell.getBoundingClientRect();return clientX>=rect.left&&clientX<=rect.right})?.dataset.date||'';shell.addEventListener('dragover',event=>{if(!state.timelineDrag)return;if(event.altKey)state.dragCopy=true;event.preventDefault();event.dataTransfer.dropEffect=state.dragCopy?'copy':'move'},true);shell.addEventListener('drop',async event=>{const drag=state.timelineDrag;if(!drag)return;const target=targetDate(event.clientX);if(!target)return;event.preventDefault();event.stopImmediatePropagation();try{if(state.dragCopy||event.altKey){const copy=await copyDatabaseRowForDrag(drag,target);const index=model.rows.indexOf(drag.row);model.rows.splice(index<0?model.rows.length:index+1,0,copy);toast('타임라인 항목을 복사했습니다.')}else{const parts=databaseDateParts(drag.row.cells[dateColumn.id]);const delta=Math.round((Date.parse(target+'T00:00:00Z')-Date.parse(parts[0]+'T00:00:00Z'))/86400000);if(Number.isFinite(delta)&&delta){drag.row.cells[dateColumn.id]=shiftCalendarValue(drag.row.cells[dateColumn.id],delta);toast('타임라인 항목을 이동했습니다.')}}wrap._timelineDragMoved=true;renderDatabaseBody(wrap);scheduleSave();await flushSave()}catch(error){toast(error.message||'타임라인 항목을 저장하지 못했습니다.')}finally{resetUniversalDrag()}},true)}
+ // Rebind when a view body is replaced (calendar -> timeline -> board). The
+ // original helper guarded on the database wrapper, which left newly-rendered
+ // view nodes unbound after a tab switch.
+ const bindUniversalDatabaseDragBase=bindUniversalDatabaseDrag;
+ bindUniversalDatabaseDrag=wrap=>{const viewNode=wrap.querySelector('.db-board,.db-calendar,.db-timeline');if(viewNode?.dataset.universalDragBound==='1'){if(viewNode.matches('.db-timeline'))bindTimelineDrag(wrap);return}const wasBound=wrap._universalDragBound;wrap._universalDragBound=false;bindUniversalDatabaseDragBase(wrap);wrap._universalDragBound=wasBound||true;viewNode?.setAttribute('data-universal-drag-bound','1')};
+ const setDragIntentBase=setDragIntent;
+ setDragIntent=event=>{setDragIntentBase(event);state.dragSession=crypto.randomUUID();state.dropSession=null;document.body.dataset.dragMode=state.dragCopy?'copy':''};
+ const resetUniversalDragBase=resetUniversalDrag;
+ resetUniversalDrag=()=>{resetUniversalDragBase();state.dragSession=null;state.dropSession=null;document.body.removeAttribute('data-drag-mode');document.querySelectorAll('.dragging').forEach(node=>node.classList.remove('dragging'))};
+ window.addEventListener('keydown',event=>{if(event.key==='Alt'&&state.dragSession){state.dragCopy=true;document.body.dataset.dragMode='copy'}if(event.key==='Escape'&&(state.dragRow||state.databaseDrag||state.timelineDrag)){event.preventDefault();resetUniversalDrag();clearDropTargets?.();toast('드래그를 취소했습니다.')}},true);
+ window.addEventListener('keyup',event=>{if(event.key==='Alt'&&state.dragSession){state.dragCopy=false;document.body.removeAttribute('data-drag-mode')}},true);
+ function guardDuplicateDrop(event){if(!state.dragSession)return true;if(state.dropSession===state.dragSession){event.preventDefault();event.stopImmediatePropagation();return false}state.dropSession=state.dragSession;return true}
+ const resetUniversalDragWithSession=resetUniversalDrag;
+ resetUniversalDrag=()=>{const completed=state.dropSession;resetUniversalDragWithSession();state.dropSession=completed};
+ const bindUniversalDatabaseDragWithDropGuard=bindUniversalDatabaseDrag;
+ bindUniversalDatabaseDrag=wrap=>{const viewNode=wrap.querySelector('.db-board,.db-calendar,.db-timeline');if(viewNode&&!viewNode.dataset.dragSessionGuard){viewNode.dataset.dragSessionGuard='1';viewNode.addEventListener('drop',event=>guardDuplicateDrop(event),true)}bindUniversalDatabaseDragWithDropGuard(wrap)};
+ const bindCalendarDragWithUniversalCopy=bindCalendarDrag;bindCalendarDrag=wrap=>{bindCalendarDragWithUniversalCopy(wrap);bindUniversalDatabaseDrag(wrap)};
+ const bindBlockInteractionsWithUniversalCopy=bindBlockInteractions;bindBlockInteractions=(row,handle)=>{bindBlockInteractionsWithUniversalCopy(row,handle);if(!canEdit())return;handle.addEventListener('dragstart',event=>setDragIntent(event),true);handle.addEventListener('dragend',resetUniversalDrag,true);row.addEventListener('dragover',event=>{if(!state.dragRow||state.dragRow===row)return;if(event.altKey)state.dragCopy=true;if(state.dragCopy){event.preventDefault();event.dataTransfer.dropEffect='copy'}},true);row.addEventListener('drop',event=>{if(!state.dragRow||!state.dragCopy||state.dragRow===row)return;event.preventDefault();event.stopImmediatePropagation();const sourceRows=selectedRows().filter(item=>item.isConnected);if(!sourceRows.includes(state.dragRow))sourceRows.unshift(state.dragRow);const blocks=sourceRows.flatMap(item=>{const data=blockDataFromRow(item);return Array.isArray(data)?data:[data]}),after=event.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2;let anchor=row;for(const block of blocks){const next=blockRow({...block,id:'blk_'+crypto.randomUUID().replaceAll('-','')},0);after?anchor.after(next):anchor.before(next);anchor=next}clearBlockSelection();renumberBlocks();scheduleSave();focusBlock(anchor,true);toast('블록을 복사했습니다.');resetUniversalDrag()},true)};
+ const bindBlockInteractionsWithDropGuard=bindBlockInteractions;
+ bindBlockInteractions=(row,handle)=>{if(canEdit())row.addEventListener('drop',event=>guardDuplicateDrop(event),true);bindBlockInteractionsWithDropGuard(row,handle)};
+ const bindBlockInteractionsWithDynamicMediaSelection=bindBlockInteractions;
+ bindBlockInteractions=(row,handle)=>{bindBlockInteractionsWithDynamicMediaSelection(row,handle);if(!canEdit())return;row.addEventListener('click',event=>{const image=event.target?.closest?.('.media-preview img:not(.inline-link-favicon)');if(!image||!row.contains(image))return;event.preventDefault();event.stopPropagation();selectBlock(row,event.shiftKey||event.ctrlKey||event.metaKey)})};
+ function bindBlockMarqueeSelection(){
+   const editor=$('block-editor');
+   if(!editor||editor.dataset.marqueeSelectionBound==='1')return;
+   editor.dataset.marqueeSelectionBound='1';
+   editor.setAttribute('aria-multiselectable','true');
+   const rows=()=>[...editor.children].filter(row=>row.classList.contains('block-row'));
+   const rowAtPoint=(clientX,clientY)=>{
+     const all=rows();
+     if(!all.length)return null;
+     const direct=document.elementFromPoint(clientX,clientY)?.closest?.('.block-row');
+     if(direct&&direct.parentElement===editor)return direct;
+     for(const row of all){const rect=row.getBoundingClientRect();if(clientY>=rect.top&&clientY<=rect.bottom)return row}
+     return clientY<all[0].getBoundingClientRect().top?all[0]:all.at(-1);
+   };
+   const inGutter=(row,event)=>{
+     const content=row.querySelector('.block-content,.todo-wrap,.toggle-wrap,.callout-wrap,.database-block,.media-block,.toc-block,.math-block');
+     const rect=content?.getBoundingClientRect();
+     return !rect||event.clientX<rect.left-8;
+   };
+   const applyRange=(drag,row)=>{
+     const all=rows(),from=all.indexOf(drag.anchor),to=all.indexOf(row);
+     if(from<0||to<0)return;
+     const next=new Set(drag.base),start=Math.min(from,to),end=Math.max(from,to);
+     for(let index=start;index<=end;index++)next.add(all[index].dataset.id);
+     state.selectedBlocks=next;syncBlockSelection();drag.current=row;drag.moved=drag.moved||row!==drag.anchor;
+   };
+   const finish=(event,cancelled=false)=>{
+     const drag=state.blockSelectionDrag;
+     if(!drag)return;
+     if(editor.hasPointerCapture?.(drag.pointerId))try{editor.releasePointerCapture(drag.pointerId)}catch{}
+     editor.classList.remove('block-selecting');state.blockSelectionDrag=null;
+     if(cancelled){state.selectedBlocks=drag.base;syncBlockSelection()}
+     event?.preventDefault?.();
+   };
+   editor.addEventListener('pointerdown',event=>{
+     if(!canEdit()||event.button!==0||event.target.closest('input,textarea,select,a,[contenteditable="true"],.block-handle,button'))return;
+     const row=event.target.closest('.block-row')||rowAtPoint(event.clientX,event.clientY);
+     if(!row||row.parentElement!==editor||!inGutter(row,event))return;
+     const additive=event.shiftKey||event.ctrlKey||event.metaKey;
+     const base=additive?new Set(state.selectedBlocks):new Set();
+     if(!additive)clearBlockSelection();
+     state.blockSelectionDrag={pointerId:event.pointerId,anchor:row,current:row,base,moved:false,startX:event.clientX,startY:event.clientY};
+     editor.classList.add('block-selecting');
+     try{editor.setPointerCapture(event.pointerId)}catch{}
+     applyRange(state.blockSelectionDrag,row);
+     event.preventDefault();
+   });
+   editor.addEventListener('pointermove',event=>{
+     const drag=state.blockSelectionDrag;
+     if(!drag||drag.pointerId!==event.pointerId)return;
+     const row=rowAtPoint(event.clientX,event.clientY);
+     if(row)applyRange(drag,row);
+     event.preventDefault();
+   });
+   editor.addEventListener('pointerup',event=>{if(state.blockSelectionDrag?.pointerId===event.pointerId)finish(event)});
+   editor.addEventListener('pointercancel',event=>{if(state.blockSelectionDrag?.pointerId===event.pointerId)finish(event,true)});
+   window.addEventListener('blur',()=>finish(null,true),true);
+ }
+ bindBlockMarqueeSelection();
+ bootstrap();`;
 
 class HttpError extends Error {
   constructor(status, message, details) {
@@ -878,7 +1375,7 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   if (request.method === 'GET' && path === '/health') return json({ ok: true, service: 'joripnote' });
-  if (request.method === 'GET' && path === '/app.css') return asset(CSS + UI_POLISH_CSS, 'text/css; charset=utf-8');
+  if (request.method === 'GET' && path === '/app.css') return asset(CSS + UI_POLISH_CSS + UI_SPACING_CSS, 'text/css; charset=utf-8');
   if (request.method === 'GET' && path === '/app.js') return asset(CLIENT_JS, 'text/javascript; charset=utf-8');
   if (request.method === 'GET' && /^\/api\/captcha\/[a-f0-9-]{36}\.svg$/.test(path)) return getCaptchaSvg(env, path.slice(13, -4));
   if (request.method === 'GET' && path === '/api/captcha') return createCaptcha(request, env);
@@ -920,20 +1417,26 @@ async function route(request, env) {
     await enforceIpAllowlist(request, env);
     const actor = await requireMember(request, env);
     if (request.method !== 'GET') assertSameOrigin(request);
-    if (request.method === 'GET' && path === '/api/me') return json({ user: publicUser(actor), membership: { role: actor.role } });
+    if (request.method === 'GET' && path === '/api/me') return json({ user: publicUser(actor), membership: { role: actor.role }, workspace: await readSpaceProfile(env.DB) });
     if (request.method === 'GET' && path === '/api/settings') return getWorkspaceSettings(request, env, actor);
     if (request.method === 'PATCH' && path === '/api/settings') return updateWorkspaceSettings(request, env, actor);
     if (path === '/api/documents' && request.method === 'GET') return listDocuments(url, env, actor);
     if (path === '/api/documents' && request.method === 'POST') return createDocument(request, env, actor);
     if (path === '/api/import/markdown' && request.method === 'POST') return importMarkdown(request, env, actor);
     if (path === '/api/import/notion-api/status' && request.method === 'GET') return notionApiStatus(env, actor);
-    if (path === '/api/import/notion-api/audit' && request.method === 'GET') return auditNotionApi(request, env, actor);
+    if (path === '/api/import/notion-api/users' && request.method === 'POST') return syncNotionPeople(env, actor);
+    if (path === '/api/import/notion-api/audit' && request.method === 'GET') {
+      if (url.searchParams.get('links') === '1') return auditImportedLinks(env, actor);
+      return auditNotionApi(request, env, actor);
+    }
+    if (path === '/api/import/notion-api/link-audit' && request.method === 'GET') return auditImportedLinks(env, actor);
     if (path === '/api/import/notion-api/views' && request.method === 'GET') {
       requireRole(actor, MANAGE_ROLES);
       const sourceId = normalizedNotionId(url.searchParams.get('data_source_id'));
       return json({ data_source_id: sourceId, views: await listNotionApiViews(env, sourceId) });
     }
     if (path === '/api/import/notion-api/search' && request.method === 'POST') return searchNotionApi(request, env, actor);
+    if (path === '/api/import/notion-api/linked-missing' && request.method === 'POST') return missingLinkedNotionItems(env, actor);
     const notionApiPageRoute = path.match(/^\/api\/import\/notion-api\/pages\/([0-9a-f-]{32,36})$/i);
     if (notionApiPageRoute && request.method === 'POST') return importNotionApiPage(request, env, actor, notionApiPageRoute[1]);
     const notionApiDataSourceRoute = path.match(/^\/api\/import\/notion-api\/data-sources\/([0-9a-f-]{32,36})$/i);
@@ -984,6 +1487,8 @@ async function route(request, env) {
     const documentAction = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})\/(favorite|trash|restore|duplicate)$/);
     if (documentAction) return documentActionRoute(request, env, actor, documentAction[1], documentAction[2]);
     if (path === '/api/members' && request.method === 'GET') return listMembers(url, env, actor);
+    if (path === '/api/notion-members' && request.method === 'GET') return listNotionMembers(env, actor);
+    if (path === '/api/admin/reset-notion-migration' && request.method === 'POST') return resetNotionMigration(request, env, actor);
     const memberRoute = path.match(/^\/api\/members\/([A-Za-z0-9_-]{8,80})$/);
     if (memberRoute && request.method === 'PATCH') return changeMemberRole(request, env, actor, memberRoute[1]);
     if (memberRoute && request.method === 'DELETE') return removeMember(env, actor, memberRoute[1]);
@@ -1069,6 +1574,8 @@ async function installAdmin(request, env) {
     db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_role', 'member', now),
     db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist_enabled', '0', now),
     db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist', '', now),
+    db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('space_mode', 'team', now),
+    db.prepare('INSERT OR IGNORE INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('space_name', 'JoripNote', now),
     db.prepare('INSERT INTO users (id, username, password_hash, password_salt, password_iterations, realtime_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(user.id, user.username, user.password_hash, user.password_salt, user.password_iterations, randomString(32), now),
     db.prepare('INSERT INTO project_members (project_id, user_id, role, joined_at, updated_at) VALUES (?, ?, ?, ?, ?)').bind(PROJECT_ID, user.id, 'owner', now, now),
     ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT OR IGNORE INTO workspace_templates
@@ -1114,11 +1621,13 @@ async function publicRegister(request, env) {
 
 async function getWorkspaceSettings(request, env, actor) {
   const db = requireDb(env);
-  const keys = ['public_signup_enabled', 'public_signup_role', 'ip_allowlist_enabled', 'ip_allowlist'];
+  const keys = ['public_signup_enabled', 'public_signup_role', 'ip_allowlist_enabled', 'ip_allowlist', 'space_mode', 'space_name'];
   const result = await db.prepare(`SELECT key,value FROM app_settings WHERE key IN (${keys.map(() => '?').join(',')})`).bind(...keys).all();
   const values = Object.fromEntries((result.results || []).map(row => [row.key, row.value]));
   return json({
     can_manage_security: actor.role === 'owner',
+    space_mode: values.space_mode === 'personal' ? 'personal' : 'team',
+    space_name: normalizeSpaceName(values.space_name || 'JoripNote'),
     public_signup_enabled: values.public_signup_enabled === '1',
     public_signup_role: ['member', 'viewer'].includes(values.public_signup_role) ? values.public_signup_role : 'member',
     ip_allowlist_enabled: values.ip_allowlist_enabled === '1',
@@ -1131,6 +1640,11 @@ async function updateWorkspaceSettings(request, env, actor) {
   if (actor.role !== 'owner') throw new HttpError(403, 'Owner만 가입과 IP 접근 정책을 변경할 수 있습니다.');
   const body = await readJson(request);
   const updates = {};
+  if ('space_mode' in body) {
+    if (!['personal', 'team'].includes(body.space_mode)) throw new HttpError(400, '공간 사용 방식이 올바르지 않습니다.');
+    updates.space_mode = body.space_mode;
+  }
+  if ('space_name' in body) updates.space_name = normalizeSpaceName(body.space_name);
   if ('public_signup_enabled' in body) {
     if (typeof body.public_signup_enabled !== 'boolean') throw new HttpError(400, '회원가입 설정이 올바르지 않습니다.');
     updates.public_signup_enabled = body.public_signup_enabled ? '1' : '0';
@@ -1158,6 +1672,18 @@ async function updateWorkspaceSettings(request, env, actor) {
 async function readAppSetting(db, key, fallback = '') {
   const row = await db.prepare('SELECT value FROM app_settings WHERE key=?').bind(key).first();
   return row ? String(row.value) : fallback;
+}
+
+function normalizeSpaceName(value) {
+  const name = String(value || '').normalize('NFKC').trim();
+  if (!name || name.length > 40 || /[\u0000-\u001f\u007f]/.test(name)) throw new HttpError(400, '공간 이름은 1–40자로 입력해 주세요.');
+  return name;
+}
+
+async function readSpaceProfile(db) {
+  const result = await db.prepare("SELECT key,value FROM app_settings WHERE key IN ('space_mode','space_name')").all();
+  const values = Object.fromEntries((result.results || []).map(row => [row.key, row.value]));
+  return { space_mode: values.space_mode === 'personal' ? 'personal' : 'team', space_name: normalizeSpaceName(values.space_name || 'JoripNote') };
 }
 
 function clientIp(request) {
@@ -1216,15 +1742,40 @@ async function createSessionResponse(db, user, role, status = 200) {
     db.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now),
     db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await sha256Hex(token), user.id, now + SESSION_TTL_SECONDS, now)
   ]);
-  return json({ user: publicUser(user), membership: { role } }, status, { 'set-cookie': sessionCookie(token) });
+  return json({ user: publicUser(user), membership: { role }, workspace: await readSpaceProfile(db) }, status, { 'set-cookie': sessionCookie(token) });
+}
+
+async function enrichSearchDocuments(db, rows, terms) {
+  if (!rows.length || !terms.length) return;
+  const clauses = rows.map(() => '(document_id=? AND snapshot_id=?)').join(' OR ');
+  const values = rows.flatMap((row) => [row.id, row.active_snapshot_id]);
+  const result = await db.prepare(`SELECT document_id, block_type, content, position FROM document_blocks WHERE ${clauses} ORDER BY position ASC`).bind(...values).all();
+  const blocksByDocument = new Map();
+  for (const block of result.results || []) {
+    if (!blocksByDocument.has(block.document_id)) blocksByDocument.set(block.document_id, []);
+    blocksByDocument.get(block.document_id).push(block);
+  }
+  for (const row of rows) {
+    const titleText = searchText(row.title);
+    const titleMatch = terms.every((term) => titleText.toLocaleLowerCase('ko-KR').includes(term));
+    const blocks = (blocksByDocument.get(row.id) || []).filter((block) => !['database', 'divider', 'toc'].includes(block.block_type));
+    const matchingBlock = blocks.find((block) => terms.every((term) => searchBlockText(block).toLocaleLowerCase('ko-KR').includes(term)))
+      || blocks.find((block) => terms.some((term) => searchBlockText(block).toLocaleLowerCase('ko-KR').includes(term)))
+      || blocks[0];
+    row.search_match = titleMatch ? 'title' : 'content';
+    row.preview = matchingBlock ? searchSnippet(searchBlockText(matchingBlock), terms) : '';
+    row.preview_type = matchingBlock?.block_type || '';
+  }
 }
 
 async function listDocuments(url, env, actor) {
   const scope = String(url.searchParams.get('scope') || 'all');
-  const limit = boundedLimit(url.searchParams.get('limit'), 20, 50);
+  const limit = boundedLimit(url.searchParams.get('limit'), 20, scope === 'sidebar' ? 200 : 50);
   const cursor = decodeCursor(url.searchParams.get('cursor'));
   const parentId = url.searchParams.get('parent_id');
   const q = normalizeSearch(url.searchParams.get('q'));
+  const kind = ['all', 'document', 'database', 'imported'].includes(String(url.searchParams.get('kind'))) ? String(url.searchParams.get('kind')) : 'all';
+  const sort = ['updated_desc', 'updated_asc', 'title_asc', 'created_desc'].includes(String(url.searchParams.get('sort'))) ? String(url.searchParams.get('sort')) : 'updated_desc';
   let sql;
   let values;
   if (scope === 'favorites') {
@@ -1252,22 +1803,41 @@ async function listDocuments(url, env, actor) {
     sql += ' ORDER BY d.trashed_at DESC, d.id DESC LIMIT ?';
   } else if (scope === 'search') {
     if (!q) return json({ documents: [], next_cursor: null });
-    sql = `SELECT d.*, EXISTS(SELECT 1 FROM document_favorites f WHERE f.project_id=? AND f.user_id=? AND f.document_id=d.id) AS is_favorite,
-      EXISTS(SELECT 1 FROM documents c WHERE c.project_id=d.project_id AND c.parent_document_id=d.id AND c.status='active') AS has_children,
-      d.updated_at AS list_sort
-      FROM documents d WHERE d.project_id=? AND d.status='active' AND (
+    const terms = searchTerms(q);
+    if (!terms.length) return json({ documents: [], next_cursor: null });
+    const searchClause = terms.map(() => `(
         instr(d.title_search, ?) > 0 OR EXISTS(
           SELECT 1 FROM document_blocks b
           WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND instr(lower(b.content), ?) > 0
         )
-      )`;
-    values = [PROJECT_ID, actor.id, PROJECT_ID, q, q];
+      )`).join(' AND ');
+    sql = `SELECT d.*, EXISTS(SELECT 1 FROM document_favorites f WHERE f.project_id=? AND f.user_id=? AND f.document_id=d.id) AS is_favorite,
+      EXISTS(SELECT 1 FROM documents c WHERE c.project_id=d.project_id AND c.parent_document_id=d.id AND c.status='active') AS has_children,
+      (SELECT COUNT(*) FROM documents c WHERE c.project_id=d.project_id AND c.parent_document_id=d.id AND c.status='active') AS child_count,
+      (SELECT p.title FROM documents p WHERE p.project_id=d.project_id AND p.id=d.parent_document_id) AS parent_title,
+      d.updated_at AS list_sort
+      FROM documents d WHERE d.project_id=? AND d.status='active' AND ${searchClause}`;
+    values = [PROJECT_ID, actor.id, PROJECT_ID, ...terms.flatMap((term) => [term, term])];
     if (cursor) { sql += ' AND (d.updated_at < ? OR (d.updated_at = ? AND d.id < ?))'; values.push(cursor.sort, cursor.sort, cursor.id); }
     sql += ' ORDER BY d.updated_at DESC, d.id DESC LIMIT ?';
   } else {
+    const includeListDetails = scope !== 'sidebar';
+    const listDetailsSql = includeListDetails
+      ? `substr(COALESCE((SELECT b.content FROM document_blocks b WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND b.block_type NOT IN ('database','divider','toc') ORDER BY b.position ASC LIMIT 1),''),1,600) AS preview,
+      COALESCE((SELECT b.block_type FROM document_blocks b WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND b.block_type NOT IN ('database','divider','toc') ORDER BY b.position ASC LIMIT 1),'') AS preview_type,
+      EXISTS(SELECT 1 FROM document_blocks b WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND b.block_type='database') AS has_database`
+      : `'' AS preview, '' AS preview_type, 0 AS has_database`;
+    const sortConfig = sort === 'updated_asc'
+      ? { column: 'd.updated_at', direction: 'ASC', compare: '>', idCompare: '>' }
+      : sort === 'title_asc'
+        ? { column: 'd.title_search', direction: 'ASC', compare: '>', idCompare: '>' }
+        : sort === 'created_desc'
+          ? { column: 'd.created_at', direction: 'DESC', compare: '<', idCompare: '<' }
+          : { column: 'd.updated_at', direction: 'DESC', compare: '<', idCompare: '<' };
     sql = `SELECT d.*, EXISTS(SELECT 1 FROM document_favorites f WHERE f.project_id=? AND f.user_id=? AND f.document_id=d.id) AS is_favorite,
       EXISTS(SELECT 1 FROM documents c WHERE c.project_id=d.project_id AND c.parent_document_id=d.id AND c.status='active') AS has_children,
-      d.updated_at AS list_sort
+      (SELECT COUNT(*) FROM documents c WHERE c.project_id=d.project_id AND c.parent_document_id=d.id AND c.status='active') AS child_count,
+      ${sortConfig.column} AS list_sort, ${listDetailsSql}
       FROM documents d WHERE d.project_id=? AND d.status='active'`;
     values = [PROJECT_ID, actor.id, PROJECT_ID];
     if (parentId) {
@@ -1278,18 +1848,33 @@ async function listDocuments(url, env, actor) {
     } else {
       sql += ' AND d.parent_document_id IS NULL';
     }
-    if (cursor) { sql += ' AND (d.updated_at < ? OR (d.updated_at = ? AND d.id < ?))'; values.push(cursor.sort, cursor.sort, cursor.id); }
-    sql += ' ORDER BY d.updated_at DESC, d.id DESC LIMIT ?';
+    if (scope !== 'sidebar') {
+      if (q) {
+        sql += ` AND (instr(d.title_search, ?) > 0 OR EXISTS(SELECT 1 FROM document_blocks b WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND instr(lower(b.content), ?) > 0))`;
+        values.push(q, q);
+      }
+      if (kind === 'database') sql += ` AND EXISTS(SELECT 1 FROM document_blocks b WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND b.block_type='database')`;
+      if (kind === 'document') sql += ` AND NOT EXISTS(SELECT 1 FROM document_blocks b WHERE b.document_id=d.id AND b.snapshot_id=d.active_snapshot_id AND b.block_type='database')`;
+      if (kind === 'imported') sql += ' AND d.source_page_id IS NOT NULL';
+    }
+    if (cursor) {
+      sql += ` AND (${sortConfig.column} ${sortConfig.compare} ? OR (${sortConfig.column} = ? AND d.id ${sortConfig.idCompare} ?))`;
+      values.push(cursor.sort, cursor.sort, cursor.id);
+    }
+    sql += scope === 'sidebar'
+      ? ' ORDER BY CASE WHEN d.source_page_id IS NULL THEN 1 ELSE 0 END, d.created_at ASC, d.id ASC LIMIT ?'
+      : ` ORDER BY ${sortConfig.column} ${sortConfig.direction}, d.id ${sortConfig.direction} LIMIT ?`;
   }
   values.push(limit + 1);
   const result = await env.DB.prepare(sql).bind(...values).all();
   const rows = result.results || [];
   const accessible = [];
   for (const row of rows) if ((await documentPermission(env.DB, actor, row)).can_view) accessible.push(row);
+  if (scope === 'search' && q) await enrichSearchDocuments(env.DB, accessible.slice(0, limit), searchTerms(q));
   const hasMore = rows.length > limit;
   const documents = accessible.slice(0, limit).map(publicDocument);
   const last = documents.at(-1);
-  return json({ documents, next_cursor: hasMore && last ? encodeCursor({ sort: Number(last.list_sort || last.updated_at), id: last.id }) : null });
+  return json({ documents, next_cursor: hasMore && last ? encodeCursor({ sort: last.list_sort == null ? last.updated_at : last.list_sort, id: last.id }) : null });
 }
 
 async function createDocument(request, env, actor) {
@@ -1338,15 +1923,14 @@ async function importMarkdown(request, env, actor) {
       VALUES (?, ?, NULL, ?, ?, 'active', 1, ?, ?, ?, ?, ?)`).bind(id, PROJECT_ID, title, normalizeSearch(title), snapshotId, actor.id, actor.id, now, now)
   ];
   blocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks
-    (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-    .bind('blk_' + randomString(24), id, snapshotId, block.type, block.content.slice(0, 20000), index, block.checked ? 1 : 0, now, now)));
+    (id,document_id,snapshot_id,block_type,content,position,checked,indent_level,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .bind('blk_' + randomString(24), id, snapshotId, block.type, block.content.slice(0, 20000), index, block.checked ? 1 : 0, Number(block.indent_level || 0), now, now)));
   statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(id, PROJECT_ID, 'workspace', actor.id, now));
   statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, id, 1, snapshotId, title, actor.id, now));
   await env.DB.batch(statements);
   await recordActivity(env.DB, actor, id, 'document_imported', 'Markdown 문서를 가져왔습니다.');
   return json({ document: { id, title, parent_document_id: null, version: 1 }, imported_blocks: blocks.length }, 201);
 }
-
 async function requireLargeNotionImport(env, actor, importId) {
   requireRole(actor, MANAGE_ROLES, 'Owner와 Admin만 Notion 전체 가져오기를 실행할 수 있습니다.');
   if (!env.STORAGE || typeof env.STORAGE.put !== 'function') throw new HttpError(503, '스토리지 연결을 확인해 주세요.');
@@ -1545,8 +2129,8 @@ async function importLargeNotionDocuments(request, env, actor, importId) {
         (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at,source_page_id,source_import_id,source_path,import_baseline_snapshot_id,import_transform_version)
         VALUES (?,?,?,?,?,'active',1,?,?,?,?,?,?,?,?,?,?)`).bind(row.document_id, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt, sourcePageId, importId, row.source_path, snapshotId, transformVersion)];
     blocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks
-      (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind('blk_' + randomString(24), row.document_id, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
+      (id,document_id,snapshot_id,block_type,content,position,checked,indent_level,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .bind('blk_' + randomString(24), row.document_id, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, Number(block.indent_level || 0), createdAt, createdAt)));
     if (!existingDocument) statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(row.document_id, PROJECT_ID, 'workspace', actor.id, createdAt));
     statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, row.document_id, version, snapshotId, title, actor.id, createdAt));
     for (const asset of assets.results || []) {
@@ -1713,8 +2297,8 @@ async function importNotionZip(request, env, actor) {
         (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
         VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(documentId, PROJECT_ID, parentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt)];
       blocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks
-        (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-        .bind('blk_' + randomString(24), documentId, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
+        (id,document_id,snapshot_id,block_type,content,position,checked,indent_level,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .bind('blk_' + randomString(24), documentId, snapshotId, block.type, String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, Number(block.indent_level || 0), createdAt, createdAt)));
       statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(documentId, PROJECT_ID, 'workspace', actor.id, createdAt));
       statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, documentId, 1, snapshotId, title, actor.id, createdAt));
       for (const row of fileRows) statements.push(env.DB.prepare(`INSERT INTO file_uploads
@@ -1813,7 +2397,24 @@ function notionPageTitle(page) {
   return notionRichText(title?.title).normalize('NFKC').trim().slice(0, 160) || '제목 없음';
 }
 
-function notionPropertyText(property) {
+function notionPageIconMeta(icon) {
+  if (!icon || typeof icon !== 'object') return {};
+  if (icon.type === 'emoji' && icon.emoji) return { emoji: String(icon.emoji).slice(0, 32) };
+  const value = icon.external?.url || icon.file?.url || icon.custom_emoji?.url || '';
+  if (!/^https?:\/\/[^\s<>'"]+$/i.test(String(value))) return {};
+  try { return { url: new URL(value).href }; } catch { return {}; }
+}
+
+function notionPersonText(user, directory = new Map()) {
+  if (!user || typeof user !== 'object') return '';
+  const saved = directory.get(normalizedNotionId(user.id)) || {};
+  const name = String(user.name || saved.name || '').trim();
+  const email = String(user.person?.email || saved.email || '').trim();
+  if (name && email) return name + ' <' + email + '>';
+  return name || email || '사용자 정보 권한 필요';
+}
+
+function notionPropertyText(property, directory = new Map()) {
   if (!property || typeof property !== 'object') return '';
   const value = property[property.type];
   if (property.type === 'title' || property.type === 'rich_text') return notionRichText(value);
@@ -1821,18 +2422,70 @@ function notionPropertyText(property) {
   if (property.type === 'select' || property.type === 'status') return String(value?.name || '');
   if (property.type === 'multi_select') return (value || []).map(item => item.name).join(', ');
   if (property.type === 'date') return value ? String(value.start || '') + (value.end ? ' → ' + value.end : '') : '';
-  if (property.type === 'people' || property.type === 'created_by' || property.type === 'last_edited_by') return (Array.isArray(value) ? value : [value]).filter(Boolean).map(item => item.name || item.id).join(', ');
+  if (property.type === 'people' || property.type === 'created_by' || property.type === 'last_edited_by') return (Array.isArray(value) ? value : [value]).filter(Boolean).map(item => notionPersonText(item, directory)).join(', ');
   if (property.type === 'files') return (value || []).map(item => item.name || item.file?.url || item.external?.url || '').filter(Boolean).join(', ');
   if (property.type === 'checkbox') return value ? 'true' : 'false';
   if (['url', 'email', 'phone_number', 'created_time', 'last_edited_time'].includes(property.type)) return String(value || '');
   if (property.type === 'relation') return (value || []).map(item => item.id).join(', ');
-  if (property.type === 'formula') return notionPropertyText({ type: value?.type, [value?.type]: value?.[value?.type] });
+  if (property.type === 'formula') return notionPropertyText({ type: value?.type, [value?.type]: value?.[value?.type] }, directory);
   if (property.type === 'unique_id') return String(value?.prefix || '') + String(value?.number ?? '');
   if (property.type === 'rollup') {
-    if (value?.type === 'array') return (value.array || []).map(item => notionPropertyText(item)).join(', ');
+    if (value?.type === 'array') return (value.array || []).map(item => notionPropertyText(item, directory)).join(', ');
     return String(value?.[value?.type] ?? '');
   }
   try { return JSON.stringify(value ?? '').slice(0, 500); } catch { return ''; }
+}
+
+async function loadNotionPeopleDirectory(env) {
+  const result = await env.DB.prepare('SELECT notion_user_id,name,email_ciphertext,email_nonce FROM notion_people WHERE project_id=?').bind(PROJECT_ID).all();
+  const directory = new Map();
+  for (const row of result.results || []) {
+    let email = '';
+    if (row.email_ciphertext && row.email_nonce) try { email = await decryptEmail(env, row.email_ciphertext, row.email_nonce); } catch {}
+    directory.set(normalizedNotionId(row.notion_user_id), { name: String(row.name || ''), email });
+  }
+  return directory;
+}
+
+async function syncNotionPeople(env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  const users = [];
+  let cursor = null;
+  do {
+    const query = new URLSearchParams({ page_size: '100' });
+    if (cursor) query.set('start_cursor', cursor);
+    const page = await notionApiRequest(env, '/users?' + query);
+    users.push(...(page.results || []));
+    cursor = page.has_more ? page.next_cursor : null;
+  } while (cursor && users.length < 5000);
+  const now = nowSeconds();
+  const seen = new Set();
+  let people = 0, emails = 0;
+  for (let offset = 0; offset < users.length; offset += 100) {
+    const statements = [];
+    for (const user of users.slice(offset, offset + 100)) {
+      const id = normalizedNotionId(user.id);
+      if (!id) continue;
+      seen.add(id);
+      const type = ['person', 'bot'].includes(user.type) ? user.type : 'unknown';
+      if (type === 'person') people += 1;
+      let email = '';
+      try { if (user.person?.email) email = normalizeEmail(user.person.email); } catch {}
+      if (email) emails += 1;
+      const encrypted = email ? await encryptEmail(env, email) : { ciphertext: null, nonce: null };
+      const blind = email ? await emailBlindIndex(env, email) : null;
+      statements.push(env.DB.prepare(`INSERT INTO notion_people
+        (project_id,notion_user_id,user_type,name,avatar_url,email_ciphertext,email_nonce,email_blind_index,last_seen_at,synced_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(project_id,notion_user_id) DO UPDATE SET user_type=excluded.user_type,name=excluded.name,avatar_url=excluded.avatar_url,email_ciphertext=excluded.email_ciphertext,email_nonce=excluded.email_nonce,email_blind_index=excluded.email_blind_index,last_seen_at=excluded.last_seen_at,synced_at=excluded.synced_at`)
+        .bind(PROJECT_ID, id, type, String(user.name || '').slice(0, 160) || null, String(user.avatar_url || '').slice(0, 1000) || null, encrypted.ciphertext, encrypted.nonce, blind, now, now));
+    }
+    if (statements.length) await env.DB.batch(statements);
+  }
+  const existing = await env.DB.prepare('SELECT notion_user_id FROM notion_people WHERE project_id=?').bind(PROJECT_ID).all();
+  const stale = (existing.results || []).filter(row => !seen.has(String(row.notion_user_id)));
+  for (let offset = 0; offset < stale.length; offset += 100) await env.DB.batch(stale.slice(offset, offset + 100).map(row => env.DB.prepare('DELETE FROM notion_people WHERE project_id=? AND notion_user_id=?').bind(PROJECT_ID, row.notion_user_id)));
+  return json({ users: users.length, people, bots: users.length - people, emails, missing_emails: Math.max(0, people - emails), email_complete: people === emails });
 }
 
 function notionPropertyColumn(name, property, index) {
@@ -1904,14 +2557,14 @@ async function persistNotionMarkdownFiles(env, markdown, pageId, origin) {
   const urls = candidates.filter(value => { try { const host = new URL(value).hostname; return /(?:notion-static\.com|notionusercontent\.com|amazonaws\.com)$/.test(host); } catch { return false; } }).slice(0, 50);
   const files = [];
   let rewritten = markdown;
-  for (let index = 0; index < urls.length; index += 1) {
+  const download = async index => {
     const url = urls[index];
     const response = await fetch(url);
-    if (!response.ok) continue;
+    if (!response.ok) return null;
     const size = Number(response.headers.get('content-length')) || 0;
-    if (size > NOTION_DOCUMENT_MAX_BYTES) continue;
+    if (size > NOTION_DOCUMENT_MAX_BYTES) return null;
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.length > NOTION_DOCUMENT_MAX_BYTES) continue;
+    if (bytes.length > NOTION_DOCUMENT_MAX_BYTES) return null;
     const fileId = 'fil_notion_' + normalizedNotionId(pageId).slice(0, 20) + '_' + String(index).padStart(2, '0');
     const storageKey = 'documents/' + notionDocumentId(pageId) + '/' + fileId;
     const contentType = String(response.headers.get('content-type') || 'application/octet-stream').split(';')[0];
@@ -1919,13 +2572,19 @@ async function persistNotionMarkdownFiles(env, markdown, pageId, origin) {
     try { filename = decodeURIComponent(new URL(url).pathname.split('/').at(-1) || filename).slice(0, 180); } catch {}
     await env.STORAGE.put(storageKey, bytes);
     const localUrl = origin + '/api/files/' + fileId;
-    rewritten = rewritten.split(url).join(localUrl).split(url.replaceAll('&', '&amp;')).join(localUrl);
-    files.push({ id: fileId, storageKey, filename: safeImportName(filename), contentType, size: bytes.length });
+    return { url, localUrl, file: { id: fileId, storageKey, filename: safeImportName(filename), contentType, size: bytes.length } };
+  };
+  for (let offset = 0; offset < urls.length; offset += 4) {
+    const downloaded = await Promise.all(urls.slice(offset, offset + 4).map((_url, index) => download(offset + index)));
+    for (const item of downloaded.filter(Boolean)) {
+      rewritten = rewritten.split(item.url).join(item.localUrl).split(item.url.replaceAll('&', '&amp;')).join(item.localUrl);
+      files.push(item.file);
+    }
   }
   return { markdown: rewritten, files };
 }
 
-async function upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title, blocks, files = [], database = false }) {
+async function upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title, blocks, files = [], database = false, pageIcon = {} }) {
   const normalizedSourceId = normalizedNotionId(sourceId);
   const existing = await env.DB.prepare('SELECT id,version FROM documents WHERE project_id=? AND source_page_id=?').bind(PROJECT_ID, normalizedSourceId).first();
   const documentId = existing?.id || notionDocumentId(sourceId, database);
@@ -1936,10 +2595,12 @@ async function upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, t
   const createdAt = nowSeconds();
   const sourcePath = 'notion-api/' + normalizedSourceId + '/' + (parentSourceId ? normalizedNotionId(parentSourceId) : 'root');
   const normalizedBlocks = (blocks.length ? blocks : [{ type: 'text', content: '', checked: false }]).slice(0, 500);
+  const iconEmoji = String(pageIcon?.emoji || '').trim().slice(0, 32) || null;
+  const iconUrl = String(pageIcon?.url || '').trim().slice(0, 2000) || null;
   const statements = existing
-    ? [env.DB.prepare(`UPDATE documents SET parent_document_id=?,title=?,title_search=?,status='active',version=?,active_snapshot_id=?,updated_by=?,updated_at=?,source_path=?,import_transform_version=? WHERE id=? AND project_id=?`).bind(parentDocumentId, title, normalizeSearch(title), version, snapshotId, actor.id, createdAt, sourcePath, 3, documentId, PROJECT_ID)]
-    : [env.DB.prepare(`INSERT INTO documents (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at,source_page_id,source_path,import_transform_version) VALUES (?,?,?,?,?,'active',1,?,?,?,?,?,?,?,?)`).bind(documentId, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt, normalizedSourceId, sourcePath, 3)];
-  normalizedBlocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks (id,document_id,snapshot_id,block_type,content,position,checked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`).bind('blk_' + randomString(24), documentId, snapshotId, BLOCK_TYPES.has(block.type) ? block.type : 'text', String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, createdAt, createdAt)));
+    ? [env.DB.prepare(`UPDATE documents SET parent_document_id=?,title=?,title_search=?,status='active',version=?,active_snapshot_id=?,updated_by=?,updated_at=?,source_path=?,import_transform_version=?,page_icon_emoji=?,page_icon_url=? WHERE id=? AND project_id=?`).bind(parentDocumentId, title, normalizeSearch(title), version, snapshotId, actor.id, createdAt, sourcePath, 3, iconEmoji, iconUrl, documentId, PROJECT_ID)]
+    : [env.DB.prepare(`INSERT INTO documents (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at,source_page_id,source_path,import_transform_version,page_icon_emoji,page_icon_url) VALUES (?,?,?,?,?,'active',1,?,?,?,?,?,?,?, ?,?,?)`).bind(documentId, PROJECT_ID, parentDocumentId, title, normalizeSearch(title), snapshotId, actor.id, actor.id, createdAt, createdAt, normalizedSourceId, sourcePath, 3, iconEmoji, iconUrl)];
+  normalizedBlocks.forEach((block, index) => statements.push(env.DB.prepare(`INSERT INTO document_blocks (id,document_id,snapshot_id,block_type,content,position,checked,indent_level,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind('blk_' + randomString(24), documentId, snapshotId, BLOCK_TYPES.has(block.type) ? block.type : 'text', String(block.content || '').slice(0, block.type === 'database' ? 100000 : 20000), index, block.checked ? 1 : 0, Number(block.indent_level || 0), createdAt, createdAt)));
   if (!existing) statements.push(env.DB.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(documentId, PROJECT_ID, 'workspace', actor.id, createdAt));
   statements.push(env.DB.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + randomString(24), PROJECT_ID, documentId, version, snapshotId, title, actor.id, createdAt));
   for (const file of files) statements.push(env.DB.prepare(`INSERT INTO file_uploads (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET document_id=excluded.document_id,storage_key=excluded.storage_key,filename=excluded.filename,content_type=excluded.content_type,size=excluded.size`).bind(file.id, PROJECT_ID, documentId, file.storageKey, file.filename, file.contentType, file.size, actor.id, createdAt));
@@ -1969,20 +2630,30 @@ async function auditNotionApi(request, env, actor) {
     cursor = page.has_more ? page.next_cursor : null;
   } while (cursor && sources.size < 500);
   const rows = [];
-  for (const sourceId of sources.keys()) {
+  const sourceIds = [...sources.keys()];
+  let sourceOffset = 0;
+  async function auditSourceWorker() {
+    while (sourceOffset < sourceIds.length) {
+      const sourceId = sourceIds[sourceOffset++];
     const source = await notionApiRequest(env, '/data_sources/' + sourceId);
     const views = await listNotionApiViews(env, sourceId).catch(() => []);
     let remoteRows = 0;
+    const remoteRowIds = [];
     let pageCursor = null;
     do {
       const payload = { page_size: 100 };
       if (pageCursor) payload.start_cursor = pageCursor;
       const result = await notionApiRequest(env, '/data_sources/' + sourceId + '/query', { method: 'POST', body: JSON.stringify(payload) });
       remoteRows += (result.results || []).length;
+      for (const row of result.results || []) {
+        const id = normalizedNotionId(row?.id);
+        if (id) remoteRowIds.push(id);
+      }
       pageCursor = result.has_more ? result.next_cursor : null;
     } while (deep && pageCursor && remoteRows < 10000);
     const database = await env.DB.prepare("SELECT id,title FROM documents WHERE project_id=? AND source_page_id=? AND source_path LIKE 'notion-api/%' AND status='active' LIMIT 1").bind(PROJECT_ID, sourceId).first();
     let importedRows = 0;
+    const importedRowIds = [];
     let localVersion = null;
     let localColumns = [];
     let localViews = [];
@@ -1992,7 +2663,18 @@ async function auditNotionApi(request, env, actor) {
       // the fidelity audit's imported-row count on every incremental re-import.
       const blocks = await env.DB.prepare("SELECT b.content FROM document_blocks b JOIN documents d ON d.id=b.document_id AND d.active_snapshot_id=b.snapshot_id WHERE b.document_id=? AND b.block_type='database'").bind(database.id).all();
       for (const block of blocks.results || []) {
-        try { const model = JSON.parse(block.content); importedRows += Array.isArray(model.rows) ? model.rows.length : 0; localVersion = Math.max(Number(localVersion || 0), Number(model.version || 0)); localColumns = model.columns || localColumns; localViews = model.views || localViews; } catch {}
+        try {
+          const model = JSON.parse(block.content);
+          const modelRows = Array.isArray(model.rows) ? model.rows : [];
+          importedRows += modelRows.length;
+          for (const row of modelRows) {
+            const id = normalizedNotionId(row?.source_id || row?.sourceId);
+            if (id) importedRowIds.push(id);
+          }
+          localVersion = Math.max(Number(localVersion || 0), Number(model.version || 0));
+          localColumns = model.columns || localColumns;
+          localViews = model.views || localViews;
+        } catch {}
       }
     }
     const missing = remoteRows - importedRows;
@@ -2003,10 +2685,106 @@ async function auditNotionApi(request, env, actor) {
     if (views.length && !localViews.length) findings.push({ severity: 'FAIL', code: 'views_not_saved', message: '원본 뷰 구성이 저장되지 않았습니다.' });
     if (localColumns.length >= DATABASE_MAX_COLUMNS) findings.push({ severity: 'WARN', code: 'column_limit', message: '속성 상한에 도달했습니다.' });
     if (!findings.length) findings.push({ severity: 'PASS', code: 'ok', message: '행과 뷰 구성이 일치합니다.' });
-    rows.push({ data_source_id: sourceId, title: notionRichText(source.title) || database?.title || 'Notion 데이터베이스', remote_rows: remoteRows, imported_rows: importedRows, property_count: Object.keys(source.properties || {}).length, imported_property_count: localColumns.length, views: views.map(view => ({ id: view.id, name: view.name, type: view.type, order: view.order })), imported_views: localViews.map(view => ({ id: view.id, name: view.name, type: view.type, order: view.order })), local_version: localVersion, findings });
+    const importedIdSet = new Set(importedRowIds);
+    const missingRowIds = [...new Set(remoteRowIds.filter(id => !importedIdSet.has(id)))];
+    const duplicateImportedRowIds = [...new Set(importedRowIds.filter((id, index) => importedRowIds.indexOf(id) !== index))];
+      rows.push({ data_source_id: sourceId, title: notionRichText(source.title) || database?.title || 'Notion 데이터베이스', remote_rows: remoteRows, imported_rows: importedRows, missing_row_ids: missingRowIds.slice(0, 100), duplicate_imported_row_ids: duplicateImportedRowIds.slice(0, 100), property_count: Object.keys(source.properties || {}).length, imported_property_count: localColumns.length, views: views.map(view => ({ id: view.id, name: view.name, type: view.type, order: view.order })), imported_views: localViews.map(view => ({ id: view.id, name: view.name, type: view.type, order: view.order })), local_version: localVersion, findings });
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(3, sourceIds.length || 1) }, () => auditSourceWorker()));
   const totals = { data_sources: rows.length, remote_rows: rows.reduce((sum, row) => sum + row.remote_rows, 0), imported_rows: rows.reduce((sum, row) => sum + row.imported_rows, 0), pass: rows.filter(row => row.findings.every(item => item.severity === 'PASS')).length, warn: rows.filter(row => row.findings.some(item => item.severity === 'WARN')).length, fail: rows.filter(row => row.findings.some(item => item.severity === 'FAIL')).length };
   return json({ generated_at: new Date().toISOString(), deep, totals, data_sources: rows });
+}
+
+function collectImportedLinkCandidates(value) {
+  const source = String(value || '').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&amp;', '&');
+  const candidates = [];
+  const add = (url, kind, index) => {
+    const href = String(url || '').trim();
+    if (!href) return;
+    candidates.push({ url: href, kind, index: Number(index || 0) });
+  };
+  const masked = source.replace(/<(?:page|mention-page|unknown)\b[^>]*\burl\s*=\s*(["'])(.*?)\1[^>]*>(?:[\s\S]*?<\/page>)?\s*/gi, (full, _quote, href, offset) => {
+    add(href, 'notion_tag', offset);
+    return ' '.repeat(full.length);
+  }).replace(/<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>[\s\S]*?<\/a>/gi, (full, _quote, href, offset) => {
+    add(href, 'html_anchor', offset);
+    return ' '.repeat(full.length);
+  }).replace(/!?\[[^\]\r\n]+\]\(([^)\s]+)\)/gi, (full, href, offset) => {
+    add(href, 'markdown_link', offset);
+    return ' '.repeat(full.length);
+  });
+  for (const match of masked.matchAll(/\/doc\/doc_(?:notion|notiondb)_[A-Za-z0-9_-]{8,80}/gi)) add(match[0], 'local_anchor', match.index);
+  for (const match of masked.matchAll(/\bhttps?:\/\/[^\s<>&"']+/gi)) add(match[0].replace(/[),.;!?]+$/g, ''), 'bare_http', match.index);
+  for (const match of source.matchAll(/\b(?:javascript|data|file|mailto|tel):[^\s<>&"']+/gi)) add(match[0], 'unsupported_scheme', match.index);
+  return candidates;
+}
+
+function auditLinkTarget(rawUrl, existingDocumentIds, existingSourceIds) {
+  const url = String(rawUrl || '').trim();
+  const local = url.match(/^\/doc\/(doc_[A-Za-z0-9_-]{8,80})/i);
+  if (local) return { category: 'internal_local', resolved: existingDocumentIds.has(local[1]) };
+  const protocol = url.match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase() || '';
+  if (protocol && !['http', 'https'].includes(protocol)) return { category: 'unsupported_scheme', resolved: false };
+  if (!protocol) return { category: 'unresolved', resolved: false };
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const notionHost = host === 'app.notion.com' || host === 'notion.so' || host === 'www.notion.so' || host === 'notion.site' || host === 'www.notion.site' || host.endsWith('.notion.so') || host.endsWith('.notion.site');
+    if (notionHost) {
+      const notionId = notionPageIdFromUrl(url);
+      if (!notionId) return { category: 'unresolved_notion', resolved: false };
+      return { category: 'internal_notion', resolved: existingSourceIds.has(notionId) };
+    }
+    return { category: 'external_http', resolved: true };
+  } catch {
+    return { category: 'unresolved', resolved: false };
+  }
+}
+
+async function auditImportedLinks(env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  const [documents, blocks] = await Promise.all([
+    env.DB.prepare("SELECT id,source_page_id FROM documents WHERE project_id=? AND status='active'").bind(PROJECT_ID).all(),
+    env.DB.prepare(`SELECT d.id AS document_id,d.title,b.block_type,b.content
+      FROM documents d JOIN document_blocks b ON d.id=b.document_id AND d.active_snapshot_id=b.snapshot_id
+      WHERE d.project_id=? AND d.status='active' ORDER BY d.updated_at DESC,b.position ASC LIMIT 200000`).bind(PROJECT_ID).all()
+  ]);
+  const existingDocumentIds = new Set((documents.results || []).map(row => String(row.id || '')));
+  const existingSourceIds = new Set((documents.results || []).map(row => {
+    try { return normalizedNotionId(row.source_page_id); } catch { return ''; }
+  }).filter(Boolean));
+  const byDocument = new Map();
+  const totals = { links: 0, internal_notion: 0, internal_local: 0, external_http: 0, unsupported_scheme: 0, unresolved_notion: 0, unresolved: 0, missing_targets: 0 };
+  const samples = [];
+  for (const row of blocks.results || []) {
+    const candidates = collectImportedLinkCandidates(row.content);
+    if (!candidates.length) continue;
+    const entry = byDocument.get(row.document_id) || { document_id: row.document_id, title: String(row.title || ''), links: 0, missing_targets: 0, unsupported: 0 };
+    for (const candidate of candidates) {
+      const result = auditLinkTarget(candidate.url, existingDocumentIds, existingSourceIds);
+      totals.links += 1;
+      totals[result.category] = Number(totals[result.category] || 0) + 1;
+      if (!result.resolved && ['internal_notion', 'internal_local'].includes(result.category)) totals.missing_targets += 1;
+      entry.links += 1;
+      if (!result.resolved && ['internal_notion', 'internal_local'].includes(result.category)) entry.missing_targets += 1;
+      if (result.category === 'unsupported_scheme') entry.unsupported += 1;
+      if (samples.length < 100 && (!result.resolved || result.category === 'unsupported_scheme')) {
+        let host = '';
+        try { host = new URL(candidate.url).hostname.toLowerCase(); } catch {}
+        samples.push({ document_id: row.document_id, title: String(row.title || '').slice(0, 120), block_type: row.block_type, kind: candidate.kind, category: result.category, host });
+      }
+    }
+    byDocument.set(row.document_id, entry);
+  }
+  const truncated = (blocks.results || []).length >= 200000;
+  const findings = [];
+  if (truncated) findings.push({ severity: 'WARN', code: 'block_scan_limit', message: '블록 200,000개 상한에 도달해 전체 스캔이 아닙니다.' });
+  if (totals.missing_targets) findings.push({ severity: 'WARN', code: 'missing_targets', message: '가져오지 않은 Notion/JoripNote 대상 링크가 ' + totals.missing_targets + '개 있습니다.' });
+  if (totals.unsupported_scheme) findings.push({ severity: 'WARN', code: 'unsupported_scheme', message: '보안 정책상 렌더링하지 않는 스킴 링크가 ' + totals.unsupported_scheme + '개 있습니다.' });
+  if (totals.unresolved_notion || totals.unresolved) findings.push({ severity: 'WARN', code: 'unresolved_links', message: '주소를 내부 문서 또는 안전한 HTTP 링크로 해석하지 못한 링크가 ' + (totals.unresolved_notion + totals.unresolved) + '개 있습니다.' });
+  if (!findings.length) findings.push({ severity: 'PASS', code: 'ok', message: '활성 문서의 링크 후보가 모두 렌더링 가능한 대상으로 해석됩니다.' });
+  return json({ generated_at: new Date().toISOString(), read_only: true, truncated, scope: { documents: (documents.results || []).length, blocks: (blocks.results || []).length, documents_with_links: byDocument.size }, totals, findings, samples, documents: [...byDocument.values()].filter(item => item.missing_targets || item.unsupported).slice(0, 100) });
 }
 
 async function searchNotionApi(request, env, actor) {
@@ -2026,31 +2804,212 @@ async function searchNotionApi(request, env, actor) {
   return json({ items, next_cursor: data.has_more ? data.next_cursor : null });
 }
 
+async function missingLinkedNotionItems(env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  const [links, existing] = await Promise.all([
+    env.DB.prepare(`SELECT b.content FROM document_blocks b
+      JOIN documents d ON d.id=b.document_id AND d.active_snapshot_id=b.snapshot_id
+      WHERE d.project_id=? AND d.status='active' AND b.block_type='page_link'
+      ORDER BY d.updated_at DESC,b.position ASC LIMIT 10000`).bind(PROJECT_ID).all(),
+    env.DB.prepare("SELECT id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%'").bind(PROJECT_ID).all()
+  ]);
+  const existingIds = new Set((existing.results || []).map(row => String(row.id)));
+  const items = new Map();
+  for (const row of links.results || []) {
+    let value;
+    try { value = JSON.parse(String(row.content || '')); } catch { continue; }
+    const explicitId = String(value?.document_id || '');
+    const notionId = explicitId
+      ? normalizedNotionId(explicitId.replace(/^doc_notion(?:db)?_/i, ''))
+      : notionPageIdFromUrl(value?.url);
+    if (!notionId) continue;
+    const object = explicitId.startsWith('doc_notiondb_') ? 'data_source' : 'page';
+    const documentId = (object === 'data_source' ? 'doc_notiondb_' : 'doc_notion_') + notionId;
+    if (!existingIds.has(documentId)) items.set(object + ':' + notionId, { id: notionId, object, imported: false });
+    if (items.size >= 500) break;
+  }
+  return json({ items: [...items.values()] });
+}
+
 async function importNotionApiPage(request, env, actor, rawPageId) {
   requireRole(actor, MANAGE_ROLES);
   const pageId = normalizedNotionId(rawPageId);
+  const peopleDirectory = await loadNotionPeopleDirectory(env);
   const page = await notionApiRequest(env, '/pages/' + pageId);
   const markdownResult = await notionApiRequest(env, '/pages/' + pageId + '/markdown');
   let markdown = String(markdownResult.markdown || '');
-  for (const unknownId of (markdownResult.unknown_block_ids || []).slice(0, 100)) {
-    try { const recovered = await notionApiRequest(env, '/pages/' + normalizedNotionId(unknownId) + '/markdown'); markdown += '\n\n' + String(recovered.markdown || ''); } catch {}
-  }
+  markdown = await resolveNotionMarkdownPageMentions(env, markdown);
   const media = [page.icon, page.cover, ...Object.values(page.properties || {}).filter(property => property?.type === 'files').flatMap(property => property.files || [])].filter(Boolean);
   for (const item of media) { const url = item.file?.url || item.external?.url; if (url) markdown += '\n\n[' + String(item.name || 'Notion 파일').replace(/[\[\]]/g, '') + '](' + url + ')'; }
   const persisted = await persistNotionMarkdownFiles(env, markdown, pageId, new URL(request.url).origin);
   const parsed = parseMarkdownBlocks(persisted.markdown);
-  const propertyRows = Object.entries(page.properties || {}).filter(([, property]) => property?.type !== 'title').map(([name, property]) => [name, notionPropertyText(property)]);
+  const propertyRows = Object.entries(page.properties || {}).filter(([, property]) => property?.type !== 'title').map(([name, property]) => [name, notionPropertyText(property, peopleDirectory)]);
   const blocks = [];
   for (let offset = 0; offset < propertyRows.length; offset += 25) blocks.push({ type: 'table', content: JSON.stringify([['속성', '값'], ...propertyRows.slice(offset, offset + 25)]), checked: false });
   blocks.push(...parsed.blocks);
   const parentSourceId = page.parent?.page_id || page.parent?.data_source_id || page.parent?.database_id || null;
-  const documentId = await upsertNotionApiDocument(env, actor, { sourceId: pageId, parentSourceId, title: notionPageTitle(page), blocks, files: persisted.files });
+  const documentId = await upsertNotionApiDocument(env, actor, { sourceId: pageId, parentSourceId, title: notionPageTitle(page), blocks, files: persisted.files, pageIcon: notionPageIconMeta(page.icon) });
   return json({ document_id: documentId, truncated: !!markdownResult.truncated, unknown_blocks: markdownResult.unknown_block_ids || [] });
+}
+
+function notionIdFromUrl(value) {
+  const text = String(value || '');
+  const hashId = text.match(/#([0-9a-f]{32})(?:$|[?&])/i)?.[1];
+  if (hashId) return normalizedNotionId(hashId);
+  const ids = text.match(/[0-9a-f]{32}|[0-9a-f-]{36}/ig) || [];
+  return ids.length ? normalizedNotionId(ids[ids.length - 1]) : '';
+}
+
+function notionPageIdFromUrl(value) {
+  const pageUrl = String(value || '').split('#', 1)[0];
+  const ids = pageUrl.match(/[0-9a-f]{32}|[0-9a-f-]{36}/ig) || [];
+  return ids.length ? normalizedNotionId(ids[ids.length - 1]) : '';
+}
+
+function safeImportedLinkHref(value) {
+  const raw = String(value || '').trim();
+  if (/^https?:\/\//i.test(raw)) {
+    try { return new URL(raw).href; } catch { return ''; }
+  }
+  if (/^mailto:[^\s<>"']+$/i.test(raw) && !/[\r\n]/.test(raw)) return raw;
+  if (/^tel:\+?[0-9().\-\s]{3,32}$/i.test(raw) && !/[\r\n]/.test(raw)) return raw;
+  return '';
+}
+
+function notionMarkdownText(richText) {
+  return (Array.isArray(richText) ? richText : []).map(item => {
+    const plainText = String(item?.plain_text || item?.text?.content || '');
+    const annotations = item?.annotations || {};
+    if (annotations.code) return '`' + plainText.replace(/`/g, '\\`') + '`';
+    let text = plainText.replace(/[\[\]]/g, '\\$&');
+    const href = item?.href || item?.text?.link?.url;
+    const safeHref = safeImportedLinkHref(href);
+    if (safeHref) text = '[' + text + '](' + safeHref + ')';
+    if (annotations.bold) text = '**' + text + '**';
+    if (annotations.italic) text = '*' + text + '*';
+    if (annotations.strikethrough) text = '~~' + text + '~~';
+    return text;
+  }).join('');
+}
+
+async function notionBlockChildrenMarkdown(env, blockId, depth, seen) {
+  if (depth > 6) return '';
+  const parts = [];
+  let cursor = null;
+  do {
+    const query = new URLSearchParams({ page_size: '100' });
+    if (cursor) query.set('start_cursor', cursor);
+    const page = await notionApiRequest(env, '/blocks/' + normalizedNotionId(blockId) + '/children?' + query);
+    for (const child of (page.results || [])) {
+      const value = await notionBlockMarkdown(env, child, depth + 1, seen);
+      if (value) parts.push(value);
+    }
+    cursor = page.has_more ? page.next_cursor : null;
+  } while (cursor);
+  return parts.join('\n\n');
+}
+
+async function notionTableMarkdown(env, blockId) {
+  const rows = [];
+  let cursor = null;
+  do {
+    const query = new URLSearchParams({ page_size: '100' });
+    if (cursor) query.set('start_cursor', cursor);
+    const page = await notionApiRequest(env, '/blocks/' + normalizedNotionId(blockId) + '/children?' + query);
+    for (const child of page.results || []) {
+      const cells = child?.table_row?.cells;
+      if (Array.isArray(cells)) rows.push(cells.map(cell => notionMarkdownText(cell)));
+    }
+    cursor = page.has_more ? page.next_cursor : null;
+  } while (cursor);
+  const width = Math.max(0, ...rows.map(row => row.length));
+  if (!width) return '';
+  const normalized = rows.map(row => Array.from({ length: width }, (_, index) => String(row[index] || '').replace(/\|/g, '\\|')));
+  return ['| ' + normalized[0].join(' | ') + ' |', '| ' + normalized[0].map(() => '---').join(' | ') + ' |', ...normalized.slice(1).map(row => '| ' + row.join(' | ') + ' |')].join('\n');
+}
+
+async function notionBlockMarkdown(env, blockOrId, depth = 0, seen = new Set()) {
+  if (depth > 6) return '';
+  const block = typeof blockOrId === 'string'
+    ? await notionApiRequest(env, '/blocks/' + normalizedNotionId(blockOrId))
+    : blockOrId;
+  const id = normalizedNotionId(block?.id || (typeof blockOrId === 'string' ? blockOrId : ''));
+  if (!id || seen.has(id)) return '';
+  seen.add(id);
+  const type = String(block?.type || '');
+  const value = block?.[type] || {};
+  const text = notionMarkdownText(value.rich_text);
+  if (type === 'table') return notionTableMarkdown(env, id);
+  if (type === 'equation') return '$$' + String(value.expression || '') + '$$';
+  if (type === 'callout') {
+    const emoji = value.icon?.type === 'emoji' ? String(value.icon.emoji || '') + ' ' : '';
+    return '<callout>' + emoji + text + '</callout>';
+  }
+  if (type === 'table_of_contents') return '<table-of-contents />';
+  if (type === 'toggle') {
+    const children = await notionBlockChildrenMarkdown(env, id, depth, seen);
+    return '<details><summary>' + escapeXml(text || '토글') + '</summary>' + children.replace(/\r?\n/g, ' ').trim() + '</details>';
+  }
+  if (type === 'link_to_page') {
+    const targetId = normalizedNotionId(value.page_id || value.database_id || value.data_source_id || '');
+    if (!targetId) return '';
+    let title = '연결된 페이지';
+    try { title = notionPageTitle(await notionApiRequest(env, '/pages/' + targetId)); } catch {}
+    return '[' + title.replace(/[\[\]]/g, '') + '](https://www.notion.so/' + targetId + ')';
+  }
+  if (type === 'child_page') return '[' + String(value.title || '하위 페이지').replace(/[\[\]]/g, '') + '](https://www.notion.so/' + id + ')';
+  if (type === 'child_database') return '**' + String(value.title || '데이터베이스') + '**';
+  if (['image', 'file', 'video', 'audio', 'pdf'].includes(type)) {
+    const url = value.file?.url || value.external?.url;
+    if (!url) return '';
+    const caption = notionMarkdownText(value.caption) || (type === 'image' ? '이미지' : '파일');
+    return type === 'image' ? '![' + caption.replace(/[\[\]]/g, '') + '](' + url + ')' : '[' + caption.replace(/[\[\]]/g, '') + '](' + url + ')';
+  }
+  if (type === 'divider') return '---';
+  if (type === 'to_do') return '- [' + (value.checked ? 'x' : ' ') + '] ' + text;
+  if (type === 'bulleted_list_item') return '- ' + text;
+  if (type === 'numbered_list_item') return '1. ' + text;
+  if (type === 'heading_1') return '# ' + text;
+  if (type === 'heading_2') return '## ' + text;
+  if (type === 'heading_3') return '### ' + text;
+  if (type === 'quote') return '> ' + text;
+  if (type === 'code') return '```\n' + text + '\n```';
+  if (['bookmark', 'embed', 'link_preview'].includes(type)) return value.url ? '[' + (text || '링크') + '](' + value.url + ')' : text;
+  if (type === 'synced_block') {
+    const sourceId = value.synced_from?.block_id || id;
+    return notionBlockChildrenMarkdown(env, sourceId, depth, seen);
+  }
+  if (block?.has_children || ['column_list', 'column', 'toggle'].includes(type)) {
+    const children = await notionBlockChildrenMarkdown(env, id, depth, seen);
+    return [text, children].filter(Boolean).join('\n\n');
+  }
+  return text;
+}
+
+async function resolveNotionMarkdownPageMentions(env, markdown) {
+  let output = String(markdown || '').replace(/<empty-block\s*\/>/gi, '');
+  const tags = [...output.matchAll(/<(?:mention-page|unknown)\b[^>]*\burl="([^"]+)"[^>]*\/?\s*>/gi)];
+  const urls = [...new Set(tags.map(match => match[1]))].slice(0, 100);
+  const replacements = new Map();
+  for (const url of urls) {
+    const pageId = notionIdFromUrl(url);
+    if (pageId) {
+      try {
+        const recovered = await notionBlockMarkdown(env, pageId);
+        if (recovered) { replacements.set(url, recovered); continue; }
+      } catch {}
+    }
+    let title = '연결된 페이지';
+    if (pageId) try { title = notionPageTitle(await notionApiRequest(env, '/pages/' + pageId)); } catch {}
+    replacements.set(url, '[' + title.replace(/[\[\]]/g, '') + '](' + url + ')');
+  }
+  return output.replace(/<(?:mention-page|unknown)\b[^>]*\burl="([^"]+)"[^>]*\/?\s*>/gi, (_tag, url) => replacements.get(url) || '연결된 페이지');
 }
 
 async function importNotionApiDataSource(request, env, actor, rawSourceId) {
   requireRole(actor, MANAGE_ROLES);
   const sourceId = normalizedNotionId(rawSourceId);
+  const peopleDirectory = await loadNotionPeopleDirectory(env);
   const source = await notionApiRequest(env, '/data_sources/' + sourceId);
   let sourceViews = [];
   try { sourceViews = await listNotionApiViews(env, sourceId); } catch (error) {
@@ -2068,7 +3027,7 @@ async function importNotionApiDataSource(request, env, actor, rawSourceId) {
     pages.push(...(result.results || []));
     cursor = result.has_more ? result.next_cursor : null;
   } while (cursor && pages.length < 5000);
-  const allRows = pages.map(page => ({ id: 'row_' + normalizedNotionId(page.id), source_id: normalizedNotionId(page.id), cells: Object.fromEntries(columns.map(column => { const property = Object.values(page.properties || {}).find(item => item?.id === column.sourceId); const value = notionPropertyText(property); return [column.id, value.slice(0, 500)]; })) }));
+  const allRows = pages.map(page => ({ id: 'row_' + normalizedNotionId(page.id), source_id: normalizedNotionId(page.id), cells: Object.fromEntries(columns.map(column => { const property = Object.values(page.properties || {}).find(item => item?.id === column.sourceId); const value = notionPropertyText(property, peopleDirectory); return [column.id, value.slice(0, 500)]; })) }));
   const fallbackGroup = columns.find(column => /상태|status/i.test(column.name)) || columns.find(column => ['select', 'status'].includes(column.type)) || columns[0];
   const normalizedViews = sourceViews.length ? sourceViews.map(view => ({ ...view, groupBy: columns.find(column => column.sourceId === notionViewPropertyId(view, 'group_by'))?.id || fallbackGroup?.id || '', datePropertyId: columns.find(column => column.sourceId === (notionViewPropertyId(view, 'date_property_id') || notionViewPropertyId(view, 'date_property')))?.id || '' })) : [
     { id: 'view_table', name: '전체 보기', type: 'table', order: 0, is_default: true, filter: null, sorts: [], quick_filters: [], configuration: {} },
@@ -2086,7 +3045,7 @@ async function importNotionApiDataSource(request, env, actor, rawSourceId) {
   }
   if (chunk.length || !allRows.length) blocks.push({ type: 'database', content: JSON.stringify(makeModel(chunk)), checked: false });
   const parentSourceId = source.parent?.page_id || source.parent?.database_id || null;
-  const documentId = await upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title: notionRichText(source.title) || 'Notion 데이터베이스', blocks, database: true });
+  const documentId = await upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title: notionRichText(source.title) || 'Notion 데이터베이스', blocks, database: true, pageIcon: notionPageIconMeta(source.icon) });
   const existing = await env.DB.prepare("SELECT source_page_id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%' AND source_page_id IS NOT NULL").bind(PROJECT_ID).all();
   const importedIds = new Set((existing.results || []).map(row => String(row.source_page_id)));
   const pageIds = pages.map(page => page.id).filter(id => id && !importedIds.has(normalizedNotionId(id)));
@@ -2181,40 +3140,369 @@ async function upsertNotionImportItem(db, importId, sourcePath, documentId, stat
     .bind(importId, sourcePath, documentId, status, error, nowSeconds()).run();
 }
 
+function sanitizeImportedInlineHtml(value) {
+  const allowed = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'del', 'code', 'a', 'br']);
+  const source = String(value || '')
+    .replace(/<page\b[^>]*\burl\s*=\s*(["'])([^"']+)\1[^>]*>([\s\S]*?)<\/page>/gi, (_full, _quote, href, label) => '<a href="' + escapeXml(href) + '">' + label + '</a>')
+    .replace(/<(?:mention-page|unknown)\b[^>]*\burl\s*=\s*(["'])([^"']+)\1[^>]*\/?\s*>/gi, (_full, _quote, href) => '<a href="' + escapeXml(href) + '">연결된 Notion 페이지</a>');
+  return source.replace(/<(script|style|iframe|object|embed|svg|math|form)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '').replace(/<\/?([a-z][\w-]*)([^>]*)>/gi, (full, rawTag, rawAttrs) => {
+    const tag = String(rawTag).toLowerCase();
+    if (!allowed.has(tag)) return '';
+    if (tag === 'br') return '<br>';
+    if (full.startsWith('</')) return '</' + tag + '>';
+    if (tag !== 'a') return '<' + tag + '>';
+    const href = safeImportedLinkHref(String(rawAttrs || '').match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1] || '');
+    if (!href) return '';
+    return '<a href="' + escapeXml(href) + '">' ;
+  });
+}
+
+function importedRichContent(value) {
+  const sanitized = sanitizeImportedInlineHtml(value);
+  return sanitized.replace(/\s+$/g, '') ? '@qwerty-rich:' + sanitized : '';
+}
+
+function parseHtmlBlockLine(line) {
+  const trimmed = String(line || '').trim();
+  if (/^<hr\b[^>]*\/?>(?:\s*)$/i.test(trimmed)) return { type: 'divider', content: '' };
+  if (/^<table-of-contents\s*\/?>(?:\s*)$/i.test(trimmed)) return { type: 'toc', content: '' };
+  const details = trimmed.match(/^<details\b[^>]*>\s*<summary\b[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>\s*$/i);
+  if (details) {
+    const summary = details[1].replace(/<[^>]+>/g, '').trim() || '토글';
+    const body = details[2].trim();
+    return { type: 'toggle', content: summary + (body ? '\n' + body : '') };
+  }
+  const page = trimmed.match(/^<page\b[^>]*\burl\s*=\s*(["'])([^"']+)\1[^>]*>([\s\S]*?)<\/page>\s*$/i);
+  if (page) return { type: 'text', content: importedRichContent('<a href="' + escapeXml(page[2]) + '">' + page[3] + '</a>') || page[3].replace(/<[^>]+>/g, '') };
+  const match = trimmed.match(/^<(h[1-6]|p|div|blockquote|pre|ul|ol|table|callout)\b[^>]*>([\s\S]*?)<\/\1>\s*$/i);
+  if (!match) {
+    const item = trimmed.match(/^<li\b[^>]*>([\s\S]*?)<\/li>\s*$/i);
+    if (!item) return null;
+    const todo = item[1].match(/^\s*\[([ xX])\]\s*/);
+    return { type: todo ? 'todo' : 'bullet', content: importedRichContent(todo ? item[1].replace(/^\s*\[([ xX])\]\s*/, '') : item[1]), checked: !!todo && todo[1].toLowerCase() === 'x' };
+  }
+  const tag = match[1].toLowerCase();
+  const inner = match[2];
+  if (/^h[1-6]$/.test(tag)) return { type: 'heading' + tag.slice(1), content: importedRichContent(inner) || inner.replace(/<[^>]+>/g, '') };
+  if (tag === 'p' || tag === 'div') return { type: 'text', content: importedRichContent(inner) || inner.replace(/<[^>]+>/g, '') };
+  if (tag === 'blockquote') return { type: 'quote', content: importedRichContent(inner) || inner.replace(/<[^>]+>/g, '') };
+  if (tag === 'callout') return { type: 'callout', content: importedRichContent(inner) || inner.replace(/<[^>]+>/g, '') };
+  if (tag === 'pre') return { type: 'code', content: inner.replace(/<[^>]+>/g, '') };
+  if (tag === 'table') { const rows = [...inner.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(row => [...row[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map(cell => cell[1].replace(/<[^>]+>/g, '').trim())); return { type: 'table', content: JSON.stringify(rows.filter(row => row.length)) }; }
+  const items = [...inner.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)];
+  return items.map(item => { const todo = item[1].match(/^\s*\[([ xX])\]\s*/); return { type: todo ? 'todo' : tag === 'ol' ? 'numbered' : 'bullet', content: importedRichContent(todo ? item[1].replace(/^\s*\[([ xX])\]\s*/, '') : item[1]) || item[1].replace(/<[^>]+>/g, ''), checked: !!todo && todo[1].toLowerCase() === 'x' }; });
+}
+
+function markdownTableRow(line) {
+  const value = String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '');
+  return value.split('|').map(cell => cell.trim().replace(/^\s*:\s*/, '').replace(/\s*:\s*$/, ''));
+}
+
+function isMarkdownTableSeparator(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(String(line || ''));
+}
+
+function markdownIndentLevel(line) {
+  const prefix = String(line || '').match(/^[ \t]*/)?.[0] || '';
+  return Math.min(4, Math.floor(prefix.replace(/\t/g, '  ').length / 2));
+}
+
+function stripMarkdownIndent(line) {
+  return String(line || '').replace(/^[ \t]+/, '');
+}
+
+function removeCodeFenceIndent(line, indent) {
+  let index = 0;
+  while (index < String(line || '').length && index < indent && /[ \t]/.test(line[index])) index += 1;
+  return String(line || '').slice(index);
+}
+
 export function parseMarkdownBlocks(markdown) {
   const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
   let title = '';
   let code = null;
-  const push = (type, content = '', checked = false) => blocks.push({ type, content: String(content).trimEnd(), checked });
-  for (const line of lines) {
-    if (/^```/.test(line)) {
-      if (code === null) code = [];
-      else { push('code', code.join('\n')); code = null; }
+  let math = null;
+  const push = (type, content = '', checked = false, indentLevel = 0) => blocks.push({
+    type,
+    content: String(content).trimEnd(),
+    checked,
+    indent_level: Math.max(0, Math.min(4, indentLevel))
+  });
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    const fence = line.match(/^([ \t]*)(```|~~~)\s*[A-Za-z0-9_+.-]*\s*$/);
+    if (fence) {
+      if (code === null) code = { marker: fence[2], indent: fence[1].length, indentLevel: markdownIndentLevel(line), lines: [] };
+      else if (fence[2] === code.marker) { push('code', code.lines.join('\n'), false, code.indentLevel); code = null; }
       continue;
     }
-    if (code !== null) { code.push(line); continue; }
-    if (!line.trim()) continue;
+    if (code !== null) { code.lines.push(removeCodeFenceIndent(line, code.indent)); continue; }
+    const inlineMath = line.match(/^\s*\$\$([\s\S]+)\$\$\s*$/);
+    if (inlineMath) { push('math', inlineMath[1]); continue; }
+    if (/^\s*\$\$\s*$/.test(line)) {
+      if (math === null) math = [];
+      else { push('math', math.join('\n')); math = null; }
+      continue;
+    }
+    if (math !== null) { math.push(line); continue; }
+    if (!line.trim() || /^\s*<\/?(?:columns|column)\b[^>]*>\s*$/i.test(line) || /^\s*<empty-block\s*\/>\s*$/i.test(line)) continue;
+    if (line.includes('|') && isMarkdownTableSeparator(lines[lineIndex + 1])) {
+      const rows = [markdownTableRow(line)];
+      lineIndex += 2;
+      while (lineIndex < lines.length && lines[lineIndex].includes('|') && lines[lineIndex].trim()) rows.push(markdownTableRow(lines[lineIndex++]));
+      lineIndex -= 1;
+      push('table', JSON.stringify(rows));
+      continue;
+    }
+    const htmlBlocks = parseHtmlBlockLine(line);
+    if (htmlBlocks) {
+      const indentLevel = markdownIndentLevel(line);
+      for (const htmlBlock of (Array.isArray(htmlBlocks) ? htmlBlocks : [htmlBlocks])) {
+        if (htmlBlock.type === 'heading1' && !title) title = String(htmlBlock.content || '').replace(/^@qwerty-rich:/, '').replace(/<[^>]+>/g, '').trim();
+        else push(htmlBlock.type, htmlBlock.content, htmlBlock.checked, htmlBlock.indent_level ?? indentLevel);
+      }
+      continue;
+    }
+    const value = stripMarkdownIndent(line);
     let match;
-    if ((match = line.match(/^#\s+(.+)$/))) {
+    if ((match = value.match(/^#\s+(.+)$/))) {
       if (!title) title = match[1].trim();
       else push('heading1', match[1]);
-    } else if ((match = line.match(/^##\s+(.+)$/))) push('heading2', match[1]);
-    else if ((match = line.match(/^###\s+(.+)$/))) push('heading3', match[1]);
-    else if ((match = line.match(/^####\s+(.+)$/))) push('heading4', match[1]);
-    else if ((match = line.match(/^!\[[^\]]*\]\((https?:\/\/[^)]+)\)$/i))) push('image', match[1]);
-    else if ((match = line.match(/^\[[^\]]+\]\((https?:\/\/[^)]+)\)$/i))) push('bookmark', match[1]);
-    else if ((match = line.match(/^[-*+]\s+\[([ xX])\]\s+(.+)$/))) push('todo', match[2], match[1].toLowerCase() === 'x');
-    else if ((match = line.match(/^[-*+]\s+(.+)$/))) push('bullet', match[1]);
-    else if ((match = line.match(/^\d+\.\s+(.+)$/))) push('numbered', match[1]);
-    else if ((match = line.match(/^>\s?(.*)$/))) push('quote', match[1]);
-    else if (/^\s*([-*_])\1\1+\s*$/.test(line)) push('divider', '');
-    else push('text', line);
+    } else if ((match = value.match(/^##\s+(.+)$/))) push('heading2', match[1]);
+    else if ((match = value.match(/^###\s+(.+)$/))) push('heading3', match[1]);
+    else if ((match = value.match(/^####\s+(.+)$/))) push('heading4', match[1]);
+    else if ((match = value.match(/^#####\s+(.+)$/))) push('heading5', match[1]);
+    else if ((match = value.match(/^######\s+(.+)$/))) push('heading6', match[1]);
+    else if ((match = value.match(/^<database\b[^>]*\burl="([^"]+)"[^>]*\bdata-source-url="collection:\/\/([0-9a-f-]{32,36})"[^>]*>(.*?)<\/database>\s*$/i))) push('page_link', JSON.stringify({ title: match[3].trim() || 'Notion 데이터베이스', url: match[1], document_id: 'doc_notiondb_' + normalizedNotionId(match[2]) }));
+    else if ((match = value.match(/^<(?:mention-page|unknown)\b[^>]*\burl="([^"]+)"[^>]*\/?\s*>\s*$/i))) push('page_link', JSON.stringify({ title: '연결된 Notion 블록', url: match[1] }));
+    else if ((match = value.match(/^!\[[^\]]*\]\((https?:\/\/[^)]+)\)$/i))) push('image', match[1]);
+    else if ((match = value.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)\s*$/i))) {
+      const notionPage = /(?:notion\.so|notion\.site|app\.notion\.com)/i.test(match[2]);
+      const notionId = notionPage ? notionPageIdFromUrl(match[2]) : '';
+      push(notionPage ? 'page_link' : 'bookmark', notionPage ? JSON.stringify({ title: match[1], url: match[2], ...(notionId && /^[0-9a-f]{32}$/.test(notionId) ? { document_id: 'doc_notion_' + notionId } : {}) }) : match[2]);
+    }
+    else if ((match = value.match(/^[-*+]\s+\[([ xX])\]\s+(.+)$/))) push('todo', match[2], match[1].toLowerCase() === 'x', markdownIndentLevel(line));
+    else if ((match = value.match(/^[-*+]\s+(.+)$/))) push('bullet', match[1], false, markdownIndentLevel(line));
+    else if ((match = value.match(/^\d+[.)]\s+(.+)$/))) push('numbered', match[1], false, markdownIndentLevel(line));
+    else if ((match = value.match(/^>\s?(.*)$/))) push('quote', match[1], false, markdownIndentLevel(line));
+    else if (/^([-*_])\1\1+\s*$/.test(value)) push('divider', '');
+    else push('text', value);
   }
-  if (code !== null) push('code', code.join('\n'));
+  if (code !== null) push('code', code.lines.join('\n'));
+  if (math !== null) push('math', math.join('\n'));
   return { title, blocks };
 }
 
+const LEGACY_TOGGLE_GROUP_PREFIX = '@qwerty-toggle-group:';
+
+function legacyBlockType(block) {
+  return String(block?.block_type ?? block?.type ?? 'text');
+}
+
+function legacyBlockWith(block, type, content, extra = {}) {
+  const next = { ...block, content: String(content ?? ''), ...extra };
+  if (Object.prototype.hasOwnProperty.call(block || {}, 'block_type')) next.block_type = type;
+  else next.type = type;
+  return next;
+}
+
+function legacyHtmlText(value) {
+  return String(value || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\\([\[\]{}])/g, '$1')
+    .replace(/\s+\{(?:toggle|color)=(?:"[^"]*"|'[^']*'|[^\s}]+)\}\s*$/i, '')
+    .trim();
+}
+
+function legacyTableCellText(value) {
+  return legacyHtmlText(value)
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1');
+}
+
+function legacySourceValue(value) {
+  const raw = String(value || '').replace(/&amp;/gi, '&').trim();
+  if (!/^file:\/\//i.test(raw)) return { source: raw, filename: '' };
+  let payload = raw.slice(7);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(payload);
+      if (decoded === payload) break;
+      payload = decoded;
+    } catch { break; }
+  }
+  try {
+    const parsed = JSON.parse(payload);
+    return { source: String(parsed?.source || ''), filename: String(parsed?.name || '') };
+  } catch {
+    return { source: '', filename: '' };
+  }
+}
+
+function legacySourceFilename(source, fallback = '') {
+  if (fallback) return legacyHtmlText(fallback);
+  const raw = String(source || '');
+  const tail = raw.startsWith('attachment:') ? raw.split(':').at(-1) : raw.split(/[?#]/, 1)[0].split('/').at(-1);
+  if (!tail) return '';
+  try { return decodeURIComponent(tail); } catch { return tail; }
+}
+
+function legacyMatchingClose(blocks, start, openPattern, closePattern) {
+  let depth = 0;
+  for (let index = start; index < blocks.length; index += 1) {
+    if (legacyBlockType(blocks[index]) !== 'text') continue;
+    const value = String(blocks[index]?.content || '').trim();
+    if (openPattern.test(value)) depth += 1;
+    if (closePattern.test(value)) {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function legacyTableRows(blocks, start, end) {
+  const rows = [];
+  let current = [];
+  const flush = () => {
+    if (current.length) rows.push(current);
+    current = [];
+  };
+  for (let index = start + 1; index < end; index += 1) {
+    const raw = String(blocks[index]?.content || '').trim();
+    if (/^<tr\b/i.test(raw)) { flush(); continue; }
+    if (/^<\/tr\s*>$/i.test(raw)) { flush(); continue; }
+    const cell = raw.match(/^<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>\s*$/i);
+    if (cell) current.push(legacyTableCellText(cell[1]));
+  }
+  flush();
+  return rows.filter(row => row.length);
+}
+
+function legacyUnavailableAttachment(block, source, label) {
+  const filename = legacySourceFilename(source) || label;
+  return legacyBlockWith(block, 'callout', '📎 ' + filename + ' · 원본 첨부 링크를 가져오지 못했습니다.', { checked: false });
+}
+
+function repairLegacySingleBlock(block) {
+  const type = legacyBlockType(block);
+  const original = String(block?.content || '');
+  if (type === 'code' || type === 'database') return [block];
+  const normalized = original.replace(/\s+\{(?:toggle|color)=(?:"[^"]*"|'[^']*'|[^\s}]+)\}\s*$/i, '').trimEnd();
+  if (normalized.startsWith('@qwerty-rich:')) {
+    const rich = normalized.slice('@qwerty-rich:'.length);
+    if (/^(?:\s*&lt;span\b(?:(?!&gt;)[\s\S])*?&gt;[\s\S]*?&lt;\/span&gt;\s*)+$/i.test(rich)) {
+      const restoredSpans = rich.replace(/&lt;(\/?span\b(?:(?!&gt;)[\s\S])*?)&gt;/gi, '<$1>');
+      return [legacyBlockWith(block, type, '@qwerty-rich:' + restoredSpans)];
+    }
+  }
+  if (!normalized.startsWith('@qwerty-rich:') && (/<br\s*\/?>/i.test(normalized) || /<\/?span\b[^>]*>/i.test(normalized))) {
+    const cleanedInline = normalized
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/?span\b[^>]*>/gi, '')
+      .replace(/\\([\[\]{}<>*_$])/g, '$1');
+    return [legacyBlockWith(block, type, cleanedInline)];
+  }
+  if (type !== 'text') return [normalized !== original ? legacyBlockWith(block, type, normalized) : block];
+  const raw = normalized.trim();
+  if (!raw.startsWith('<')) return [normalized !== original ? legacyBlockWith(block, type, normalized) : block];
+  if (/^<table[_-]of[_-]contents\b[^>]*\/?>\s*$/i.test(raw)) return [legacyBlockWith(block, 'toc', '')];
+  const page = raw.match(/^<page\b[^>]*\burl\s*=\s*(["'])([^"']+)\1[^>]*>([\s\S]*?)<\/page>\s*$/i);
+  if (page) {
+    const url = page[2].replace(/&amp;/gi, '&');
+    const notionId = notionPageIdFromUrl(url);
+    return [legacyBlockWith(block, 'page_link', JSON.stringify({ title: legacyHtmlText(page[3]) || '연결된 문서', url, ...(notionId ? { document_id: 'doc_notion_' + notionId } : {}) }))];
+  }
+  const media = raw.match(/^<(file|video|audio|image|img|embed|iframe|pdf)\b[^>]*\b(?:src|url)\s*=\s*(["'])([^"']*)\2[^>]*>(?:[\s\S]*?<\/\1>)?\s*$/i);
+  if (media) {
+    const tag = media[1].toLowerCase();
+    const decoded = legacySourceValue(media[3]);
+    const source = decoded.source;
+    const label = tag === 'video' ? '동영상' : tag === 'audio' ? '오디오' : tag === 'image' || tag === 'img' ? '이미지' : '첨부 파일';
+    if (!/^https?:\/\//i.test(source)) return [legacyUnavailableAttachment(block, source, legacySourceFilename(source, decoded.filename) || label)];
+    const mediaType = tag === 'video' && /(?:youtu\.be|youtube\.com|vimeo\.com)/i.test(source)
+      ? 'embed'
+      : tag === 'img' ? 'image' : tag === 'pdf' ? 'file' : tag === 'iframe' ? 'embed' : tag;
+    return [legacyBlockWith(block, mediaType, source, { checked: false })];
+  }
+  const summary = raw.match(/^<summary\b[^>]*>([\s\S]*?)<\/summary>\s*$/i);
+  if (summary) return [legacyBlockWith(block, 'heading3', legacyHtmlText(summary[1]) || '세부 내용')];
+  if (/^<span\b[^>]*>[\s\S]*<\/span>(?:\s*<span\b[^>]*>[\s\S]*<\/span>)*\s*$/i.test(raw)) {
+    return [legacyBlockWith(block, 'text', legacyHtmlText(raw))];
+  }
+  const cell = raw.match(/^<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>\s*$/i);
+  if (cell) return [legacyBlockWith(block, 'text', legacyTableCellText(cell[1]))];
+  if (/^<\/?(?:table|tbody|thead|tfoot|tr|colgroup|col|details|callout)\b[^>]*>\s*$/i.test(raw)) return [];
+  const parsed = parseHtmlBlockLine(raw);
+  if (parsed) return (Array.isArray(parsed) ? parsed : [parsed]).map((item, index) => legacyBlockWith(block, item.type, item.content, { checked: !!item.checked, ...(index ? { id: String(block.id || 'legacy') + '_' + index } : {}) }));
+  return [block];
+}
+
+export function repairLegacyImportedBlocks(blocks) {
+  const source = Array.isArray(blocks) ? blocks : [];
+  const output = [];
+  for (let index = 0; index < source.length;) {
+    const block = source[index];
+    const type = legacyBlockType(block);
+    const raw = String(block?.content || '').trim();
+    if (type === 'text' && /^<details\b[^>]*>\s*$/i.test(raw)) {
+      const end = legacyMatchingClose(source, index, /^<details\b[^>]*>\s*$/i, /^<\/details\s*>$/i);
+      const summaryMatch = String(source[index + 1]?.content || '').trim().match(/^<summary\b[^>]*>([\s\S]*?)<\/summary>\s*$/i);
+      const summary = legacyHtmlText(summaryMatch?.[1] || '') || '세부 내용';
+      if (end < 0) {
+        output.push(legacyBlockWith(block, 'toggle', summary, { checked: false }));
+        index += summaryMatch ? 2 : 1;
+        continue;
+      }
+      const bodyStart = index + (summaryMatch ? 2 : 1);
+      const repairedBody = repairLegacyImportedBlocks(source.slice(bodyStart, end)).map(child => ({
+        ...child,
+        indent_level: Math.min(4, Number(child.indent_level || 0) + 1),
+        content: legacyBlockType(child) === 'text' ? String(child.content || '').replace(/^\t|^ {1,2}/, '') : child.content
+      }));
+      const marker = repairedBody.length ? LEGACY_TOGGLE_GROUP_PREFIX + repairedBody.length + '\n' : '';
+      output.push(legacyBlockWith(block, 'toggle', marker + summary, { checked: false }), ...repairedBody);
+      index = end + 1;
+      continue;
+    }
+    if (type === 'text' && /^<table\b[^>]*>\s*$/i.test(raw)) {
+      const end = legacyMatchingClose(source, index, /^<table\b[^>]*>\s*$/i, /^<\/table\s*>$/i);
+      if (end >= 0) {
+        const rows = legacyTableRows(source, index, end);
+        if (rows.length) output.push(legacyBlockWith(block, 'table', JSON.stringify(rows), { checked: false }));
+        index = end + 1;
+        continue;
+      }
+    }
+    if (type === 'text' && /^<callout\b[^>]*>\s*$/i.test(raw)) {
+      const end = legacyMatchingClose(source, index, /^<callout\b[^>]*>\s*$/i, /^<\/callout\s*>$/i);
+      if (end >= 0) {
+        const icon = raw.match(/\bicon\s*=\s*(["'])(.*?)\1/i)?.[2] || '💡';
+        const repairedBody = repairLegacyImportedBlocks(source.slice(index + 1, end));
+        const text = repairedBody.map(item => legacyHtmlText(item.content)).filter(Boolean).join('\n');
+        output.push(legacyBlockWith(block, 'callout', icon + (text ? ' ' + text : ''), { checked: false }));
+        index = end + 1;
+        continue;
+      }
+    }
+    output.push(...repairLegacySingleBlock(block));
+    index += 1;
+  }
+  return output.map((block, position) => ({ ...block, ...(Object.prototype.hasOwnProperty.call(block, 'position') ? { position } : {}) }));
+}
+
+const parseMarkdownBlocksBase=parseMarkdownBlocks;
+parseMarkdownBlocks=(markdown)=>{const parsed=parseMarkdownBlocksBase(markdown);const blocks=parsed.blocks.map(block=>{if(block.type!=='bullet')return block;const match=String(block.content||'').trim().match(/^\[([^\]\r\n]+)\]\((https?:\/\/[^)\s]+)\)$/i);if(!match||!/(?:notion\.so|notion\.site|app\.notion\.com)/i.test(match[2]))return block;const notionId=notionPageIdFromUrl(match[2]);const label=String(match[1]).replace(/\\([\[\]])/g,'$1').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/__([^_]+)__/g,'$1').replace(/`([^`]+)`/g,'$1').trim()||'연결된 문서';return notionId&&/^[0-9a-f]{32}$/.test(notionId)?{...block,type:'page_link',content:JSON.stringify({title:label,url:match[2],document_id:'doc_notion_'+notionId})}:block});return{...parsed,blocks:repairLegacyImportedBlocks(blocks)}};
 async function getDocument(env, actor, id) {
   const { document, permission } = await requireDocumentForActor(env.DB, actor, id);
   if (document.status !== 'active') throw new HttpError(404, '휴지통에 있는 문서입니다.');
@@ -2225,7 +3513,7 @@ async function getDocument(env, actor, id) {
   const now = nowSeconds();
   await env.DB.prepare(`INSERT INTO recent_documents (project_id,user_id,document_id,opened_at) VALUES (?,?,?,?)
     ON CONFLICT(project_id,user_id,document_id) DO UPDATE SET opened_at=excluded.opened_at`).bind(PROJECT_ID, actor.id, id, now).run();
-  return json({ document: { ...publicDocument(document), is_favorite: !!favorite, can_edit: permission.can_edit, can_manage_access: permission.can_manage_access, blocks: (blocks.results || []).map(publicBlock) } });
+  return json({ document: { ...publicDocument(document), is_favorite: !!favorite, can_edit: permission.can_edit, can_manage_access: permission.can_manage_access, blocks: await enrichPageLinkBlocks(env.DB, repairLegacyImportedBlocks(blocks.results || [])) } });
 }
 
 async function getPublicDocument(env, id) {
@@ -2236,7 +3524,7 @@ async function getPublicDocument(env, id) {
   const blocks = await env.DB.prepare(
     'SELECT id,block_type,content,position,checked,indent_level FROM document_blocks WHERE document_id=? AND snapshot_id=? ORDER BY position'
   ).bind(id, document.active_snapshot_id).all();
-  return json({ document: { ...publicDocument(document), blocks: (blocks.results || []).map(publicBlock) } }, 200, {
+  return json({ document: { ...publicDocument(document), blocks: await enrichPageLinkBlocks(env.DB, repairLegacyImportedBlocks(blocks.results || [])) } }, 200, {
     'cache-control': 'public, max-age=30, stale-while-revalidate=60'
   });
 }
@@ -2375,6 +3663,43 @@ async function listMembers(url, env, actor) {
   const members = rows.slice(0, limit);
   const last = members.at(-1);
   return json({ members, next_cursor: rows.length > limit && last ? encodeCursor({ sort: Number(last.joined_at), id: last.user_id }) : null });
+}
+
+async function listNotionMembers(env, actor) {
+  requireRole(actor, MANAGE_ROLES);
+  const result = await env.DB.prepare(`SELECT notion_user_id,user_type,name,avatar_url,email_ciphertext,email_nonce,synced_at
+    FROM notion_people WHERE project_id=? ORDER BY CASE WHEN user_type='person' THEN 0 ELSE 1 END,name,notion_user_id LIMIT 500`).bind(PROJECT_ID).all();
+  const members = [];
+  for (const row of result.results || []) {
+    let email = '';
+    if (row.email_ciphertext && row.email_nonce) email = await decryptEmail(env, row.email_ciphertext, row.email_nonce);
+    members.push({ notion_user_id: row.notion_user_id, user_type: row.user_type, name: row.name || '', email, avatar_url: row.avatar_url || '', synced_at: Number(row.synced_at) });
+  }
+  return json({ members });
+}
+
+async function resetNotionMigration(request, env, actor) {
+  if (actor.role !== 'owner') throw new HttpError(403, 'Owner만 마이그레이션 데이터를 초기화할 수 있습니다.');
+  const body = await readJson(request);
+  if (body.confirm !== PROJECT_ID) throw new HttpError(400, '프로젝트 확인 문자열이 일치하지 않습니다.');
+  const files = await env.DB.prepare('SELECT id,storage_key FROM file_uploads WHERE project_id=? ORDER BY id LIMIT 50').bind(PROJECT_ID).all();
+  if (env.STORAGE && typeof env.STORAGE.delete === 'function') await Promise.all((files.results || []).map(file => env.STORAGE.delete(file.storage_key)));
+  if ((files.results || []).length) {
+    await env.DB.batch((files.results || []).map(file => env.DB.prepare('DELETE FROM file_uploads WHERE id=? AND project_id=?').bind(file.id, PROJECT_ID)));
+    const remaining = await env.DB.prepare('SELECT COUNT(*) AS count FROM file_uploads WHERE project_id=?').bind(PROJECT_ID).first();
+    return json({ done: false, phase: 'files', deleted_files: files.results.length, remaining_files: Number(remaining?.count || 0) });
+  }
+  const before = await env.DB.prepare('SELECT COUNT(*) AS count FROM documents WHERE project_id=?').bind(PROJECT_ID).first();
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM project_invitations WHERE project_id=?').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM notion_people WHERE project_id=?').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM notion_imports WHERE project_id=?').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM workspace_templates WHERE project_id=? AND is_builtin=0').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM documents WHERE project_id=?').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM project_members WHERE project_id=? AND user_id<>?').bind(PROJECT_ID, actor.id)
+  ]);
+  await env.DB.prepare('DELETE FROM users WHERE id<>? AND NOT EXISTS (SELECT 1 FROM project_members m WHERE m.user_id=users.id)').bind(actor.id).run();
+  return json({ done: true, phase: 'complete', deleted_documents: Number(before?.count || 0), preserved_user_id: actor.id });
 }
 
 async function changeMemberRole(request, env, actor, userId) {
@@ -2908,7 +4233,7 @@ function validateDatabasePayload(content) {
   const filterOperators = new Set(['contains', 'equals', 'not_equals', 'empty', 'not_empty', 'gte', 'lte']);
   return JSON.stringify({
     version: Number(data.version) === 3 ? 3 : 2,
-    title: String(data.title || '팀 작업'),
+    title: String(data.title || '작업 목록'),
     columns,
     rows,
     source_id: String(data.source_id || ''),
@@ -2938,7 +4263,21 @@ function validateBlocks(value) {
     if (!BLOCK_TYPES.has(type)) throw new HttpError(400, '지원하지 않는 블록 유형입니다.');
     if (content.length > (type === 'database' ? 100000 : 20000)) throw new HttpError(400, type === 'database' ? '데이터베이스 내용은 100,000자 이하여야 합니다.' : '블록 내용은 20,000자 이하여야 합니다.');
     if (content.startsWith('@qwerty-rich:')) content = '@qwerty-rich:' + sanitizeInlineRich(content.slice(13));
-    if (['image', 'video', 'audio', 'file', 'bookmark', 'embed', 'page_link'].includes(type) && content && !/^https?:\/\/[^\s]+$/i.test(content)) throw new HttpError(400, 'URL 블록에는 http 또는 https 주소만 사용할 수 있습니다.');
+    if (['image', 'video', 'audio', 'file', 'bookmark', 'embed', 'page_link'].includes(type) && content) {
+      // Page links may carry the imported title/document id alongside the URL.
+      // Validate the URL inside that envelope while allowing an empty draft link.
+      let url = content;
+      if (type === 'page_link' && content.trim().startsWith('{')) {
+        try {
+          const metadata = JSON.parse(content);
+          if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new Error('metadata');
+          url = String(metadata.url || '');
+        } catch {
+          throw new HttpError(400, '문서 링크 형식이 올바르지 않습니다.');
+        }
+      }
+      if (url && !/^https?:\/\/[^\s]+$/i.test(url)) throw new HttpError(400, 'URL 블록에는 http 또는 https 주소만 사용할 수 있습니다.');
+    }
     if (type === 'database') {
       content = validateDatabasePayload(content);
     } else if (type === 'table') {
@@ -2950,7 +4289,8 @@ function validateBlocks(value) {
     ids.add(id);
     const requestedIndent = Number(block && block.indent_level || 0);
     const indentLevel = ['bullet', 'numbered', 'todo'].includes(type) && Number.isInteger(requestedIndent) ? Math.max(0, Math.min(4, requestedIndent)) : 0;
-    return { id, type, content: (type === 'divider' || type === 'toc') ? '' : content, checked: (type === 'todo' || type === 'toggle') && !!block.checked, indent_level: indentLevel };
+    const normalized = normalizeBlockSnapshot({ id, type, content: (type === 'divider' || type === 'toc') ? '' : content, checked: (type === 'todo' || type === 'toggle') && !!block.checked, indent_level: indentLevel });
+    return { id: normalized.id, type: normalized.type, content: normalized.content, checked: normalized.checked, indent_level: normalized.indent_level };
   });
 }
 
@@ -2971,7 +4311,10 @@ function publicDocument(row) {
   return {
     id: row.id,
     parent_document_id: row.parent_document_id,
+    parent_title: String(row.parent_title || ''),
     title: row.title,
+    page_icon_emoji: String(row.page_icon_emoji || ''),
+    page_icon_url: String(row.page_icon_url || ''),
     title_search: row.title_search,
     status: row.status,
     version: Number(row.version),
@@ -2980,12 +4323,60 @@ function publicDocument(row) {
     trashed_at: row.trashed_at == null ? null : Number(row.trashed_at),
     list_sort: row.list_sort == null ? null : row.list_sort,
     is_favorite: !!row.is_favorite,
-    has_children: !!row.has_children
+    has_children: !!row.has_children,
+    is_notion_import: !!row.source_page_id,
+    is_notion_root: /\/root$/i.test(String(row.source_path || '')),
+    child_count: Number(row.child_count || 0),
+    has_database: !!row.has_database,
+    preview: String(row.preview || ''),
+    preview_type: String(row.preview_type || ''),
+    search_match: String(row.search_match || '')
   };
 }
 
 function publicBlock(row) {
   return { id: row.id, type: row.block_type, content: row.content, position: Number(row.position), checked: !!row.checked, indent_level: Number(row.indent_level || 0) };
+}
+
+async function enrichPageLinkBlocks(db, rows) {
+  const links = new Map();
+  const targetDocumentId = value => {
+    const explicit = String(value?.document_id || '');
+    if (/^doc_notion(?:db)?_[0-9a-f]{32}$/i.test(explicit)) return explicit;
+    const direct = String(value?.url || '').match(/\/doc\/(doc_notion(?:db)?_[0-9a-f]{32})\b/i)?.[1];
+    if (direct) return direct;
+    const pageId = notionPageIdFromUrl(value?.url || '');
+    return pageId ? 'doc_notion_' + pageId : '';
+  };
+  for (const row of rows || []) {
+    if (row.block_type !== 'page_link') continue;
+    try {
+      const value = JSON.parse(String(row.content || ''));
+      const id = targetDocumentId(value);
+      if (/^doc_notion(?:db)?_[0-9a-f]{32}$/i.test(id)) links.set(id, null);
+    } catch {}
+  }
+  const ids = [...links.keys()];
+  for (let offset = 0; offset < ids.length; offset += 80) {
+    const batch = ids.slice(offset, offset + 80);
+    const placeholders = batch.map(() => '?').join(',');
+    const result = await db.prepare(`SELECT id,page_icon_emoji,page_icon_url FROM documents WHERE project_id=? AND id IN (${placeholders})`).bind(PROJECT_ID, ...batch).all();
+    for (const item of result.results || []) links.set(String(item.id), item);
+  }
+  return (rows || []).map(row => {
+    const block = publicBlock(row);
+    if (row.block_type !== 'page_link') return block;
+    let value;
+    try { value = JSON.parse(String(row.content || '')); } catch { value = null; }
+    const targetId = targetDocumentId(value);
+    const target = links.get(targetId);
+    if (target) {
+      block.document_id = targetId;
+      block.page_icon_emoji = String(target.page_icon_emoji || '');
+      block.page_icon_url = String(target.page_icon_url || '');
+    }
+    return block;
+  });
 }
 
 async function encryptEmail(env, email) {
@@ -3031,6 +4422,45 @@ function maskEmail(email) {
 
 function normalizeSearch(value) {
   return String(value || '').normalize('NFKC').trim().toLocaleLowerCase('ko-KR').slice(0, 160);
+}
+
+function searchTerms(value) {
+  return [...new Set(normalizeSearch(value).split(/\s+/).filter(Boolean))].slice(0, 12);
+}
+
+function searchText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/^@qwerty-rich:/, '')
+    .replace(/<br\s*\/?\s*>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&(?:amp|lt|gt|quot|#39|nbsp);/gi, (entity) => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&nbsp;': ' ' }[entity.toLowerCase()] || ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function searchBlockText(block) {
+  const type = String(block?.block_type || '');
+  const raw = String(block?.content || '');
+  if (type === 'table' || type === 'page_link') {
+    try {
+      const value = JSON.parse(raw);
+      if (type === 'table' && Array.isArray(value)) return value.flatMap((row) => Array.isArray(row) ? row : [row]).map(searchText).join(' · ');
+      if (type === 'page_link' && value && typeof value === 'object') return [value.title, value.url].filter(Boolean).map(searchText).join(' · ');
+    } catch {}
+  }
+  return searchText(raw);
+}
+
+function searchSnippet(value, terms) {
+  const text = searchText(value);
+  if (!text) return '';
+  const lower = text.toLocaleLowerCase('ko-KR');
+  const positions = terms.map((term) => lower.indexOf(term)).filter((position) => position >= 0);
+  const matchAt = positions.length ? Math.min(...positions) : 0;
+  const start = Math.max(0, matchAt - 72);
+  const end = Math.min(text.length, start + 180);
+  return (start ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '');
 }
 
 function boundedLimit(value, fallback, max) {

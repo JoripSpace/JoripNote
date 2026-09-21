@@ -17,3 +17,11 @@ personal/
 private/
 *.local.json
 *.personal.json
+
+# Production audit exports may contain document names, IDs, and URLs.
+docs/*audit*.json
+docs/*audit*.md
+docs/notion-import-parity-plan.md
+
+# Local merge worktree is not part of the public template.
+.joripnote-merge-worktree/
