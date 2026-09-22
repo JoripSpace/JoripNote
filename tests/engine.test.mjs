@@ -9,6 +9,7 @@ test('document engine normalizes blocks and preserves source metadata', () => {
   const block = normalizeBlockSnapshot({ id: 'blk_a', type: 'heading2', content: '제목', source: { notionBlockId: 'n1' } });
   assert.equal(block.type, 'heading2');
   assert.equal(block.inlineContent, '제목');
+  assert.equal(normalizeBlockSnapshot({ id: 'blk_indent', type: 'heading2', content: '들여쓰기', indent_level: 3 }).indent_level, 3);
   assert.equal(block.source.notionBlockId, 'n1');
   assert.equal(normalizeBlockSnapshot({ id: 'blk_b', type: 'future_block' }).type, 'unsupported');
 });

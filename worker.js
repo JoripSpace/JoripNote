@@ -1,5 +1,5 @@
 import { unzipSync } from 'fflate';
-import { normalizeBlockSnapshot } from './engine/document-model.js';
+import { INDENTABLE_BLOCK_TYPES, normalizeBlockSnapshot } from './engine/document-model.js';
 
 const PROJECT_ID = 'cf-notion-st';
 const SESSION_COOKIE = 'qwerty_session';
@@ -20,6 +20,7 @@ const NOTION_DOCUMENT_MAX_BYTES = 20 * 1024 * 1024;
 const NOTION_DIRECT_ASSET_MAX_BYTES = 8 * 1024 * 1024;
 const DATABASE_MAX_ROWS = 5000;
 const DATABASE_MAX_COLUMNS = 100;
+const DATABASE_VIEW_TYPES = new Set(['table', 'board', 'calendar', 'timeline', 'gallery', 'list']);
 const BLOCK_TYPES = new Set(['text', 'heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'heading6', 'bullet', 'numbered', 'todo', 'quote', 'code', 'divider', 'toggle', 'callout', 'table', 'database', 'toc', 'math', 'bookmark', 'image', 'video', 'audio', 'file', 'embed', 'page_link']);
 const EDIT_ROLES = new Set(['owner', 'admin', 'member']);
 const MANAGE_ROLES = new Set(['owner', 'admin']);
@@ -39,7 +40,7 @@ const HTML = String.raw`<!doctype html>
   <title>JoripNote</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232d2d2a'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='38' font-family='serif' fill='white'%3EJ%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260921-joripnote-58">
+  <link rel="stylesheet" href="/app.css?v=20260922-joripnote-62">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -179,10 +180,10 @@ const HTML = String.raw`<!doctype html>
         <button data-view="settings" type="button" aria-label="설정" data-tooltip="설정"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"/></svg></span></button>
       </nav>
       <div class="sidebar-document-scroll">
-        <div class="tree-heading shared-space-only"><span class="nav-label">공용 문서</span></div>
-        <button class="sidebar-all active shared-space-only" data-view="all" type="button" aria-label="모든 문서"><span class="sidebar-glyph workspace-glyph" aria-hidden="true">✣</span><span class="nav-label">모든 문서</span></button>
+        <div class="tree-heading shared-space-only"><span class="nav-label">공용 문서</span><button class="sidebar-section-add" data-create-document="root" type="button" aria-label="공용 문서에 페이지 추가" data-tooltip="공용 문서에 페이지 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg></button></div>
+        <div class="sidebar-all-row shared-space-only"><button class="sidebar-all active shared-space-only" data-view="all" type="button" aria-label="모든 문서"><span class="sidebar-glyph workspace-glyph" aria-hidden="true">✣</span><span class="nav-label">모든 문서</span></button><button class="sidebar-section-add" data-create-document="root" type="button" aria-label="모든 문서에 페이지 추가" data-tooltip="페이지 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg></button></div>
         <div id="document-tree" class="document-tree teamspace-tree shared-space-only" aria-label="공용 문서"></div>
-        <div class="tree-heading personal-heading"><span class="nav-label">내 문서</span></div>
+        <div class="tree-heading personal-heading"><span class="nav-label">내 문서</span><button class="sidebar-section-add" data-create-document="root" type="button" aria-label="내 문서에 페이지 추가" data-tooltip="내 문서에 페이지 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg></button></div>
         <div id="personal-tree" class="document-tree personal-tree" aria-label="내 문서"></div>
         <button id="new-root-document" class="sidebar-new-page" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"/></svg><span class="nav-label">새 페이지 추가</span></button>
       </div>
@@ -376,7 +377,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260917-joripnote-51" defer></script>
+  <script src="/app.js?v=20260922-joripnote-54" defer></script>
 </body>
 </html>`;
 
@@ -460,6 +461,12 @@ select:not(:disabled){cursor:pointer}select:disabled{cursor:not-allowed}
 .main-nav{gap:2px;padding:6px 10px 10px}
 .main-nav button{height:34px;padding:0 10px;border-radius:7px}
 .tree-heading{min-height:44px;padding:14px 13px 7px 17px;letter-spacing:.02em}
+.sidebar-section-add{display:grid;place-items:center;width:30px;height:30px;margin:-4px -4px 0 8px;padding:0;border:0;border-radius:7px;background:transparent;color:#8b8a84}
+.sidebar-section-add:hover,.sidebar-section-add:focus-visible{background:#e9f2ff;color:#1b64da}
+.sidebar-section-add .ui-icon{width:16px;height:16px}
+.sidebar-all-row{display:flex;align-items:center;width:calc(100% - 20px);height:34px;margin:1px 10px;border-radius:7px}
+.sidebar-all-row .sidebar-all{width:auto;flex:1;margin:0}
+.sidebar-all-row .sidebar-section-add{flex:none;margin:0 2px 0 0}
 .document-tree{min-height:0;max-height:none;flex:1 1 auto;padding:0 10px 14px;scrollbar-gutter:stable}
 .tree-row{position:relative;height:32px;margin:1px 0;padding-right:3px;border-radius:7px}
 .tree-toggle{position:absolute;top:2px;right:0;display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:6px;background:transparent;color:#85847e}
@@ -695,6 +702,37 @@ const UI_SPACING_CSS = String.raw`
 .media-preview iframe,.media-preview video{border-radius:8px}
 .media-unavailable{padding-inline:var(--ui-space-4)!important}
 
+/* Editable tables use edge insertion affordances instead of permanent action buttons. */
+.structured-block{position:relative;padding-block:0}
+.table-edge-actions{position:absolute;inset:0;z-index:4;pointer-events:none}
+.table-edge-action{position:absolute;display:grid;place-items:center;width:26px;height:26px;padding:0;border:1px solid #d9e1eb;border-radius:999px;background:#fff;color:#64748b;box-shadow:0 2px 8px rgba(15,23,42,.12);opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease,background .15s ease,color .15s ease;cursor:pointer}
+.table-edge-action[data-edge=top]{top:-13px;left:50%;transform:translateX(-50%) scale(.86)}
+.table-edge-action[data-edge=bottom]{bottom:-13px;left:50%;transform:translateX(-50%) scale(.86)}
+.table-edge-action[data-edge=left]{left:-13px;top:50%;transform:translateY(-50%) scale(.86)}
+.table-edge-action[data-edge=right]{right:-13px;top:50%;transform:translateY(-50%) scale(.86)}
+.structured-block[data-hover-edge=top] .table-edge-action[data-edge=top],.structured-block[data-hover-edge=bottom] .table-edge-action[data-edge=bottom],.structured-block[data-hover-edge=left] .table-edge-action[data-edge=left],.structured-block[data-hover-edge=right] .table-edge-action[data-edge=right],.table-edge-action:focus-visible{opacity:1;pointer-events:auto}
+.structured-block[data-hover-edge=top] .table-edge-action[data-edge=top],.structured-block[data-hover-edge=bottom] .table-edge-action[data-edge=bottom]{transform:translateX(-50%) scale(1)}
+.structured-block[data-hover-edge=left] .table-edge-action[data-edge=left],.structured-block[data-hover-edge=right] .table-edge-action[data-edge=right]{transform:translateY(-50%) scale(1)}
+.table-edge-action:hover{border-color:#8bbcf2;background:#e8f3ff;color:#1b64da}
+.table-edge-action:focus-visible{outline:2px solid #1b64da;outline-offset:2px}
+.table-cell-selection-actions{position:absolute;top:6px;right:6px;z-index:5;display:flex;align-items:center;gap:4px;max-width:calc(100% - 12px);padding:4px;overflow-x:auto;border:1px solid #d9e1eb;border-radius:9px;background:rgba(255,255,255,.96);box-shadow:0 3px 12px rgba(15,23,42,.12);opacity:0;pointer-events:none;transform:translateY(-3px);transition:opacity .15s ease,transform .15s ease}
+.structured-block.has-cell-selection .table-cell-selection-actions{opacity:1;pointer-events:auto;transform:none}
+.table-cell-selection-actions button{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:#526173;font-size:14px;font-weight:600;white-space:nowrap}
+.table-cell-selection-actions button:hover{background:#f0f6ff;color:#1b64da}
+.table-cell-selection-actions button[data-action=delete]:hover{background:#fff1f1;color:#c43d3d}
+.table-cell-selection-actions .ui-icon{width:15px;height:15px;flex:none}
+.block-table th.cell-selected,.block-table td.cell-selected{background:#e8f3ff;box-shadow:inset 0 0 0 1px #7db1ee}
+.structured-block.cell-selecting .block-table{user-select:none}
+@media(pointer:coarse),(max-width:760px){
+  .table-edge-action{width:30px;height:30px;opacity:1;pointer-events:auto}
+  .table-edge-action[data-edge=top]{top:-15px}
+  .table-edge-action[data-edge=bottom]{bottom:-15px}
+  .table-edge-action[data-edge=left]{left:-15px}
+  .table-edge-action[data-edge=right]{right:-15px}
+  .table-cell-selection-actions{top:4px;right:4px;max-width:calc(100% - 8px)}
+  .table-cell-selection-actions button{min-height:34px}
+}
+
 /* Structured content uses the same readable inset without shrinking its scroll area. */
 .callout-wrap{padding-inline:14px}
 .block-content[data-type="quote"]{padding-inline:12px}
@@ -732,6 +770,50 @@ const UI_SPACING_CSS = String.raw`
   .panel{padding-inline:var(--ui-space-3)}
   .settings-card,.dialog-card{padding-inline:18px}
   .button,.icon-button,.main-nav button,.sidebar-all,.sidebar-new-page,.tree-row{min-height:var(--ui-control-height)}
+}
+
+/* Icon baseline and text rhythm: markers share the text line box and controls
+   keep a small breathing room at the trailing edge. */
+.ui-icon,.star-icon{display:block;flex:none;vertical-align:middle}
+.tree-toggle,.tree-add,.block-handle{display:grid;place-items:center;align-items:center;justify-items:center}
+.toggle-summary{align-items:center;min-height:30px}
+.toggle-caret{align-self:center;display:grid;place-items:center;width:var(--marker-gutter,22px);height:30px;margin:0;padding:0;line-height:0}
+.toggle-caret .ui-icon{width:16px;height:16px}
+.todo-wrap{align-items:center;grid-template-columns:var(--marker-gutter,22px) minmax(0,1fr);gap:4px;min-height:30px;padding-right:8px}
+.todo-wrap input[type="checkbox"]{display:block;width:18px;height:18px;align-self:center;justify-self:center;margin:0}
+.todo-wrap .block-content{min-width:0;padding-left:0;padding-right:10px}
+.editor-view:not(.database-page) .todo-wrap{align-items:center;grid-template-columns:var(--marker-gutter,22px) minmax(0,1fr);gap:6px;min-width:0;min-height:30px;padding:0 10px 0 0}
+.editor-view:not(.database-page) .todo-wrap input[type="checkbox"]{display:block;width:18px;height:18px;align-self:center;justify-self:center;margin:0}
+.editor-view:not(.database-page) .todo-wrap .block-content{min-width:0;padding-left:0;padding-right:10px}
+.block-content[data-type="bullet"],.block-content[data-type="numbered"]{position:relative;padding-right:10px}
+.block-content[data-type="bullet"]::before,.block-content[data-type="numbered"]::before{position:absolute;left:0;top:3px;display:flex;align-items:center;width:var(--marker-gutter,25px);height:1.75em;margin:0;box-sizing:border-box;line-height:1}
+.block-content[data-type="bullet"]::before{justify-content:flex-start;padding-left:3px}
+.block-content[data-type="numbered"]::before{justify-content:flex-end;padding-right:4px}
+.editor-view:not(.database-page) .block-content[data-type="bullet"],.editor-view:not(.database-page) .block-content[data-type="numbered"]{padding-right:10px}
+.editor-view:not(.database-page) .block-content[data-type="bullet"]::before,.editor-view:not(.database-page) .block-content[data-type="numbered"]::before{top:3px;display:flex;align-items:center;height:1.75em;line-height:1}
+.editor-view:not(.database-page) .block-content[data-type="bullet"]::before{justify-content:flex-start}
+.editor-view:not(.database-page) .block-content[data-type="numbered"]::before{justify-content:flex-end}
+.block-content[data-type="text"],.block-content[data-type^="heading"],.block-content[data-type="todo"],.block-content[data-type="toggle"],.block-content[data-type="callout"]{padding-inline-end:10px}
+.block-content[data-type="quote"]{padding-inline-end:12px}
+.block-content[data-type="code"]{padding-inline-end:16px}
+.toggle-body{margin-left:var(--marker-gutter,22px);padding-inline:10px}
+.callout-wrap>.ui-icon{align-self:center;margin-top:0}
+.inline-link-favicon{margin-block:0;vertical-align:middle}
+.sidebar-page-emoji,.sidebar-page-icon,.document-page-icon-emoji,.document-page-icon-image{display:grid;place-items:center;line-height:1}
+.db-view-tab,.db-control,.db-list-open,.db-calendar-range,.db-timeline-label,.db-timeline-bar,.db-card-page-icon,.code-copy-button,.table-cell-selection-actions button{align-items:center}
+.db-view-tab{display:inline-flex;justify-content:center;line-height:1.2}
+.db-card-title-row{align-items:center}
+.db-list-more,.db-gallery-more,.db-timeline-more{display:flex;align-items:center;justify-content:center;line-height:1.2}
+.db-board-add{display:flex;align-items:center;padding-inline:8px;line-height:1.2}
+.db-status-dot{vertical-align:middle}
+.db-search-wrap>.ui-icon{top:50%;transform:translateY(-50%)}
+@media(max-width:760px){
+  .todo-wrap{padding-right:6px}
+  .todo-wrap .block-content{padding-right:8px}
+  .editor-view:not(.database-page) .todo-wrap{gap:6px;padding-right:8px}
+  .editor-view:not(.database-page) .todo-wrap .block-content{padding-right:8px}
+  .block-content[data-type="text"],.block-content[data-type^="heading"],.block-content[data-type="todo"],.block-content[data-type="toggle"],.block-content[data-type="callout"]{padding-inline-end:8px}
+  .block-content[data-type="quote"]{padding-inline-end:12px}
 }
 `;
 
@@ -776,6 +858,7 @@ const blockLabels=[
 ];
 const canEdit=()=>['owner','admin','member'].includes(state.role)&&(!state.current||state.current.can_edit!==false);
 const canManage=()=>['owner','admin'].includes(state.role);
+function syncCreateDocumentButtons(){document.querySelectorAll('[data-create-document]').forEach(button=>{button.hidden=!canEdit()})}
 async function api(path,options={}){const config={credentials:'same-origin',headers:{accept:'application/json',...(options.headers||{})},...options};if(config.body&&typeof config.body!=='string'){config.headers['content-type']='application/json';config.body=JSON.stringify(config.body)}const response=await fetch(path,config);let data={};try{data=await response.json()}catch{}if(!response.ok){const error=new Error(data.error||'요청을 처리하지 못했습니다.');error.status=response.status;error.details=data;throw error}return data}
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,2600)}
 function alertBox(id,message){const el=$(id);el.textContent=message;el.hidden=!message}
@@ -793,7 +876,7 @@ $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('
 async function auditLinksByAgent(){try{const data=await api('/api/import/notion-api/audit?links=1');const output=document.createElement('pre');output.id='agent-audit-output';output.style.cssText='white-space:pre-wrap;max-height:70vh;overflow:auto;padding:24px;margin:24px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;font:14px/1.5 ui-monospace,monospace';output.textContent=JSON.stringify(data,null,2);document.body.append(output)}catch(error){toast('링크 전수감사 실패: '+String(error?.message||'알 수 없는 오류'))}}
 async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}const params=new URLSearchParams(location.search),agentAction=params.get('agent_action');try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data);if(agentAction==='notion-import'&&canManage())setTimeout(importAllFromNotionApi,0);if(agentAction==='notion-import-source'&&canManage()){const sourceId=String(params.get('source')||'').replaceAll('-','').toLowerCase();if(/^[0-9a-f]{32}$/.test(sourceId))setTimeout(()=>importNotionApiSourceByAgent(sourceId),0)}if(agentAction==='notion-link-audit'&&canManage())setTimeout(auditLinksByAgent,0)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
 function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();applySpaceProfile(data.workspace);let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default';state.listLayout=['list','grid','preview'].includes(localStorage.getItem('joripnote_list_layout'))?localStorage.getItem('joripnote_list_layout'):'list'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setListLayout(state.listLayout,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
-function setInviteRoleOptions(){const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
+function setInviteRoleOptions(){syncCreateDocumentButtons();const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
 $('sidebar-open').onclick=()=>setSidebar(true);$('sidebar-close').onclick=()=>setSidebar(false);$('sidebar-backdrop').onclick=()=>setSidebar(false);
 function setSidebarCollapsed(collapsed,persist=true){const label=collapsed?'사이드바 확대':'사이드바 축소';$('app-view').classList.toggle('sidebar-collapsed',collapsed);$('sidebar-collapse').innerHTML=icon(collapsed?'chevron-right':'chevron-left');$('sidebar-collapse').setAttribute('aria-label',label);$('sidebar-collapse').dataset.tooltip=label;if(persist)try{localStorage.setItem('qwerty_sidebar_collapsed',collapsed?'1':'0')}catch{}}
@@ -804,6 +887,7 @@ function setListLayout(value,persist=true){const layout=['list','grid','preview'
 document.querySelectorAll('[data-list-layout]').forEach(button=>button.onclick=()=>setListLayout(button.dataset.listLayout));
 function applySpaceProfile(profile={}){const mode=profile?.space_mode==='personal'?'personal':'team';const name=String(profile?.space_name||'JoripNote').trim().slice(0,40)||'JoripNote';state.workspaceSettings={...(state.workspaceSettings||{}),...profile,space_mode:mode,space_name:name};$('app-view').classList.toggle('space-mode-personal',mode==='personal');$('app-view').classList.toggle('space-mode-team',mode==='team');$('workspace-display-name').textContent=name;$('workspace-avatar').textContent=name.slice(0,1).toUpperCase();$('mobile-workspace-name').textContent=name;$('breadcrumb-home').textContent=name;$('list-space-name').textContent=name}
 document.querySelectorAll('[data-view]').forEach((button)=>button.addEventListener('click',()=>button.dataset.view==='search'?openGlobalSearch():navigateView(button.dataset.view)));
+document.addEventListener('click',event=>{const button=event.target.closest?.('[data-create-document]');if(!button||!canEdit())return;event.preventDefault();event.stopPropagation();createDocument()});
 $('workspace-home').onclick=()=>navigateView('all');$('breadcrumb-home').onclick=()=>navigateView('all');
 function push(path){setSidebar(false);const doc=String(path).match(/^\/doc\/([A-Za-z0-9_-]{8,80})$/);if(doc){openDocument(doc[1],true);return}history.pushState({},'',path);routeFromLocation()}
 function navigateView(view){setSidebar(false);push(view==='all'?'/':'/'+view)}
@@ -921,7 +1005,222 @@ function codeBlock(block){
 }
 function blockRow(block,index){const row=document.createElement('div');row.className='block-row';row.draggable=false;row.dataset.id=block.id;row.dataset.indent=String(block.indent_level||0);row.style.setProperty('--indent',String(block.indent_level||0));const handle=document.createElement('button');handle.className='block-handle';handle.type='button';handle.innerHTML=icon('grip');handle.tabIndex=0;handle.draggable=canEdit();handle.setAttribute('aria-label','블록 순서 변경');handle.dataset.tooltip='드래그하거나 눌러 블록 메뉴 열기';let content;if(block.type==='code'){content=codeBlock(block);row.append(handle,content)}else if(block.type==='todo'){const wrap=document.createElement('div');wrap.className='todo-wrap'+(block.checked?' checked':'');const check=document.createElement('input');check.type='checkbox';check.checked=!!block.checked;check.disabled=!canEdit();check.setAttribute('aria-label','할 일 완료 상태');check.onchange=()=>{wrap.classList.toggle('checked',check.checked);scheduleSave()};content=editable(block);wrap.append(check,content);row.append(handle,wrap)}else if(block.type==='toggle'){const parts=splitToggleContent(block.content);const wrap=document.createElement('div');wrap.className='toggle-wrap';const summaryLine=document.createElement('div');summaryLine.className='toggle-summary';const caret=document.createElement('button');caret.className='toggle-caret';caret.type='button';caret.innerHTML=icon('chevron-right');const toggleLabel=block.checked?'토글 접기':'토글 펼치기';caret.setAttribute('aria-label',toggleLabel);caret.dataset.tooltip=toggleLabel;caret.setAttribute('aria-expanded',block.checked?'true':'false');if(parts.groupSize)row.dataset.toggleGroupSize=String(parts.groupSize);const summary=editable({...block,content:parts.summary},'summary');summary.dataset.placeholder='토글 제목';const body=editable({...block,content:parts.body},'body');body.classList.add('toggle-body');body.dataset.placeholder='토글 내용을 입력하세요';body.hidden=parts.groupSize?true:!block.checked;caret.onclick=()=>{const open=caret.getAttribute('aria-expanded')!=='true';const label=open?'토글 접기':'토글 펼치기';caret.setAttribute('aria-expanded',open?'true':'false');caret.setAttribute('aria-label',label);caret.dataset.tooltip=label;if(parts.groupSize)refreshLegacyToggleGroups(row.parentElement);else body.hidden=!open;if(canEdit())scheduleSave()};summaryLine.append(caret,summary);wrap.append(summaryLine,body);row.append(handle,wrap)}else if(block.type==='callout'){const wrap=document.createElement('div');wrap.className='callout-wrap';wrap.innerHTML=icon('alert');content=editable(block);content.dataset.placeholder='콜아웃 내용을 입력하세요';wrap.append(content);row.append(handle,wrap)}else if(block.type==='table'||block.type==='database'){content=structuredTableBlock(block,block.type==='database');row.append(handle,content)}else if(['image','video','audio','file','bookmark','embed','page_link'].includes(block.type)){content=mediaBlock(block);row.append(handle,content)}else if(block.type==='toc'){content=tocBlock();content.dataset.type='toc';row.append(handle,content)}else if(block.type==='math'){const wrap=document.createElement('div');wrap.className='math-block';content=editable(block);content.dataset.placeholder='수식을 입력하세요';wrap.append(content);row.append(handle,wrap)}else{content=editable(block);row.append(handle,content)}bindBlockInteractions(row,handle);return row}
 function parseGrid(value,database){try{const data=JSON.parse(value);if(Array.isArray(data)&&data.length&&data.every(row=>Array.isArray(row)))return data.slice(0,50).map(row=>row.slice(0,12).map(cell=>String(cell).slice(0,500)))}catch{}return database?[['이름','상태'],['','']]:[['열 1','열 2'],['','']]}
-function structuredTableBlock(block,database){if(database)return databaseBlock(block);const wrap=document.createElement('div');wrap.className='block-content structured-block';wrap.dataset.type=block.type;wrap.dataset.structured='grid';const table=document.createElement('table');table.className='block-table';const grid=parseGrid(block.content,false);const notionProperties=grid[0]?.[0]==='속성'&&grid[0]?.[1]==='값';if(notionProperties)wrap.classList.add('notion-property-table');grid.forEach((row,rowIndex)=>{const tr=document.createElement('tr');row.forEach((value,colIndex)=>{const cell=document.createElement(rowIndex===0?'th':'td');const input=document.createElement('input');input.value=value;input.disabled=notionProperties||!canEdit();input.maxLength=500;input.setAttribute('aria-label',rowIndex===0?'열 이름 '+(colIndex+1):'셀 '+rowIndex+'-'+(colIndex+1));input.oninput=scheduleSave;cell.append(input);tr.append(cell)});(rowIndex===0?table.createTHead():table.tBodies[0]||table.createTBody()).append(tr)});wrap.append(table);if(canEdit()&&!notionProperties){const actions=document.createElement('div');actions.className='block-table-actions';const addRow=document.createElement('button');addRow.type='button';addRow.textContent='행 추가';addRow.onclick=()=>{const cols=table.rows[0]?.cells.length||2;const tr=document.createElement('tr');for(let i=0;i<cols;i++){const td=document.createElement('td');const input=document.createElement('input');input.maxLength=500;input.setAttribute('aria-label','새 셀');input.oninput=scheduleSave;td.append(input);tr.append(td)}table.tBodies[0].append(tr);scheduleSave()};const addCol=document.createElement('button');addCol.type='button';addCol.textContent='열 추가';addCol.onclick=()=>{for(const [i,tr] of [...table.rows].entries()){const cell=document.createElement(i===0?'th':'td');const input=document.createElement('input');input.maxLength=500;input.value=i===0?'새 열':'';input.setAttribute('aria-label',i===0?'새 열 이름':'새 셀');input.oninput=scheduleSave;cell.append(input);tr.append(cell)}scheduleSave()};actions.append(addRow,addCol);wrap.append(actions)}return wrap}
+ function structuredTableBlock(block,database){
+  if(database)return databaseBlock(block);
+  const wrap=document.createElement('div');
+  wrap.className='block-content structured-block';
+  wrap.dataset.type=block.type;
+  wrap.dataset.structured='grid';
+  const table=document.createElement('table');
+  table.className='block-table';
+  const grid=parseGrid(block.content,false);
+  const notionProperties=grid[0]?.[0]==='속성'&&grid[0]?.[1]==='값';
+  if(notionProperties)wrap.classList.add('notion-property-table');
+  const createInput=(value,label,disabled=false)=>{
+    const input=document.createElement('input');
+    input.value=String(value??'');
+    input.disabled=disabled||!canEdit();
+    input.maxLength=500;
+    input.setAttribute('aria-label',label);
+    input.oninput=scheduleSave;
+    return input;
+  };
+  const createRow=(values,rowIndex)=>{
+    const tr=document.createElement('tr');
+    values.forEach((value,colIndex)=>{
+      const cell=document.createElement(rowIndex===0?'th':'td');
+      cell.append(createInput(value,rowIndex===0?'열 이름 '+(colIndex+1):'셀 '+rowIndex+'-'+(colIndex+1),notionProperties));
+      tr.append(cell);
+    });
+    return tr;
+  };
+  grid.forEach((row,rowIndex)=>{
+    const tr=createRow(row,rowIndex);
+    (rowIndex===0?table.createTHead():table.tBodies[0]||table.createTBody()).append(tr);
+  });
+  wrap.append(table);
+  if(canEdit()&&!notionProperties){
+    let cellSelection=null;
+    let cellGesture=null;
+    let suppressCellClick=false;
+    const positionOf=cell=>{
+      const row=cell?.parentElement;
+      return{row:[...table.rows].indexOf(row),col:cell?.cellIndex??-1};
+    };
+    const cellAtPoint=(x,y)=>{
+      const cell=document.elementFromPoint(x,y)?.closest?.('th,td');
+      return cell&&table.contains(cell)?cell:null;
+    };
+    const clearCellSelection=()=>{
+      table.querySelectorAll('th.cell-selected,td.cell-selected').forEach(cell=>cell.classList.remove('cell-selected'));
+      cellSelection=null;
+      wrap.classList.remove('has-cell-selection','cell-selecting');
+    };
+    const paintCellSelection=range=>{
+      if(!range)return;
+      const start=positionOf(range.start);
+      const end=positionOf(range.end);
+      if(start.row<0||end.row<0||start.col<0||end.col<0)return;
+      const minRow=Math.min(start.row,end.row),maxRow=Math.max(start.row,end.row);
+      const minCol=Math.min(start.col,end.col),maxCol=Math.max(start.col,end.col);
+      table.querySelectorAll('th,td').forEach(cell=>{
+        const position=positionOf(cell);
+        cell.classList.toggle('cell-selected',position.row>=minRow&&position.row<=maxRow&&position.col>=minCol&&position.col<=maxCol);
+      });
+      wrap.classList.add('has-cell-selection');
+    };
+    const selectionBounds=()=>{
+      if(!cellSelection)return null;
+      const start=positionOf(cellSelection.start);
+      const end=positionOf(cellSelection.end);
+      if(start.row<0||end.row<0||start.col<0||end.col<0)return null;
+      return{minRow:Math.min(start.row,end.row),maxRow:Math.max(start.row,end.row),minCol:Math.min(start.col,end.col),maxCol:Math.max(start.col,end.col)};
+    };
+    const deleteSelectedRows=()=>{
+      const range=selectionBounds();
+      if(!range)return;
+      const targets=[...table.rows].filter((row,index)=>index>0&&index>=range.minRow&&index<=range.maxRow);
+      if(!targets.length)return toast('열 머리글은 삭제할 수 없습니다.');
+      targets.forEach(row=>row.remove());
+      clearCellSelection();
+      scheduleSave();
+    };
+    const deleteSelectedColumns=()=>{
+      const range=selectionBounds();
+      if(!range)return;
+      const rows=[...table.rows];
+      const total=rows[0]?.cells.length||0;
+      let columns=Array.from({length:Math.max(0,range.maxCol-range.minCol+1)},(_,offset)=>range.minCol+offset);
+      if(!columns.length)return;
+      if(columns.length>=total){
+        if(total<=1)return toast('표에는 열이 하나 이상 필요합니다.');
+        columns=columns.filter(index=>index>0);
+      }
+      columns.sort((a,b)=>b-a);
+      rows.forEach(row=>columns.forEach(index=>row.cells[index]?.remove()));
+      clearCellSelection();
+      scheduleSave();
+    };
+    const ensureHeader=()=>{
+      if(table.rows.length)return;
+      table.createTHead().append(createRow(['열 1','열 2'],0));
+    };
+    const addRow=(top=false)=>{
+      clearCellSelection();
+      ensureHeader();
+      if(table.rows.length>=50)return toast('표는 최대 50행까지 지원합니다.');
+      const cols=table.rows[0]?.cells.length||2;
+      const tr=createRow(Array.from({length:cols},()=>''),1);
+      const body=table.tBodies[0]||table.createTBody();
+      if(top&&body.firstChild)body.insertBefore(tr,body.firstChild);
+      else body.append(tr);
+      scheduleSave();
+      tr.querySelector('input')?.focus();
+    };
+    const addColumn=(left=false)=>{
+      clearCellSelection();
+      ensureHeader();
+      if((table.rows[0]?.cells.length||0)>=12)return toast('표는 최대 12열까지 지원합니다.');
+      for(const [rowIndex,tr] of [...table.rows].entries()){
+        const cell=document.createElement(rowIndex===0?'th':'td');
+        cell.append(createInput(rowIndex===0?'새 열':'',rowIndex===0?'새 열 이름':'새 셀'));
+        if(left)tr.insertBefore(cell,tr.firstElementChild);
+        else tr.append(cell);
+      }
+      scheduleSave();
+    };
+    const edgeActions=document.createElement('div');
+    edgeActions.className='table-edge-actions';
+    [['top','위에 행 추가',()=>addRow(true)],['bottom','아래에 행 추가',()=>addRow(false)],['left','왼쪽에 열 추가',()=>addColumn(true)],['right','오른쪽에 열 추가',()=>addColumn(false)]].forEach(([edge,label,action])=>{
+      const button=document.createElement('button');
+      button.type='button';
+      button.className='table-edge-action';
+      button.dataset.edge=edge;
+      button.innerHTML=icon('plus');
+      button.setAttribute('aria-label',label);
+      button.title=label;
+      button.onclick=event=>{
+        event.preventDefault();
+        event.stopPropagation();
+        action();
+      };
+      edgeActions.append(button);
+    });
+    const selectionActions=document.createElement('div');
+    selectionActions.className='table-cell-selection-actions';
+    const selectionButton=(action,label,iconName,handler)=>{
+      const button=document.createElement('button');
+      button.type='button';
+      button.dataset.action=action;
+      button.innerHTML=icon(iconName)+'<span>'+label+'</span>';
+      button.setAttribute('aria-label',label);
+      button.title=label;
+      button.onclick=event=>{
+        event.preventDefault();
+        event.stopPropagation();
+        handler();
+      };
+      selectionActions.append(button);
+    };
+    selectionButton('delete','행 삭제','trash',deleteSelectedRows);
+    selectionButton('delete','열 삭제','trash',deleteSelectedColumns);
+    selectionButton('clear','선택 해제','close',clearCellSelection);
+    wrap.append(edgeActions,selectionActions);
+    const updateHoverEdge=event=>{
+      if(event.pointerType==='touch')return;
+      const rect=table.getBoundingClientRect();
+      if(!rect.width||!rect.height)return;
+      const distances={top:event.clientY-rect.top,bottom:rect.bottom-event.clientY,left:event.clientX-rect.left,right:rect.right-event.clientX};
+      const [edge,distance]=Object.entries(distances).sort((a,b)=>a[1]-b[1])[0];
+      if(distance<=28)wrap.dataset.hoverEdge=edge;
+      else delete wrap.dataset.hoverEdge;
+    };
+    wrap.addEventListener('pointermove',updateHoverEdge);
+    wrap.addEventListener('pointerleave',()=>delete wrap.dataset.hoverEdge);
+    table.addEventListener('pointerdown',event=>{
+      if((event.button!==0&&event.pointerType!=='touch')||!event.target.closest)return;
+      const cell=event.target.closest('th,td');
+      if(!cell||!table.contains(cell))return;
+      cellGesture={pointerId:event.pointerId,start:cell,end:cell,moved:false};
+      try{table.setPointerCapture(event.pointerId)}catch{}
+    });
+    table.addEventListener('pointermove',event=>{
+      if(!cellGesture||cellGesture.pointerId!==event.pointerId)return;
+      const cell=cellAtPoint(event.clientX,event.clientY);
+      if(cell)cellGesture.end=cell;
+      if(!cellGesture.end||cellGesture.end===cellGesture.start)return;
+      cellGesture.moved=true;
+      cellSelection={start:cellGesture.start,end:cellGesture.end};
+      paintCellSelection(cellSelection);
+      wrap.classList.add('cell-selecting');
+      event.preventDefault();
+      suppressCellClick=true;
+      const selection=window.getSelection?.();
+      selection?.removeAllRanges();
+    });
+    const finishCellGesture=(event,cancelled=false)=>{
+      if(!cellGesture||cellGesture.pointerId!==event.pointerId)return;
+      if(table.hasPointerCapture?.(event.pointerId))try{table.releasePointerCapture(event.pointerId)}catch{}
+      wrap.classList.remove('cell-selecting');
+      if(cellGesture.moved){
+        event.preventDefault();
+        suppressCellClick=true;
+        setTimeout(()=>{suppressCellClick=false},300);
+        if(cancelled)clearCellSelection();
+      }
+      cellGesture=null;
+    };
+    table.addEventListener('pointerup',event=>finishCellGesture(event));
+    table.addEventListener('pointercancel',event=>finishCellGesture(event,true));
+    table.addEventListener('click',event=>{
+      if(!suppressCellClick)return;
+      suppressCellClick=false;
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+  return wrap;
+}
 const DATABASE_PROPERTY_TYPES={text:'텍스트',select:'선택',person:'담당자',multi_select:'다중 선택',status:'상태',people:'사용자',number:'숫자',date:'날짜',checkbox:'체크박스',url:'URL',email:'이메일',phone_number:'전화번호',files:'파일',relation:'관계형',rollup:'롤업',formula:'수식',unique_id:'고유 ID',created_time:'생성 시각',last_edited_time:'최종 편집 시각',created_by:'생성자',last_edited_by:'최종 편집자'};
 const DATABASE_MAX_ROWS=5000;
 const DATABASE_MAX_COLUMNS=100;
@@ -977,7 +1276,11 @@ function databaseViewLabel(raw,type,labels){const name=String(raw.name||'').trim
 function renderDatabaseBlock(wrap){const model=wrap._databaseModel;wrap.replaceChildren();const header=document.createElement('div');header.className='db-header';header.hidden=cleanNotionDatabaseTitle(model.title)===cleanNotionDatabaseTitle(state.current?.title);const title=document.createElement('input');title.className='db-title';title.value=model.title;title.maxLength=120;title.disabled=!canEdit();title.setAttribute('aria-label','데이터베이스 이름');title.oninput=()=>{model.title=title.value;scheduleSave()};const count=document.createElement('span');count.className='db-count';count.textContent=model.rows.length+'개 작업';header.append(title,count);const views=document.createElement('div');views.className='db-viewbar';const viewList=databaseDisplayViews(model);const labels={table:'표',board:'보드',calendar:'캘린더',timeline:'타임라인',gallery:'갤러리',list:'목록'};for(const raw of viewList){const view=normalizeDatabaseView(model,raw);const button=document.createElement('button');button.type='button';button.className='db-view-tab'+((model._activeViewId?model._activeViewId===raw.id:model.view.mode===view.type)?' active':'');button.innerHTML=icon(view.type==='calendar'?'calendar':view.type==='board'?'files':'list')+'<span>'+escapeText(databaseViewLabel(raw,view.type,labels))+'</span>';button.onclick=()=>{model._activeViewId=raw.id;model.view={...model.view,...view,mode:view.type,groupBy:view.groupBy||model.view.groupBy,datePropertyId:view.datePropertyId||model.view.datePropertyId,filter:view.filter||model.view.filter};renderDatabaseBlock(wrap);scheduleSave()};views.append(button)}const toolbar=document.createElement('div');toolbar.className='db-toolbar';const searchWrap=document.createElement('label');searchWrap.className='db-search-wrap';searchWrap.innerHTML=icon('search');const search=document.createElement('input');search.className='db-search';search.type='search';search.placeholder='작업 검색';search.value=wrap._databaseQuery||'';search.setAttribute('aria-label','데이터베이스 검색');search.oninput=()=>{wrap._databaseQuery=search.value;renderDatabaseBody(wrap)};searchWrap.append(search);const sort=document.createElement('select');sort.className='db-select';sort.setAttribute('aria-label','정렬 속성');sort.innerHTML='<option value="">정렬 안 함</option>'+model.columns.map(column=>'<option value="'+escapeText(column.id)+'"'+(model.view.sortBy===column.id?' selected':'')+'>'+escapeText(column.name)+' 순</option>').join('');sort.onchange=()=>{model.view.sortBy=sort.value;renderDatabaseBody(wrap);scheduleSave()};const direction=document.createElement('button');direction.type='button';direction.className='db-control';direction.innerHTML=icon(model.view.sortDir==='desc'?'arrow-down':'arrow-up')+'<span>'+(model.view.sortDir==='desc'?'내림차순':'오름차순')+'</span>';direction.onclick=()=>{model.view.sortDir=model.view.sortDir==='desc'?'asc':'desc';renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(searchWrap,sort,direction);databaseFilterControls(model,wrap,toolbar);if(model.view.mode==='board'){const group=document.createElement('select');group.className='db-select';group.setAttribute('aria-label','보드 분류 속성');for(const column of model.columns){const option=document.createElement('option');option.value=column.id;option.textContent=column.name+'별';option.selected=model.view.groupBy===column.id;group.append(option)}group.onchange=()=>{model.view.groupBy=group.value;renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(group)}const addProperty=document.createElement('button');addProperty.type='button';addProperty.className='db-control';addProperty.innerHTML=icon('plus')+'<span>속성 추가</span>';addProperty.hidden=!canEdit();addProperty.onclick=()=>{if(model.columns.length>=DATABASE_MAX_COLUMNS)return toast('속성은 최대 '+DATABASE_MAX_COLUMNS+'개까지 추가할 수 있습니다.');const id=databaseUid('col');model.columns.push({id,name:'새 속성',type:'text',options:[]});for(const row of model.rows)row.cells[id]='';renderDatabaseBlock(wrap);scheduleSave()};toolbar.append(addProperty);const body=document.createElement('div');body.className='db-view-body';const footer=document.createElement('footer');footer.className='db-footer';const addRow=document.createElement('button');addRow.type='button';addRow.className='db-control primary';addRow.innerHTML=icon('plus')+'<span>새 작업</span>';addRow.hidden=!canEdit();addRow.onclick=()=>{if(model.rows.length>=DATABASE_MAX_ROWS)return toast('작업은 최대 '+DATABASE_MAX_ROWS+'개까지 추가할 수 있습니다.');const first=model.columns.find(column=>column.type==='text')||model.columns[0];const row={id:databaseUid('row'),cells:Object.fromEntries(model.columns.map(column=>[column.id,column.type==='checkbox'?false:'']))};row.cells[first.id]='새 작업';model.rows.push(row);renderDatabaseBlock(wrap);scheduleSave()};const note=document.createElement('span');note.className='db-footer-note';note.textContent=model.rows.length+'개 작업 · '+viewList.length+'개 뷰';footer.append(addRow,note);wrap.append(header,views,toolbar,body,footer);renderDatabaseBody(wrap)}
 const renderDatabaseBlockBase=renderDatabaseBlock;
 renderDatabaseBlock=wrap=>{renderDatabaseBlockBase(wrap);const views=wrap.querySelector(':scope > .db-viewbar');const toolbar=wrap.querySelector(':scope > .db-toolbar');if(views&&toolbar){const chrome=document.createElement('div');chrome.className='db-chrome';views.before(chrome);chrome.append(views,toolbar);const iconNames={table:'list',board:'files',calendar:'calendar',timeline:'clock',gallery:'template',list:'list'};const viewList=databaseDisplayViews(wrap._databaseModel);[...views.querySelectorAll('.db-view-tab')].forEach((button,index)=>{const raw=viewList[index],view=normalizeDatabaseView(wrap._databaseModel,raw);const label=button.querySelector('span')?.textContent||view.type;button.innerHTML=icon(iconNames[view.type]||'list')+'<span>'+escapeText(label)+'</span>';button.title=label;button.onclick=()=>{wrap._databaseModel._activeViewId=raw.id;wrap._databaseModel.view={...wrap._databaseModel.view,...view,mode:view.type,groupBy:view.groupBy||wrap._databaseModel.view.groupBy,datePropertyId:view.datePropertyId||wrap._databaseModel.view.datePropertyId,filter:view.filter||wrap._databaseModel.view.filter};renderDatabaseBlock(wrap)}})}};
-function databaseBlock(block){const wrap=document.createElement('div');wrap.className='block-content structured-block database-block';wrap.dataset.type='database';wrap.dataset.database='true';wrap._databaseModel=parseDatabaseModel(block.content);wrap._databaseChunks=Array.isArray(block.__database_chunks)?block.__database_chunks:null;wrap._databaseQuery='';renderDatabaseBlock(wrap);return wrap}
+function applyDatabaseViewPreference(model,preference){if(!preference)return;const views=databaseDisplayViews(model);const raw=views.find(view=>String(view.id||'')===String(preference.view_id||''))||views.find(view=>String(view.type||view.mode||'').toLowerCase()===String(preference.view_type||'').toLowerCase());if(!raw)return;const view=normalizeDatabaseView(model,raw);model._activeViewId=String(raw.id||'');model.view={...model.view,...view,mode:view.type,groupBy:view.groupBy||model.view.groupBy,datePropertyId:view.datePropertyId||model.view.datePropertyId,filter:view.filter||model.view.filter}}
+function persistDatabaseViewPreference(wrap,raw,view){const documentId=state.current?.id,blockId=String(wrap._blockId||'');if(!documentId||!blockId||!raw?.id)return;const revision=(wrap._viewPreferenceRevision||0)+1;wrap._viewPreferenceRevision=revision;state.databaseViewPreferences?.set(blockId,{view_id:String(raw.id),view_type:view.type});api('/api/documents/'+documentId+'/view-preferences',{method:'PUT',body:{block_id:blockId,view_id:String(raw.id),view_type:view.type}}).catch(error=>{if(revision===wrap._viewPreferenceRevision)toast(error?.message||'보기 설정을 저장하지 못했습니다.')})}
+function activateDatabaseView(wrap,raw){const model=wrap._databaseModel,view=normalizeDatabaseView(model,raw);model._activeViewId=String(raw.id||'');model.view={...model.view,...view,mode:view.type,groupBy:view.groupBy||model.view.groupBy,datePropertyId:view.datePropertyId||model.view.datePropertyId,filter:view.filter||model.view.filter};wrap._databaseViewPreference={view_id:String(raw.id||''),view_type:view.type};renderDatabaseBlock(wrap);persistDatabaseViewPreference(wrap,raw,view)}
+function databaseBlock(block){const wrap=document.createElement('div');wrap.className='block-content structured-block database-block';wrap.dataset.type='database';wrap.dataset.database='true';wrap._blockId=String(block.id||'');wrap._databaseModel=parseDatabaseModel(block.content);wrap._databaseChunks=Array.isArray(block.__database_chunks)?block.__database_chunks:null;wrap._databaseQuery='';applyDatabaseViewPreference(wrap._databaseModel,state.databaseViewPreferences?.get(wrap._blockId));renderDatabaseBlock(wrap);return wrap}
+document.addEventListener('click',event=>{const button=event.target.closest?.('.db-view-tab');if(!button)return;const wrap=button.closest('.database-block'),bar=button.closest('.db-viewbar');if(!wrap||!bar)return;const index=[...bar.querySelectorAll('.db-view-tab')].indexOf(button),raw=databaseDisplayViews(wrap._databaseModel)[index];if(!raw)return;event.preventDefault();event.stopImmediatePropagation();activateDatabaseView(wrap,raw)},true);
 const parseDatabaseLinkedRowsBase=parseDatabaseModel;
 parseDatabaseModel=value=>{const model=parseDatabaseLinkedRowsBase(value);try{const raw=JSON.parse(value),links=new Map((raw.rows||[]).map(row=>[String(row.id||''),String(row.document_id||'')]));for(const row of model.rows||[])if(links.get(String(row.id)))row.document_id=links.get(String(row.id))}catch{}return model};
 function shiftCalendarValue(value,days=0){return String(value||'').replace(/\d{4}-\d{2}-\d{2}/g,key=>{const date=new Date(key+'T00:00:00Z');date.setUTCDate(date.getUTCDate()+days);return calendarDateKey(date)})}
@@ -1048,18 +1351,21 @@ const editableLinkInteractionBase=editable;
 editable=(block,part='main')=>bindEditableLinks(editableLinkInteractionBase(block,part));
 const openDocumentNotionClassBase=openDocument;
 openDocument=async(id,pushUrl=true)=>{clearBlockSelection();const result=await openDocumentNotionClassBase(id,pushUrl);$('editor-view').classList.toggle('notion-imported',/^doc_notion(?:db)?_/i.test(String(id||'')));return result};
+const openDocumentViewPreferenceBase=openDocument;
+openDocument=async(id,pushUrl=true)=>{state.databaseViewPreferences=new Map();try{const data=await api('/api/documents/'+id+'/view-preferences');for(const preference of data.preferences||[]){if(preference?.block_id)state.databaseViewPreferences.set(String(preference.block_id),{view_id:String(preference.view_id||''),view_type:String(preference.view_type||'')})}}catch{}return openDocumentViewPreferenceBase(id,pushUrl)};
 function caretOffset(el){const selection=getSelection();if(!selection||!selection.rangeCount||!selection.isCollapsed||!el.contains(selection.anchorNode))return null;const range=selection.getRangeAt(0).cloneRange();range.selectNodeContents(el);range.setEnd(selection.anchorNode,selection.anchorOffset);return range.toString().length}
 function selectionAtEnd(el){return caretOffset(el)===el.textContent.length}
 function placeCaret(el,atEnd){el.focus();const range=document.createRange();range.selectNodeContents(el);range.collapse(!atEnd);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)}
 function moveCaretToAdjacent(el,direction){const editables=[...document.querySelectorAll('.block-content[contenteditable="true"],.media-url:not(:disabled),.block-table input:not(:disabled)')].filter(item=>item.offsetParent!==null);const index=editables.indexOf(el);const target=editables[index+direction];if(!target)return false;if(target.matches('input')){target.focus();target.setSelectionRange(direction<0?target.value.length:0,direction<0?target.value.length:0)}else placeCaret(target,direction<0);target.scrollIntoView({block:'nearest'});return true}
-function applyInputShortcut(event,el){if(event.key!==' '||el.dataset.type!=='text'||!selectionAtEnd(el))return false;const marker=el.textContent;const shortcuts={'[]':['todo',false],'[ ]':['todo',false],'[x]':['todo',true],'[X]':['todo',true],'-':['bullet',false],'*':['bullet',false],'+':['bullet',false],'1.':['numbered',false],'>':['quote',false],'!':['callout',false],'#':['heading1',false],'##':['heading2',false],'###':['heading3',false],'####':['heading4',false],'---':['divider',false]};shortcuts[String.fromCharCode(96).repeat(3)]=['code',false];const match=shortcuts[marker];if(!match)return false;event.preventDefault();replaceBlockType(el,match[0],match[1]);return true}
+function applyInputShortcut(event,el){if(event.key!==' '||el.dataset.type!=='text')return false;const offset=caretOffset(el);if(offset===null)return false;const text=el.textContent;const before=text.slice(0,offset);const shortcuts={'[]':['todo',false],'[ ]':['todo',false],'[x]':['todo',true],'[X]':['todo',true],'-':['bullet',false],'*':['bullet',false],'+':['bullet',false],'1.':['numbered',false],'>':['quote',false],'!':['callout',false],'#':['heading1',false],'##':['heading2',false],'###':['heading3',false],'####':['heading4',false],'---':['divider',false]};shortcuts[String.fromCharCode(96).repeat(3)]=['code',false];const match=shortcuts[before];if(!match)return false;event.preventDefault();replaceBlockType(el,match[0],match[1],text.slice(offset));return true}
 const CONTINUING_BLOCK_TYPES=new Set(['bullet','numbered','todo']);
+const INDENTABLE_BLOCK_TYPES=new Set(['text','heading1','heading2','heading3','heading4','heading5','heading6','bullet','numbered','todo','quote','toggle','callout','math']);
 function setRowIndent(row,level){const value=Math.max(0,Math.min(4,level));row.dataset.indent=String(value);row.style.setProperty('--indent',String(value));renumberBlocks();scheduleSave()}
-function changeListIndent(row,direction){const el=row.querySelector('.block-content');if(!CONTINUING_BLOCK_TYPES.has(el?.dataset.type))return false;const current=Number(row.dataset.indent||0);if(direction>0){const previous=row.previousElementSibling;if(!previous||!CONTINUING_BLOCK_TYPES.has(previous.querySelector('.block-content')?.dataset.type)||Number(previous.dataset.indent||0)<current)return false}setRowIndent(row,current+direction);return true}
-function splitEditableBlock(row,el){const offset=caretOffset(el);const text=el.textContent;const type=el.dataset.type;el.textContent=text.slice(0,offset);el.dataset.rich='false';const nextType=CONTINUING_BLOCK_TYPES.has(type)?type:'text';const next=blockRow({...newBlock(nextType),content:text.slice(offset),indent_level:nextType===type?Number(row.dataset.indent||0):0},0);row.after(next);renumberBlocks();focusBlock(next);scheduleSave();hideSlashMenu()}
+function changeBlockIndent(row,direction){const el=row?.querySelector('.block-content');if(!INDENTABLE_BLOCK_TYPES.has(el?.dataset.type))return false;const current=Math.max(0,Math.min(4,Number(row.dataset.indent||0)));if(direction>0){const previous=row.previousElementSibling;if(!previous||current>=4||Number(previous.dataset.indent||0)<current)return false}else if(direction<0&&current<=0)return false;setRowIndent(row,current+direction);return true}
+function splitEditableBlock(row,el){const offset=caretOffset(el);const text=el.textContent;const type=el.dataset.type;el.textContent=text.slice(0,offset);el.dataset.rich='false';const nextType=CONTINUING_BLOCK_TYPES.has(type)?type:'text';const next=blockRow({...newBlock(nextType),content:text.slice(offset),indent_level:Number(row.dataset.indent||0)},0);row.after(next);renumberBlocks();focusBlock(next);scheduleSave();hideSlashMenu()}
 function mergeWithPrevious(row,el){const previous=row.previousElementSibling;const target=previous?.querySelector('.block-content[contenteditable="true"]');if(!target)return false;const offset=target.textContent.length;target.textContent+=el.textContent;target.dataset.rich='false';row.remove();renumberBlocks();placeCaretAtOffset(target,offset);scheduleSave();return true}
 function placeCaretAtOffset(el,offset){el.focus();const range=document.createRange();const node=el.firstChild||el.appendChild(document.createTextNode(''));range.setStart(node,Math.min(offset,node.textContent.length));range.collapse(true);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)}
-function handleBlockKey(event,el){if(!canEdit())return;if((event.ctrlKey||event.metaKey)&&['b','i','u'].includes(event.key.toLowerCase())){event.preventDefault();document.execCommand(({b:'bold',i:'italic',u:'underline'})[event.key.toLowerCase()]);el.dataset.rich='true';scheduleSave();return}if(!$('slash-menu').hidden&&handleSlashKey(event))return;if(applyInputShortcut(event,el))return;const row=el.closest('.block-row');if(event.key==='Tab'){if(changeListIndent(row,event.shiftKey?-1:1))event.preventDefault();return}if(event.key==='Enter'&&event.shiftKey&&el.dataset.type!=='code'){event.preventDefault();document.execCommand('insertLineBreak');scheduleSave();return}if(event.altKey&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();moveBlockRow(row,event.key==='ArrowUp'?-1:1);return}const offset=caretOffset(el);if(!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&((event.key==='ArrowUp'&&offset===0)||(event.key==='ArrowLeft'&&offset===0))){event.preventDefault();moveCaretToAdjacent(el,-1);return}if(!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&((event.key==='ArrowDown'&&offset===el.textContent.length)||(event.key==='ArrowRight'&&offset===el.textContent.length))){event.preventDefault();moveCaretToAdjacent(el,1);return}if(el.dataset.togglePart==='body'){if(event.key==='Escape'){hideSlashMenu();hideBlockMenu()}return}if(event.key==='Enter'&&!event.shiftKey&&el.dataset.type!=='code'){event.preventDefault();const type=el.dataset.type;if(CONTINUING_BLOCK_TYPES.has(type)&&!el.textContent.trim()){replaceBlockType(el,'text');return}splitEditableBlock(row,el)}else if(event.key==='Backspace'&&offset===0&&row.previousElementSibling){event.preventDefault();mergeWithPrevious(row,el);hideSlashMenu()}else if(event.key==='Backspace'&&!el.textContent&&$('block-editor').children.length>1){event.preventDefault();const focus=row.previousElementSibling||row.nextElementSibling;row.remove();renumberBlocks();if(focus)placeCaret(focus.querySelector('.block-content'),true);scheduleSave();hideSlashMenu()}else if(event.key==='Escape'){hideSlashMenu();hideBlockMenu()}}
+function handleBlockKey(event,el){if(!canEdit())return;if((event.ctrlKey||event.metaKey)&&['b','i','u'].includes(event.key.toLowerCase())){event.preventDefault();document.execCommand(({b:'bold',i:'italic',u:'underline'})[event.key.toLowerCase()]);el.dataset.rich='true';scheduleSave();return}if(!$('slash-menu').hidden&&handleSlashKey(event))return;if(applyInputShortcut(event,el))return;const row=el.closest('.block-row');if(event.key==='Tab'){if(el.dataset.type==='code'){event.preventDefault();document.execCommand('insertText',false,'\t');scheduleSave();return}if(changeBlockIndent(row,event.shiftKey?-1:1)||INDENTABLE_BLOCK_TYPES.has(el.dataset.type))event.preventDefault();return}if(event.key==='Enter'&&event.shiftKey&&el.dataset.type!=='code'){event.preventDefault();document.execCommand('insertLineBreak');scheduleSave();return}if(event.altKey&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();moveBlockRow(row,event.key==='ArrowUp'?-1:1);return}const offset=caretOffset(el);if(!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&((event.key==='ArrowUp'&&offset===0)||(event.key==='ArrowLeft'&&offset===0))){event.preventDefault();moveCaretToAdjacent(el,-1);return}if(!event.shiftKey&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&((event.key==='ArrowDown'&&offset===el.textContent.length)||(event.key==='ArrowRight'&&offset===el.textContent.length))){event.preventDefault();moveCaretToAdjacent(el,1);return}if(el.dataset.togglePart==='body'){if(event.key==='Escape'){hideSlashMenu();hideBlockMenu()}return}if(event.key==='Enter'&&!event.shiftKey&&el.dataset.type!=='code'){event.preventDefault();const type=el.dataset.type;if(CONTINUING_BLOCK_TYPES.has(type)&&!el.textContent.trim()){replaceBlockType(el,'text');return}splitEditableBlock(row,el)}else if(event.key==='Backspace'&&offset===0&&row.previousElementSibling){event.preventDefault();mergeWithPrevious(row,el);hideSlashMenu()}else if(event.key==='Backspace'&&!el.textContent&&$('block-editor').children.length>1){event.preventDefault();const focus=row.previousElementSibling||row.nextElementSibling;row.remove();renumberBlocks();if(focus)placeCaret(focus.querySelector('.block-content'),true);scheduleSave();hideSlashMenu()}else if(event.key==='Escape'){hideSlashMenu();hideBlockMenu()}}
 $('append-block').onclick=()=>{const row=blockRow(newBlock(),0);$('block-editor').append(row);renumberBlocks();row.querySelector('.block-content').focus();scheduleSave()};
 function slashSearchText(type,symbol,label,desc,category){const aliases={text:'text paragraph plain 텍스트 문단',heading1:'h1 heading title 제목',heading2:'h2 heading title 제목',heading3:'h3 heading title 제목',heading4:'h4 heading title 제목',heading5:'h5 heading title 제목',heading6:'h6 heading title 제목',bullet:'bullet bulleted list 목록 리스트 글머리',numbered:'numbered ordered list 목록 리스트 번호',todo:'todo task checklist 할 일 체크',toggle:'toggle collapsible 토글 접기',callout:'callout 강조 안내',quote:'quote blockquote 인용',table:'table grid 표',divider:'divider separator horizontal 구분선',page_link:'page link subpage 페이지 링크 하위 페이지',image:'image 사진 이미지',video:'video 동영상',audio:'audio 오디오',code:'code codeblock 코드 소스',file:'file attachment 파일 첨부',bookmark:'bookmark web 북마크 웹',database:'database data table 데이터베이스',toc:'toc table of contents 목차',math:'math equation formula 수식',embed:'embed iframe 임베드'};return(type+' '+symbol+' '+label+' '+desc+' '+category+' '+(aliases[type]||'')).normalize('NFKC').toLocaleLowerCase('ko-KR')}
 function positionSlashMenu(menu,anchor){const rect=anchor.getBoundingClientRect();const width=Math.min(Math.max(menu.offsetWidth||280,260),Math.max(260,innerWidth-16));const height=menu.offsetHeight||320;const left=Math.max(8,Math.min(rect.left,innerWidth-width-8));const below=innerHeight-(rect.bottom+6);const top=below>=height||rect.top<height+8?rect.bottom+6:rect.top-height-6;menu.style.left=Math.round(left)+'px';menu.style.top=Math.round(Math.max(8,Math.min(top,innerHeight-height-8)))+'px'}
@@ -1068,7 +1374,7 @@ function showSlashMenu(el){state.slashBlock=el;const raw=el.textContent.startsWi
 function handleSlashKey(event){const buttons=[...$('slash-menu').querySelectorAll('.slash-item')];if(!buttons.length){if(event.key==='Escape'){event.preventDefault();hideSlashMenu();return true}return false}if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();state.slashIndex=(state.slashIndex+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;updateSlashSelection();return true}if(event.key==='Enter'){event.preventDefault();changeBlockType(state.slashBlock,buttons[state.slashIndex].dataset.blockType);return true}if(event.key==='Escape'){event.preventDefault();hideSlashMenu();return true}return false}
 function hideSlashMenu(){const target=state.slashBlock;if(target){target.setAttribute('aria-expanded','false');target.removeAttribute('aria-activedescendant')}$('slash-menu').hidden=true;state.slashBlock=null;state.slashIndex=0}
 function focusBlock(row,atEnd=false){const target=row.querySelector('.block-content[contenteditable="true"],.media-url:not(:disabled),.block-table input:not(:disabled),.db-title:not(:disabled),.db-cell-input:not(:disabled)');if(!target)return;if(target.matches('input,select'))target.focus();else placeCaret(target,atEnd)}
-function replaceBlockType(el,type,checked=false){const row=el.closest('.block-row');const id=row.dataset.id;const next=blockRow({id,type,content:'',checked},0);row.replaceWith(next);renumberBlocks();if(type==='divider'){const following=blockRow(newBlock(),0);next.after(following);focusBlock(following)}else focusBlock(next);scheduleSave();hideSlashMenu()}
+function replaceBlockType(el,type,checked=false,content=''){const row=el.closest('.block-row');const id=row.dataset.id;const next=blockRow({id,type,content,checked,indent_level:Number(row.dataset.indent||0)},0);row.replaceWith(next);renumberBlocks();if(type==='divider'){const following=blockRow(newBlock(),0);next.after(following);focusBlock(following)}else focusBlock(next);scheduleSave();hideSlashMenu()}
 function changeBlockType(el,type){replaceBlockType(el,type,false)}
 function blockDataFromRow(row){const el=row.querySelector('.block-content');const type=el.dataset.type;let content=type==='code'?(el.innerText||el.textContent||''):el.textContent;let checked=row.querySelector('input[type=checkbox]')?.checked||false;if(el.dataset.database==='true'){
   const model=el._databaseModel;
@@ -1458,6 +1764,9 @@ async function route(request, env) {
     if (notionDocumentsBatchRoute && request.method === 'POST') return importLargeNotionDocuments(request, env, actor, notionDocumentsBatchRoute[1]);
     const notionCompleteRoute = path.match(/^\/api\/import\/notion-sessions\/(nimp_[A-Za-z0-9_-]{8,80})\/complete$/);
     if (notionCompleteRoute && request.method === 'POST') return completeLargeNotionImport(env, actor, notionCompleteRoute[1]);
+    const documentViewPreferencesRoute = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})\/view-preferences$/);
+    if (documentViewPreferencesRoute && request.method === 'GET') return getDocumentViewPreferences(env, actor, documentViewPreferencesRoute[1]);
+    if (documentViewPreferencesRoute && request.method === 'PUT') return saveDocumentViewPreference(request, env, actor, documentViewPreferencesRoute[1]);
     const documentRoute = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})$/);
     if (documentRoute && request.method === 'GET') return getDocument(env, actor, documentRoute[1]);
     if (documentRoute && request.method === 'PUT') return saveDocument(request, env, actor, documentRoute[1]);
@@ -3516,6 +3825,39 @@ async function getDocument(env, actor, id) {
   return json({ document: { ...publicDocument(document), is_favorite: !!favorite, can_edit: permission.can_edit, can_manage_access: permission.can_manage_access, blocks: await enrichPageLinkBlocks(env.DB, repairLegacyImportedBlocks(blocks.results || [])) } });
 }
 
+async function getDocumentViewPreferences(env, actor, id) {
+  const { document } = await requireDocumentForActor(env.DB, actor, id);
+  if (document.status !== 'active') throw new HttpError(404, '휴지통에 있는 문서입니다.');
+  const result = await env.DB.prepare(`SELECT block_id,view_id,view_type,updated_at
+    FROM document_view_preferences WHERE project_id=? AND user_id=? AND document_id=?`).bind(PROJECT_ID, actor.id, id).all();
+  return json({ preferences: (result.results || []).map(row => ({
+    block_id: String(row.block_id || ''),
+    view_id: String(row.view_id || ''),
+    view_type: String(row.view_type || ''),
+    updated_at: Number(row.updated_at || 0)
+  })) });
+}
+
+async function saveDocumentViewPreference(request, env, actor, id) {
+  const { document } = await requireDocumentForActor(env.DB, actor, id);
+  if (document.status !== 'active') throw new HttpError(404, '휴지통에 있는 문서입니다.');
+  const body = await readJson(request);
+  const blockId = String(body.block_id || '');
+  const viewId = String(body.view_id || '').trim().slice(0, 80);
+  const viewType = String(body.view_type || '').trim().toLowerCase();
+  if (!/^blk_[A-Za-z0-9_-]{8,80}$/.test(blockId)) throw new HttpError(400, '데이터베이스 블록 ID가 올바르지 않습니다.');
+  if (!viewId || !/^[A-Za-z0-9_-]{1,80}$/.test(viewId)) throw new HttpError(400, '데이터베이스 보기 ID가 올바르지 않습니다.');
+  if (!DATABASE_VIEW_TYPES.has(viewType)) throw new HttpError(400, '지원하지 않는 데이터베이스 보기입니다.');
+  const block = await env.DB.prepare('SELECT block_type FROM document_blocks WHERE document_id=? AND snapshot_id=? AND id=?').bind(id, document.active_snapshot_id, blockId).first();
+  if (!block || block.block_type !== 'database') throw new HttpError(400, '데이터베이스 블록을 찾을 수 없습니다.');
+  const now = nowSeconds();
+  await env.DB.prepare(`INSERT INTO document_view_preferences
+    (project_id,user_id,document_id,block_id,view_id,view_type,updated_at) VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(project_id,user_id,document_id,block_id) DO UPDATE SET view_id=excluded.view_id,view_type=excluded.view_type,updated_at=excluded.updated_at`)
+    .bind(PROJECT_ID, actor.id, id, blockId, viewId, viewType, now).run();
+  return json({ ok: true, block_id: blockId, view_id: viewId, view_type: viewType, updated_at: now });
+}
+
 async function getPublicDocument(env, id) {
   const document = await env.DB.prepare(`SELECT d.* FROM document_publications p
     JOIN documents d ON d.id=p.document_id AND d.project_id=p.project_id
@@ -4288,7 +4630,7 @@ function validateBlocks(value) {
     }
     ids.add(id);
     const requestedIndent = Number(block && block.indent_level || 0);
-    const indentLevel = ['bullet', 'numbered', 'todo'].includes(type) && Number.isInteger(requestedIndent) ? Math.max(0, Math.min(4, requestedIndent)) : 0;
+    const indentLevel = INDENTABLE_BLOCK_TYPES.includes(type) && Number.isInteger(requestedIndent) ? Math.max(0, Math.min(4, requestedIndent)) : 0;
     const normalized = normalizeBlockSnapshot({ id, type, content: (type === 'divider' || type === 'toc') ? '' : content, checked: (type === 'todo' || type === 'toggle') && !!block.checked, indent_level: indentLevel });
     return { id: normalized.id, type: normalized.type, content: normalized.content, checked: normalized.checked, indent_level: normalized.indent_level };
   });

@@ -7,6 +7,13 @@ export const CORE_BLOCK_TYPES = Object.freeze([
   'embed', 'page_link', 'unsupported'
 ]);
 
+// Blocks that can be visually nested from the editor with Tab / Shift+Tab.
+// Structured and media blocks keep Tab for their own form controls.
+export const INDENTABLE_BLOCK_TYPES = Object.freeze([
+  'text', 'heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'heading6',
+  'bullet', 'numbered', 'todo', 'quote', 'toggle', 'callout', 'math'
+]);
+
 const BLOCK_TYPE_SET = new Set(CORE_BLOCK_TYPES);
 
 export function normalizeBlockType(type) {
@@ -20,7 +27,7 @@ export function normalizeBlockSnapshot(input = {}) {
   const children = Array.isArray(input.children) ? input.children.map(String).filter(Boolean) : [];
   const props = input.props && typeof input.props === 'object' && !Array.isArray(input.props) ? { ...input.props } : {};
   const source = input.source && typeof input.source === 'object' && !Array.isArray(input.source) ? { ...input.source } : {};
-  const indentLevel = ['bullet', 'numbered', 'todo'].includes(type) && Number.isInteger(Number(input.indent_level))
+  const indentLevel = INDENTABLE_BLOCK_TYPES.includes(type) && Number.isInteger(Number(input.indent_level))
     ? Math.max(0, Math.min(4, Number(input.indent_level)))
     : 0;
   return {

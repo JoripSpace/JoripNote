@@ -56,6 +56,7 @@ class D1Database {
     this.database.exec(readFileSync(new URL('../migrations/0011_notion_people.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0012_heading_levels.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0013_notion_page_metadata.sql', import.meta.url), 'utf8'));
+    this.database.exec(readFileSync(new URL('../migrations/0014_database_view_preferences.sql', import.meta.url), 'utf8'));
   }
   prepare(sql) {
     return new D1Statement(this.database, sql);
@@ -209,11 +210,14 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /<h2>로그인<\/h2>/);
   assert.match(html, /id="sidebar-collapse"/);
   assert.match(html, />공용 문서</);
+  assert.match(html, /data-create-document="root"[^>]+aria-label="공용 문서에 페이지 추가"/);
   assert.match(html, /class="sidebar-all active shared-space-only"[^>]+data-view="all"/);
+  assert.match(html, /data-create-document="root"[^>]+aria-label="모든 문서에 페이지 추가"/);
   assert.match(html, /id="personal-tree"[^>]+aria-label="내 문서"/);
+  assert.match(html, /data-create-document="root"[^>]+aria-label="내 문서에 페이지 추가"/);
   assert.match(html, />새 페이지 추가</);
   assert.match(html, /SUIT@2\/fonts\/variable\/woff2\/SUIT-Variable\.css/);
-  assert.match(html, /app\.css\?v=20260921-joripnote-58/);
+  assert.match(html, /app\.css\?v=20260922-joripnote-62/);
   assert.match(html, /id="settings-view" class="page-view settings-page"/);
   assert.doesNotMatch(html, /로그인한 멤버만 접근할 수 있는 협업 문서 공간/);
   assert.match(html, /id="brand-workspace-note"/);
@@ -230,7 +234,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
   assert.match(html, /id="document-page-icon" class="document-page-icon"[^>]+hidden/);
-  assert.match(html, /app\.js\?v=20260917-joripnote-51/);
+  assert.match(html, /app\.js\?v=20260922-joripnote-54/);
   assert.match(html, /id="tree-menu" class="block-menu tree-context-menu" role="menu" aria-label="문서 메뉴"/);
   assert.match(html, /class="workspace-header-actions"[\s\S]*class="icon-button header-notification"[\s\S]*id="notification-badge"/);
   const primarySidebarNav = html.match(/<nav class="main-nav sidebar-primary-nav" aria-label="공간 빠른 메뉴">([\s\S]*?)<\/nav>/)?.[1] || '';
@@ -262,6 +266,12 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appScript, /\$\('document-page-icon'\)\.hidden=true/);
   assert.match(appScript, /renderBlocks\(state\.current\.blocks\);\$\('document-page-icon'\)\.hidden=false/);
   assert.match(appScript, /function showTreeMenu/);
+  assert.match(appScript, /view-preferences/);
+  assert.match(appScript, /function applyDatabaseViewPreference/);
+  assert.match(appScript, /function persistDatabaseViewPreference/);
+  assert.match(appScript, /function activateDatabaseView/);
+  assert.match(appScript, /data-create-document/);
+  assert.match(appScript, /createDocument\(\)/);
   assert.match(appScript, /row\.oncontextmenu=event=>/);
   assert.match(appScript, /treeMenuButton\('하위 문서 추가','plus','add-child'\)/);
   assert.match(appScript, /treeMenuButton\('문서 복제','copy','duplicate'\)/);
@@ -451,11 +461,35 @@ assert.match(styles, /\.block-row\.selected \.media-preview\{border-color:transp
   assert.doesNotMatch(styles, /\.editor-view\.notion-imported:not\(\.database-page\) \.block-content a\{[^}]*padding-inline:2px/);
   assert.match(styles, /\.media-block:not\(\.notion-page-link\) \.media-preview> a\{[^}]*padding:0 var\(--ui-space-4\)/);
   assert.match(styles, /\.notion-page-link \.media-preview> a\{[^}]*padding:0 var\(--ui-space-2\)/);
+  assert.match(styles, /\.table-edge-actions\{position:absolute;inset:0;z-index:4;pointer-events:none\}/);
+  assert.match(styles, /\.structured-block\{position:relative;padding-block:0\}/);
+  assert.match(styles, /\.table-edge-action\[data-edge=top\]\{top:-13px;left:50%/);
+  assert.match(styles, /\.table-edge-action\[data-edge=bottom\]\{bottom:-13px;left:50%/);
+  assert.match(styles, /\.table-edge-action\[data-edge=left\]\{left:-13px;top:50%/);
+  assert.match(styles, /\.table-edge-action\[data-edge=right\]\{right:-13px;top:50%/);
+  assert.match(styles, /\.structured-block\[data-hover-edge=top\] \.table-edge-action\[data-edge=top\]/);
+  assert.match(styles, /\.table-cell-selection-actions\{position:absolute/);
+  assert.match(styles, /\.block-table th\.cell-selected,\.block-table td\.cell-selected\{background:#e8f3ff/);
+  assert.match(styles, /@media\(pointer:coarse\),\(max-width:760px\)\{\s+\.table-edge-action\{width:30px;height:30px;opacity:1;pointer-events:auto\}/);
+  assert.match(styles, /\.table-edge-action\[data-edge=bottom\]\{bottom:-15px\}/);
   assert.match(styles, /\.code-block-shell>\.code-block-content,\.code-block-shell \.block-content\[data-type="code"\]\{padding-inline:var\(--ui-space-4\)!important\}/);
   assert.match(styles, /\.document-card\{padding-inline:var\(--ui-space-4\)\}/);
   assert.match(styles, /\.block-row\.selected\{margin-right:0;background:transparent;box-shadow:none;color:inherit\}/);
   assert.match(styles, /@media\(max-width:760px\)\{\s+\.media-block:not\(\.notion-page-link\) \.media-preview> a\{min-height:48px;padding-inline:var\(--ui-space-3\)\}/);
   assert.match(styles, /\.document-card\{padding-inline:var\(--ui-space-3\)\}/);
+  assert.match(styles, /\.toggle-summary\{align-items:center;min-height:30px\}/);
+  assert.match(styles, /\.toggle-caret\{align-self:center;display:grid;place-items:center;width:var\(--marker-gutter,22px\);height:30px/);
+  assert.match(styles, /\.todo-wrap input\[type="checkbox"\]\{display:block;width:18px;height:18px;align-self:center;justify-self:center;margin:0\}/);
+  assert.match(styles, /\.editor-view:not\(\.database-page\) \.todo-wrap\{align-items:center;grid-template-columns:var\(--marker-gutter,22px\) minmax\(0,1fr\);gap:6px;min-width:0;min-height:30px;padding:0 10px 0 0\}/);
+  assert.match(styles, /\.editor-view:not\(\.database-page\) \.todo-wrap input\[type="checkbox"\]\{display:block;width:18px;height:18px;align-self:center;justify-self:center;margin:0\}/);
+  assert.match(styles, /\.block-content\[data-type="bullet"\]::before,\.editor-view:not\(\.database-page\) \.block-content\[data-type="numbered"\]::before\{top:3px;display:flex;align-items:center;height:1\.75em;line-height:1\}/);
+  assert.match(styles, /\.block-content\[data-type="bullet"\],\.block-content\[data-type="numbered"\]\{position:relative;padding-right:10px\}/);
+  assert.match(styles, /\.block-content\[data-type="text"\],\.block-content\[data-type\^="heading"\].*padding-inline-end:10px/);
+  assert.match(styles, /\.callout-wrap>\.ui-icon\{align-self:center;margin-top:0\}/);
+  assert.match(styles, /\.inline-link-favicon\{margin-block:0;vertical-align:middle\}/);
+  assert.match(styles, /\.db-view-tab\{display:inline-flex;justify-content:center;line-height:1\.2\}/);
+  assert.match(styles, /\.db-card-title-row\{align-items:center\}/);
+  assert.match(styles, /\.db-search-wrap>\.ui-icon\{top:50%;transform:translateY\(-50%\)\}/);
 
   const script = await worker.fetch(request('/app.js'), {});
   const source = await script.text();
@@ -484,6 +518,16 @@ assert.match(styles, /\.block-row\.selected \.media-preview\{border-color:transp
   assert.match(source, /openDocument=async\(id,pushUrl=true\)=>\{clearBlockSelection\(\)/);
   assert.match(source, /shiftCalendarValue\(context\.row\.cells\[context\.dateColumn\.id\],delta\)/);
   assert.match(source, /function renderDatabaseTimeline/);
+  assert.match(source, /function structuredTableBlock\(block,database\)/);
+  assert.match(source, /table-edge-action/);
+  assert.match(source, /hoverEdge/);
+  assert.match(source, /table-cell-selection-actions/);
+  assert.match(source, /deleteSelectedRows/);
+  assert.match(source, /deleteSelectedColumns/);
+  assert.match(source, /cellGesture/);
+  assert.match(source, /위에 행 추가/);
+  assert.match(source, /왼쪽에 열 추가/);
+  assert.doesNotMatch(source, /actions\.className='block-table-actions'/);
   assert.match(source, /view\.type==='timeline'/);
   assert.match(source, /function databaseStructuredFilter/);
   assert.match(source, /const databaseRowsBase=databaseRows/);
@@ -495,10 +539,15 @@ assert.match(styles, /\.block-row\.selected \.media-preview\{border-color:transp
   assert.match(source, /heading1/);
   assert.match(source, /showSlashMenu/);
   assert.match(source, /applyInputShortcut/);
+  assert.match(source, /const offset=caretOffset\(el\);if\(offset===null\)return false;const text=el\.textContent;const before=text\.slice\(0,offset\)/);
+  assert.match(source, /replaceBlockType\(el,match\[0\],match\[1\],text\.slice\(offset\)\)/);
+  assert.match(source, /function replaceBlockType\(el,type,checked=false,content=''\)/);
   assert.match(source, /CONTINUING_BLOCK_TYPES=new Set\(\['bullet','numbered','todo'\]\)/);
   assert.match(source, /function splitEditableBlock/);
   assert.match(source, /function mergeWithPrevious/);
-  assert.match(source, /function changeListIndent/);
+  assert.match(source, /const INDENTABLE_BLOCK_TYPES=new Set\(\['text','heading1','heading2','heading3','heading4','heading5','heading6','bullet','numbered','todo','quote','toggle','callout','math'\]\)/);
+  assert.match(source, /function changeBlockIndent/);
+  assert.match(source, /el\.dataset\.type==='code'\)\{event\.preventDefault\(\);document\.execCommand\('insertText',false,'\\t'\)/);
   assert.match(source, /application\/x-qwerty-blocks/);
   assert.match(source, /function openUrlPasteMenu/);
   assert.match(source, /function openLinkDialog/);
@@ -1474,7 +1523,7 @@ test('documents support hierarchy, all block types, autosave persistence, favori
   assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'todo').checked, true);
   assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'toggle').checked, true);
   assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'bullet').indent_level, 2);
-  assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'heading1').indent_level, 0);
+  assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'heading1').indent_level, 3);
   assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'divider').content, '');
   assert.equal(reloaded.body.document.blocks.find((block) => block.type === 'toc').content, '');
   const database = JSON.parse(reloaded.body.document.blocks.find((block) => block.type === 'database').content);
@@ -1594,6 +1643,62 @@ test('database cells enforce typed values and persist safe filters', async () =>
   assert.equal(largeSaved.response.status, 200, JSON.stringify(largeSaved.body));
   const largeReloaded = await call(env, '/api/documents/' + id, { headers: { cookie } });
   assert.equal(JSON.parse(largeReloaded.body.document.blocks[0].content).rows.length, 404);
+});
+
+test('database view preferences persist per member without changing document content', async () => {
+  const env = envWithDb();
+  await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
+  await addUser(env, { id: 'usr_member0001', username: 'member', role: 'member' });
+  const ownerCookie = await login(env, 'owner');
+  const memberCookie = await login(env, 'member');
+  const created = await call(env, '/api/documents', { method: 'POST', headers: auth(ownerCookie), body: {} });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  const documentId = created.body.document.id;
+  const database = JSON.stringify({
+    version: 3,
+    title: '작업 목록',
+    columns: [
+      { id: 'col_title', name: '작업', type: 'text', options: [] },
+      { id: 'col_due', name: '마감일', type: 'date', options: [] }
+    ],
+    rows: [{ id: 'row_1', cells: { col_title: '출시 준비', col_due: '2026-09-22' } }],
+    views: [
+      { id: 'view_table', name: '표', type: 'table', order: 0 },
+      { id: 'view_calendar', name: '캘린더', type: 'calendar', order: 1, datePropertyId: 'col_due' },
+      { id: 'view_board', name: '프로젝트', type: 'board', order: 2, groupBy: 'col_title' }
+    ],
+    view: { mode: 'table', groupBy: '', sortBy: '', sortDir: 'asc', filter: { column: '', operator: 'contains', value: '' } }
+  });
+  const saved = await call(env, '/api/documents/' + documentId, {
+    method: 'PUT',
+    headers: auth(ownerCookie),
+    body: { title: '작업 목록', version: 1, save_id: 'snap_viewprefsave0001', blocks: [{ id: 'blk_viewpref0001', type: 'database', content: database }] }
+  });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+
+  const ownerSet = await call(env, '/api/documents/' + documentId + '/view-preferences', {
+    method: 'PUT',
+    headers: auth(ownerCookie),
+    body: { block_id: 'blk_viewpref0001', view_id: 'view_calendar', view_type: 'calendar' }
+  });
+  assert.equal(ownerSet.response.status, 200, JSON.stringify(ownerSet.body));
+  const ownerRead = await call(env, '/api/documents/' + documentId + '/view-preferences', { headers: auth(ownerCookie) });
+  assert.deepEqual(ownerRead.body.preferences.map(({ block_id, view_id, view_type }) => ({ block_id, view_id, view_type })), [{ block_id: 'blk_viewpref0001', view_id: 'view_calendar', view_type: 'calendar' }]);
+
+  const memberInitial = await call(env, '/api/documents/' + documentId + '/view-preferences', { headers: auth(memberCookie) });
+  assert.deepEqual(memberInitial.body.preferences, []);
+  const memberSet = await call(env, '/api/documents/' + documentId + '/view-preferences', {
+    method: 'PUT',
+    headers: auth(memberCookie),
+    body: { block_id: 'blk_viewpref0001', view_id: 'view_board', view_type: 'board' }
+  });
+  assert.equal(memberSet.response.status, 200, JSON.stringify(memberSet.body));
+  const memberRead = await call(env, '/api/documents/' + documentId + '/view-preferences', { headers: auth(memberCookie) });
+  assert.equal(memberRead.body.preferences[0].view_type, 'board');
+  const ownerAgain = await call(env, '/api/documents/' + documentId + '/view-preferences', { headers: auth(ownerCookie) });
+  assert.equal(ownerAgain.body.preferences[0].view_type, 'calendar');
+  const content = await call(env, '/api/documents/' + documentId, { headers: auth(ownerCookie) });
+  assert.equal(JSON.parse(content.body.document.blocks[0].content).view.mode, 'table');
 });
 
 test('link audit scans active document snapshots without mutating them', async () => {

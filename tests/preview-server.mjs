@@ -59,6 +59,8 @@ DB.database.exec(readFileSync(new URL('../migrations/0009_large_notion_imports.s
 DB.database.exec(readFileSync(new URL('../migrations/0010_notion_source_identity.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0011_notion_people.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0012_heading_levels.sql', import.meta.url), 'utf8'));
+DB.database.exec(readFileSync(new URL('../migrations/0013_notion_page_metadata.sql', import.meta.url), 'utf8'));
+DB.database.exec(readFileSync(new URL('../migrations/0014_database_view_preferences.sql', import.meta.url), 'utf8'));
 
 const emptyPreview = process.env.JORIPNOTE_PREVIEW_EMPTY === '1';
 const password = process.env.QWERTY_PREVIEW_PASSWORD;
