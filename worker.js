@@ -1768,9 +1768,9 @@ class HttpError extends Error {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
-      return await route(request, env);
+      return await route(request, env, ctx);
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message, ...(error.details || {}) }, error.status);
       console.error('request_failed', error && error.message);
@@ -1779,7 +1779,7 @@ export default {
   }
 };
 
-async function route(request, env) {
+async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   if (request.method === 'GET' && path === '/health') return json({ ok: true, service: 'joripnote' });
@@ -1871,7 +1871,7 @@ async function route(request, env) {
     if (documentViewPreferencesRoute && request.method === 'GET') return getDocumentViewPreferences(env, actor, documentViewPreferencesRoute[1]);
     if (documentViewPreferencesRoute && request.method === 'PUT') return saveDocumentViewPreference(request, env, actor, documentViewPreferencesRoute[1]);
     const documentRoute = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})$/);
-    if (documentRoute && request.method === 'GET') return getDocument(env, actor, documentRoute[1]);
+    if (documentRoute && request.method === 'GET') return getDocument(env, actor, documentRoute[1], ctx);
     if (documentRoute && request.method === 'PUT') return saveDocument(request, env, actor, documentRoute[1]);
     if (documentRoute && request.method === 'DELETE') return permanentlyDeleteDocument(env, actor, documentRoute[1]);
     const versionsRoute = path.match(/^\/api\/documents\/([A-Za-z0-9_-]{8,80})\/versions$/);
@@ -4041,17 +4041,19 @@ export function repairLegacyImportedBlocks(blocks) {
 
 const parseMarkdownBlocksBase=parseMarkdownBlocks;
 parseMarkdownBlocks=(markdown)=>{const parsed=parseMarkdownBlocksBase(markdown);const blocks=parsed.blocks.map(block=>{if(block.type!=='bullet')return block;const match=String(block.content||'').trim().match(/^\[([^\]\r\n]+)\]\((https?:\/\/[^)\s]+)\)$/i);if(!match||!/(?:notion\.so|notion\.site|app\.notion\.com)/i.test(match[2]))return block;const notionId=notionPageIdFromUrl(match[2]);const label=String(match[1]).replace(/\\([\[\]])/g,'$1').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/__([^_]+)__/g,'$1').replace(/`([^`]+)`/g,'$1').trim()||'연결된 문서';return notionId&&/^[0-9a-f]{32}$/.test(notionId)?{...block,type:'page_link',content:JSON.stringify({title:label,url:match[2],document_id:'doc_notion_'+notionId})}:block});return{...parsed,blocks:repairLegacyImportedBlocks(blocks)}};
-async function getDocument(env, actor, id) {
+async function getDocument(env, actor, id, ctx) {
   const { document, permission } = await requireDocumentForActor(env.DB, actor, id);
   if (document.status !== 'active') throw new HttpError(404, '휴지통에 있는 문서입니다.');
   const now = nowSeconds();
+  const recentDocument = env.DB.prepare(`INSERT INTO recent_documents (project_id,user_id,document_id,opened_at) VALUES (?,?,?,?)
+    ON CONFLICT(project_id,user_id,document_id) DO UPDATE SET opened_at=excluded.opened_at`).bind(PROJECT_ID, actor.id, id, now).run();
+  if (ctx?.waitUntil) ctx.waitUntil(recentDocument.catch(() => {}));
+  else await recentDocument;
   const [blocks, favorite] = await Promise.all([
     env.DB.prepare(
       'SELECT id, block_type, content, position, checked, indent_level FROM document_blocks WHERE document_id=? AND snapshot_id=? ORDER BY position ASC'
     ).bind(id, document.active_snapshot_id).all(),
-    env.DB.prepare('SELECT 1 AS yes FROM document_favorites WHERE project_id=? AND user_id=? AND document_id=?').bind(PROJECT_ID, actor.id, id).first(),
-    env.DB.prepare(`INSERT INTO recent_documents (project_id,user_id,document_id,opened_at) VALUES (?,?,?,?)
-      ON CONFLICT(project_id,user_id,document_id) DO UPDATE SET opened_at=excluded.opened_at`).bind(PROJECT_ID, actor.id, id, now).run()
+    env.DB.prepare('SELECT 1 AS yes FROM document_favorites WHERE project_id=? AND user_id=? AND document_id=?').bind(PROJECT_ID, actor.id, id).first()
   ]);
   return json({ document: { ...publicDocument(document), is_favorite: !!favorite, can_edit: permission.can_edit, can_manage_access: permission.can_manage_access, blocks: await enrichPageLinkBlocks(env.DB, repairLegacyImportedBlocks(blocks.results || [])) } });
 }
