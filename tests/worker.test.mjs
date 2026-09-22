@@ -237,7 +237,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
   assert.match(html, /id="document-page-icon" class="document-page-icon"[^>]+hidden/);
-  assert.match(html, /app\.js\?v=20260922-joripnote-56/);
+  assert.match(html, /app\.js\?v=20260922-joripnote-57/);
   assert.match(html, /id="tree-menu" class="block-menu tree-context-menu" role="menu" aria-label="문서 메뉴"/);
   assert.match(html, /class="workspace-header-actions"[\s\S]*class="icon-button header-notification"[\s\S]*id="notification-badge"/);
   const primarySidebarNav = html.match(/<nav class="main-nav sidebar-primary-nav" aria-label="공간 빠른 메뉴">([\s\S]*?)<\/nav>/)?.[1] || '';
@@ -258,7 +258,9 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(html, /id="list-kind-filter"[\s\S]*value="database">데이터베이스</);
   assert.match(html, /data-list-layout="list"[\s\S]*data-list-layout="grid"[\s\S]*data-list-layout="preview"/);
   assert.match(html, /id="ip-access-form"/);
-  const appScript = await (await worker.fetch(request('/app.js'), {})).text();
+  const appScriptResponse = await worker.fetch(request('/app.js'), {});
+  const appScript = await appScriptResponse.text();
+  assert.equal(appScriptResponse.headers.get('cache-control'), 'public, max-age=31536000, immutable');
   assert.doesNotThrow(() => new vm.Script(appScript));
   assert.match(appScript, /needsAutomaticNotionRepair/);
   assert.match(appScript, /importMissingNotionDatabase/);
@@ -291,6 +293,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appScript, /function applySpaceProfile/);
   assert.match(appScript, /state\.workspaceSettings\?\.space_mode==='personal'/);
   assert.match(appScript, /function setListLayout/);
+  assert.match(appScript, /Promise\.allSettled\(\[api\('\/api\/setup-status'\),api\('\/api\/me'\)\]\)/);
   assert.match(appScript, /function listPreviewText/);
   assert.match(appScript, /params\.set\('kind',state\.listKind\)/);
   assert.match(appScript, /\$\('workspace-settings-form'\)\.onsubmit/);
@@ -302,7 +305,9 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(appScript, /glyph\.textContent=sidebarDocumentGlyph\(doc\.title,root\)/);
   assert.match(appScript, /document-page-icon'\)\.innerHTML=documentIconMarkup\(state\.current,true\)/);
   assert.doesNotMatch(appScript, /document-page-icon'\)\.textContent/);
-  const appCss = await (await worker.fetch(request('/app.css'), {})).text();
+  const appCssResponse = await worker.fetch(request('/app.css'), {});
+  const appCss = await appCssResponse.text();
+  assert.equal(appCssResponse.headers.get('cache-control'), 'public, max-age=31536000, immutable');
   assert.match(appCss, /--toss-blue:#3182f6/);
   assert.match(appCss, /\.sidebar-document-scroll\{overflow-x:hidden;overscroll-behavior-x:none\}/);
   assert.match(appCss, /\.sidebar \[data-tooltip\]::after\{display:none!important\}/);
