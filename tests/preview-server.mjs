@@ -53,7 +53,6 @@ DB.database.exec(readFileSync(new URL('../migrations/0003_toggle_blocks.sql', im
 DB.database.exec(readFileSync(new URL('../migrations/0004_extended_blocks_publications.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0005_block_indentation.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0006_workspace_collaboration.sql', import.meta.url), 'utf8'));
-DB.database.exec(readFileSync(new URL('../migrations/0007_retarget_project.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0008_notion_imports.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0009_large_notion_imports.sql', import.meta.url), 'utf8'));
 DB.database.exec(readFileSync(new URL('../migrations/0010_notion_source_identity.sql', import.meta.url), 'utf8'));
@@ -73,7 +72,7 @@ if (!emptyPreview) {
     'INSERT INTO users (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,unixepoch())'
   ).run('usr_previewowner', 'preview_owner', passwordHash, salt, 1000, 'preview-realtime-key');
   DB.database.prepare(
-    "INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES ('cf-notion-st','usr_previewowner','owner',unixepoch(),unixepoch())"
+    "INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES ('qwerty','usr_previewowner','owner',unixepoch(),unixepoch())"
   ).run();
 }
 

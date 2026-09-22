@@ -8,6 +8,7 @@ dist/
 .env
 .env.*
 !.env.example
+.joripspace/agent-session.json
 
 # 개인/로컬 작업물은 저장소와 배포 저장본에 포함하지 않습니다.
 paseo.json
@@ -25,3 +26,4 @@ docs/notion-import-parity-plan.md
 
 # Local merge worktree is not part of the public template.
 .joripnote-merge-worktree/
+.joripspace/template.json

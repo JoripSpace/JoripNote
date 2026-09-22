@@ -49,7 +49,6 @@ class D1Database {
     this.database.exec(readFileSync(new URL('../migrations/0004_extended_blocks_publications.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0005_block_indentation.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0006_workspace_collaboration.sql', import.meta.url), 'utf8'));
-    this.database.exec(readFileSync(new URL('../migrations/0007_retarget_project.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0008_notion_imports.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0009_large_notion_imports.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0010_notion_source_identity.sql', import.meta.url), 'utf8'));
@@ -100,7 +99,7 @@ async function call(env, path, options = {}) {
   return { response, body };
 }
 
-async function addUser(env, { id, username, role, password = 'correct-password', project = 'cf-notion-st', createdAt = 100 }) {
+async function addUser(env, { id, username, role, password = 'correct-password', project = 'qwerty', createdAt = 100 }) {
   const salt = 'salt-' + id;
   const hash = await hashPassword(password, salt, 1000);
   env.DB.database.prepare(
@@ -891,7 +890,7 @@ test('Notion ZIP import restores hierarchy, CSV data, assets and remains idempot
   const first = await upload();
   assert.equal(first.response.status, 201, JSON.stringify(first.body));
   assert.deepEqual({ imported: first.body.imported, skipped: first.body.skipped, failed: first.body.failed }, { imported: 3, skipped: 0, failed: 0 });
-  const documents = env.DB.database.prepare("SELECT id,parent_document_id,title FROM documents WHERE project_id='cf-notion-st' ORDER BY title").all();
+  const documents = env.DB.database.prepare("SELECT id,parent_document_id,title FROM documents WHERE project_id='qwerty' ORDER BY title").all();
   assert.equal(documents.length, 3);
   const parent = documents.find(document => document.title === 'Parent');
   assert.equal(documents.find(document => document.title === 'Child').parent_document_id, parent.id);
@@ -906,7 +905,7 @@ test('Notion ZIP import restores hierarchy, CSV data, assets and remains idempot
   const second = await upload();
   assert.equal(second.response.status, 200);
   assert.equal(second.body.idempotent, true);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='cf-notion-st'").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 3);
 
   await addUser(env, { id: 'usr_member0001', username: 'member', role: 'member' });
   const memberCookie = await login(env, 'member');
@@ -1164,14 +1163,14 @@ test('owner migration reset removes documents, files and non-admin accounts in b
   await addUser(env, { id: 'usr_member0001', username: 'member', role: 'member' });
   const cookie = await login(env, 'owner');
   const created = await call(env, '/api/documents', { method: 'POST', headers: auth(cookie), body: {} });
-  env.DB.database.prepare(`INSERT INTO file_uploads (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)`).run('fil_reset0001', 'cf-notion-st', created.body.document.id, 'documents/reset/file', 'file.txt', 'text/plain', 4, 'usr_owner0001', 100);
+  env.DB.database.prepare(`INSERT INTO file_uploads (id,project_id,document_id,storage_key,filename,content_type,size,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)`).run('fil_reset0001', 'qwerty', created.body.document.id, 'documents/reset/file', 'file.txt', 'text/plain', 4, 'usr_owner0001', 100);
   await env.STORAGE.put('documents/reset/file', new TextEncoder().encode('test'));
-  const first = await call(env, '/api/admin/reset-notion-migration', { method: 'POST', headers: auth(cookie), body: { confirm: 'cf-notion-st' } });
+  const first = await call(env, '/api/admin/reset-notion-migration', { method: 'POST', headers: auth(cookie), body: { confirm: 'qwerty' } });
   assert.equal(first.body.done, false);
   assert.equal(first.body.deleted_files, 1);
-  const second = await call(env, '/api/admin/reset-notion-migration', { method: 'POST', headers: auth(cookie), body: { confirm: 'cf-notion-st' } });
+  const second = await call(env, '/api/admin/reset-notion-migration', { method: 'POST', headers: auth(cookie), body: { confirm: 'qwerty' } });
   assert.equal(second.body.done, true);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='cf-notion-st'").get().count, 0);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM documents WHERE project_id='qwerty'").get().count, 0);
   assert.deepEqual(env.DB.database.prepare("SELECT username FROM users ORDER BY username").all().map(row => row.username), ['owner']);
 });
 
@@ -1332,7 +1331,7 @@ test('large Notion imports register entries, upload assets in pieces and finaliz
   assert.equal(env.DB.database.prepare('SELECT COUNT(*) count FROM file_uploads WHERE document_id=?').get(parent.document_id).count, 1);
 });
 
-test('authentication requires cf-notion-st membership and blocks public signup after bootstrap', async () => {
+test('authentication requires qwerty membership and blocks public signup after bootstrap', async () => {
   const env = envWithDb();
   await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
   await addUser(env, { id: 'usr_outside01', username: 'outside', role: 'member', project: 'another-project' });
@@ -1376,8 +1375,8 @@ test('first-run setup installs exactly one owner and seeds builtin templates', a
   assert.equal(installed.response.status, 201, JSON.stringify(installed.body));
   assert.equal(installed.body.membership.role, 'owner');
   assert.match(installed.response.headers.get('set-cookie'), /qwerty_session=/);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='cf-notion-st' AND role='owner'").get().count, 1);
-  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='cf-notion-st' AND is_builtin=1").get().count, 3);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM project_members WHERE project_id='qwerty' AND role='owner'").get().count, 1);
+  assert.equal(env.DB.database.prepare("SELECT COUNT(*) AS count FROM workspace_templates WHERE project_id='qwerty' AND is_builtin=1").get().count, 3);
 
   const after = await call(env, '/api/setup-status');
   assert.equal(after.body.installed, true);
@@ -1956,18 +1955,18 @@ test('member and invitation lists use cursor pagination', async () => {
 test('query plans use intended indexes for primary access paths', () => {
   const env = envWithDb();
   const plans = [
-    ["SELECT * FROM documents WHERE project_id='cf-notion-st' AND status='active' AND parent_document_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 20", /idx_documents_root_page/],
-    ["SELECT * FROM documents WHERE project_id='cf-notion-st' AND status='active' AND parent_document_id='doc_parent' ORDER BY updated_at DESC,id DESC LIMIT 20", /idx_documents_root_page/],
-    ["SELECT * FROM documents WHERE project_id='cf-notion-st' AND status='active' ORDER BY updated_at DESC,id DESC LIMIT 20", /idx_documents_recently_updated/],
-    ["SELECT * FROM documents WHERE project_id='cf-notion-st' AND status='trashed' ORDER BY trashed_at DESC,id DESC LIMIT 20", /idx_documents_trash_page/],
-    ["SELECT * FROM document_favorites WHERE project_id='cf-notion-st' AND user_id='usr_owner' ORDER BY created_at DESC,document_id DESC LIMIT 20", /idx_document_favorites_page/],
-    ["SELECT * FROM recent_documents WHERE project_id='cf-notion-st' AND user_id='usr_owner' ORDER BY opened_at DESC,document_id DESC LIMIT 20", /idx_recent_documents_page/],
+    ["SELECT * FROM documents WHERE project_id='qwerty' AND status='active' AND parent_document_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 20", /idx_documents_root_page/],
+    ["SELECT * FROM documents WHERE project_id='qwerty' AND status='active' AND parent_document_id='doc_parent' ORDER BY updated_at DESC,id DESC LIMIT 20", /idx_documents_root_page/],
+    ["SELECT * FROM documents WHERE project_id='qwerty' AND status='active' ORDER BY updated_at DESC,id DESC LIMIT 20", /idx_documents_recently_updated/],
+    ["SELECT * FROM documents WHERE project_id='qwerty' AND status='trashed' ORDER BY trashed_at DESC,id DESC LIMIT 20", /idx_documents_trash_page/],
+    ["SELECT * FROM document_favorites WHERE project_id='qwerty' AND user_id='usr_owner' ORDER BY created_at DESC,document_id DESC LIMIT 20", /idx_document_favorites_page/],
+    ["SELECT * FROM recent_documents WHERE project_id='qwerty' AND user_id='usr_owner' ORDER BY opened_at DESC,document_id DESC LIMIT 20", /idx_recent_documents_page/],
     ["SELECT * FROM document_blocks WHERE document_id='doc_a' AND snapshot_id='snap_a' ORDER BY position", /idx_document_blocks_order/],
-    ["SELECT * FROM project_members WHERE project_id='cf-notion-st' ORDER BY joined_at DESC,user_id DESC LIMIT 20", /idx_project_members_page/],
-    ["SELECT * FROM project_invitations WHERE project_id='cf-notion-st' AND status='pending' ORDER BY created_at DESC,id DESC LIMIT 20", /idx_project_invitations_page/],
+    ["SELECT * FROM project_members WHERE project_id='qwerty' ORDER BY joined_at DESC,user_id DESC LIMIT 20", /idx_project_members_page/],
+    ["SELECT * FROM project_invitations WHERE project_id='qwerty' AND status='pending' ORDER BY created_at DESC,id DESC LIMIT 20", /idx_project_invitations_page/],
     ["SELECT * FROM project_invitations WHERE token_hash='abc'", /sqlite_autoindex_project_invitations_2|idx_project_invitations_token_hash/],
-    ["SELECT * FROM documents WHERE project_id='cf-notion-st' AND status='active' AND title_search>='제' AND title_search<'제￿' ORDER BY title_search,id", /idx_documents_search/],
-    ["SELECT document_id FROM document_publications WHERE project_id='cf-notion-st' ORDER BY published_at DESC,document_id", /idx_document_publications_published/]
+    ["SELECT * FROM documents WHERE project_id='qwerty' AND status='active' AND title_search>='제' AND title_search<'제￿' ORDER BY title_search,id", /idx_documents_search/],
+    ["SELECT document_id FROM document_publications WHERE project_id='qwerty' ORDER BY published_at DESC,document_id", /idx_document_publications_published/]
   ];
   for (const [sql, expected] of plans) {
     const detail = env.DB.database.prepare('EXPLAIN QUERY PLAN ' + sql).all().map((row) => row.detail).join('\n');
