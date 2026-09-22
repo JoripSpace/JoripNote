@@ -237,7 +237,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
   assert.match(html, /id="document-page-icon" class="document-page-icon"[^>]+hidden/);
-  assert.match(html, /app\.js\?v=20260922-joripnote-57/);
+  assert.match(html, /app\.js\?v=20260922-joripnote-58/);
   assert.match(html, /id="tree-menu" class="block-menu tree-context-menu" role="menu" aria-label="문서 메뉴"/);
   assert.match(html, /class="workspace-header-actions"[\s\S]*class="icon-button header-notification"[\s\S]*id="notification-badge"/);
   const primarySidebarNav = html.match(/<nav class="main-nav sidebar-primary-nav" aria-label="공간 빠른 메뉴">([\s\S]*?)<\/nav>/)?.[1] || '';
@@ -294,6 +294,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appScript, /state\.workspaceSettings\?\.space_mode==='personal'/);
   assert.match(appScript, /function setListLayout/);
   assert.match(appScript, /Promise\.allSettled\(\[api\('\/api\/setup-status'\),api\('\/api\/me'\)\]\)/);
+  assert.match(appScript, /routeFromLocation\(\);setTimeout\(loadTree,0\);setTimeout\(refreshNotificationBadge,1200\)/);
   assert.match(appScript, /function listPreviewText/);
   assert.match(appScript, /params\.set\('kind',state\.listKind\)/);
   assert.match(appScript, /\$\('workspace-settings-form'\)\.onsubmit/);
