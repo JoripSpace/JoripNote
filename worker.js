@@ -4,6 +4,12 @@ import { INDENTABLE_BLOCK_TYPES, normalizeBlockSnapshot } from './engine/documen
 const PROJECT_ID = 'qwerty';
 const SESSION_COOKIE = 'qwerty_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEMO_HOSTNAME = 'joripnote.joripspace.run';
+const DEMO_CRON_HOSTNAME = 'joripspace-cron.internal';
+const DEMO_RESET_PATH = '/__joripnote_demo/reset';
+const DEMO_USER_ID = 'demo_owner';
+const DEMO_USERNAME = 'demo';
+const DEMO_MODE_SETTING = 'demo_mode';
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7;
 const PASSWORD_ITERATIONS = 100000;
 const CAPTCHA_TTL_SECONDS = 60 * 5;
@@ -29,6 +35,90 @@ const BUILTIN_TEMPLATES = [
   ['tpl_daily', '업무일지', '오늘의 목표와 진행 상황을 기록합니다.', '✅', [{ type: 'heading2', content: '오늘의 목표' }, { type: 'todo', content: '가장 중요한 일을 적어 주세요.' }, { type: 'heading2', content: '진행 내용' }, { type: 'text', content: '진행한 내용을 적어 주세요.' }, { type: 'heading2', content: '내일 할 일' }, { type: 'todo', content: '다음 할 일을 적어 주세요.' }]],
   ['tpl_project', '프로젝트 계획서', '목표, 일정, 담당자와 위험 요소를 정리합니다.', '🚀', [{ type: 'heading2', content: '프로젝트 목표' }, { type: 'text', content: '달성하려는 목표를 적어 주세요.' }, { type: 'heading2', content: '주요 일정' }, { type: 'todo', content: '일정과 담당자를 적어 주세요.' }, { type: 'heading2', content: '위험 요소' }, { type: 'callout', content: '예상되는 위험과 대응 방법을 적어 주세요.' }]]
 ];
+const STARTER_DOCUMENTS = [
+  {
+    id: 'doc_starter_welcome', snapshotId: 'snap_starter_welcome', title: 'JoripNote 시작하기', parentId: null, favorite: true, recent: true,
+    blocks: [
+      ['blk_welcome_heading1', 'heading1', 'JoripNote에 오신 것을 환영합니다'],
+      ['blk_welcome_richtext', 'text', '@qwerty-rich:<strong>블록을 클릭해 바로 편집</strong>하고, <em>드래그해서 순서를 바꾸며</em>, <u>중요한 부분을 표시</u>해 보세요.'],
+      ['blk_welcome_callout', 'callout', '이 문서들은 기능을 직접 시험한 뒤 자유롭게 수정하거나 삭제해도 되는 샘플입니다.'],
+      ['blk_welcome_toc', 'toc', ''],
+      ['blk_welcome_heading2', 'heading2', '기본 블록'],
+      ['blk_welcome_bullet1', 'bullet', '문서를 블록 단위로 작성합니다.', false, 0],
+      ['blk_welcome_bullet2', 'bullet', 'Tab과 Shift+Tab으로 목록 깊이를 바꿉니다.', false, 1],
+      ['blk_welcome_number1', 'numbered', '왼쪽 사이드바에서 새 문서를 만듭니다.', false, 0],
+      ['blk_welcome_number2', 'numbered', '제목과 내용을 입력하면 자동 저장됩니다.', false, 1],
+      ['blk_welcome_todo1', 'todo', '즐겨찾기와 최근 문서를 확인하기', true, 0],
+      ['blk_welcome_todo2', 'todo', '댓글과 버전 기록을 직접 사용해 보기', false, 1],
+      ['blk_welcome_quote', 'quote', '좋은 문서 공간은 기록을 시작하는 데 망설임이 없어야 합니다.'],
+      ['blk_welcome_toggle', 'toggle', '접었다 펼치는 토글\n토글 본문에는 길어진 설명이나 참고 내용을 정리할 수 있습니다.', true],
+      ['blk_welcome_divider', 'divider', ''],
+      ['blk_welcome_heading3', 'heading3', '코드와 수식'],
+      ['blk_welcome_code', 'code', "const note = { title: '새 아이디어', saved: true };\nconsole.log(note);"],
+      ['blk_welcome_math', 'math', 'E = mc^2'],
+      ['blk_welcome_heading4', 'heading4', '간단한 표'],
+      ['blk_welcome_table', 'table', JSON.stringify([['기능', '사용 예시', '상태'], ['문서', '아이디어 정리', '준비됨'], ['댓글', '피드백 남기기', '준비됨'], ['버전', '이전 내용 복원', '준비됨']])],
+      ['blk_welcome_page', 'page_link', '{origin}/doc/doc_starter_board']
+    ]
+  },
+  {
+    id: 'doc_starter_board', snapshotId: 'snap_starter_board', title: '프로젝트 운영 보드', parentId: null, favorite: true, recent: true,
+    blocks: [
+      ['blk_board_intro', 'callout', '표·보드 전환, 검색, 필터, 정렬, 속성 추가와 카드 이동을 모두 시험해 보세요.'],
+      ['blk_board_database', 'database', JSON.stringify({
+        version: 2,
+        title: 'JoripNote 출시 준비',
+        columns: [
+          { id: 'col_task', name: '작업', type: 'text', options: [] },
+          { id: 'col_status', name: '상태', type: 'select', options: ['예정', '진행 중', '검토', '완료'] },
+          { id: 'col_owner', name: '담당자', type: 'person', options: [] },
+          { id: 'col_priority', name: '우선순위', type: 'number', options: [] },
+          { id: 'col_due', name: '마감일', type: 'date', options: [] },
+          { id: 'col_done', name: '확인', type: 'checkbox', options: [] },
+          { id: 'col_link', name: '참고 링크', type: 'url', options: [] }
+        ],
+        rows: [
+          { id: 'row_launch_copy', cells: { col_task: '소개 문구 다듬기', col_status: '완료', col_owner: 'Owner', col_priority: '1', col_due: '2026-09-05', col_done: true, col_link: 'https://joripspace.com/marketplace/joripnote/' } },
+          { id: 'row_mobile_check', cells: { col_task: '모바일 편집 점검', col_status: '진행 중', col_owner: 'Owner', col_priority: '2', col_due: '2026-09-07', col_done: false, col_link: 'https://joripnote.joripspace.run/' } },
+          { id: 'row_share_page', cells: { col_task: '공개 문서 공유하기', col_status: '검토', col_owner: '', col_priority: '3', col_due: '', col_done: false, col_link: '' } }
+        ],
+        view: { mode: 'board', groupBy: 'col_status', sortBy: 'col_priority', sortDir: 'asc', filter: { column: '', operator: 'contains', value: '' } }
+      })],
+      ['blk_board_heading', 'heading2', '함께 쓰는 방법'],
+      ['blk_board_text', 'text', '새 속성과 작업을 추가하고, 보드에서 카드를 다른 상태로 끌어보세요. 변경 내용은 문서 버전에 기록됩니다.'],
+      ['blk_board_child', 'page_link', '{origin}/doc/doc_starter_meeting']
+    ]
+  },
+  {
+    id: 'doc_starter_meeting', snapshotId: 'snap_starter_meeting', title: '주간 회의록', parentId: 'doc_starter_board', favorite: false, recent: true,
+    blocks: [
+      ['blk_meeting_heading', 'heading1', '주간 회의록'],
+      ['blk_meeting_meta1', 'bullet', '참석자: Owner'],
+      ['blk_meeting_meta2', 'bullet', '목표: 이번 주 우선순위와 담당자 확인'],
+      ['blk_meeting_agenda', 'heading2', '안건'],
+      ['blk_meeting_todo1', 'todo', '모바일에서 문서 작성 흐름 확인', true],
+      ['blk_meeting_todo2', 'todo', '공개 링크를 열어 비로그인 화면 확인', false],
+      ['blk_meeting_decision', 'heading2', '결정 사항'],
+      ['blk_meeting_text', 'text', '결정 사항을 이곳에 적고 댓글로 의견을 이어가세요.']
+    ],
+    comment: { id: 'cmt_starter_meeting', blockId: 'blk_meeting_text', body: '댓글을 남기고 해결 처리하는 흐름을 시험해 보세요.' }
+  },
+  {
+    id: 'doc_starter_media', snapshotId: 'snap_starter_media', title: '링크와 미디어 예시', parentId: null, favorite: false, recent: false,
+    blocks: [
+      ['blk_media_heading', 'heading1', '링크와 미디어 블록'],
+      ['blk_media_intro', 'text', 'URL을 바꾸면 각 블록의 미리보기가 즉시 갱신됩니다. 비어 있는 블록에는 직접 사용할 주소를 붙여넣어 보세요.'],
+      ['blk_media_bookmark', 'bookmark', 'https://github.com/JoripSpace/JoripNote'],
+      ['blk_media_image', 'image', 'https://github.com/JoripSpace.png'],
+      ['blk_media_video', 'video', ''],
+      ['blk_media_audio', 'audio', ''],
+      ['blk_media_file', 'file', 'https://raw.githubusercontent.com/JoripSpace/JoripNote/master/LICENSE'],
+      ['blk_media_embed', 'embed', ''],
+      ['blk_media_page', 'page_link', '{origin}/doc/doc_starter_welcome'],
+      ['blk_media_share', 'callout', '우상단 공유 메뉴에서 비공개 또는 웹 공개를 선택할 수 있습니다. 공개 문서는 로그인하지 않은 사람도 볼 수 있으니 민감한 내용은 공개하지 마세요.']
+    ]
+  }
+];
 const encoder = new TextEncoder();
 
 const HTML = String.raw`<!doctype html>
@@ -40,7 +130,7 @@ const HTML = String.raw`<!doctype html>
   <title>JoripNote</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232d2d2a'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='38' font-family='serif' fill='white'%3EJ%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
-  <link rel="stylesheet" href="/app.css?v=20260922-joripnote-62">
+  <link rel="stylesheet" href="/app.css?v=20260922-joripnote-64">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -195,6 +285,7 @@ const HTML = String.raw`<!doctype html>
     </aside>
 
     <section id="main-content" class="main-pane" tabindex="-1">
+      <aside id="demo-banner" class="demo-banner" aria-label="데모 안내" hidden><strong>DEMO</strong><span>모든 기능을 자유롭게 체험하세요. 입력한 내용은 매일 00:00(KST)에 샘플 상태로 초기화됩니다.</span></aside>
       <header class="mobile-header">
         <button id="sidebar-open" class="icon-button" type="button" aria-label="사이드바 열기" data-tooltip="사이드바 열기"><svg class="ui-icon" aria-hidden="true"><use href="#icon-menu"/></svg></button>
         <strong id="mobile-workspace-name">JoripNote</strong>
@@ -377,7 +468,7 @@ const HTML = String.raw`<!doctype html>
     <button type="button" data-inline-command="inlineCode" aria-label="인라인 코드" data-tooltip="인라인 코드">&lt;/&gt;</button>
     <button type="button" data-inline-command="createLink" aria-label="링크" data-tooltip="링크 추가"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"/></svg></button>
   </div>
-  <script src="/app.js?v=20260922-joripnote-54" defer></script>
+  <script src="/app.js?v=20260922-joripnote-55" defer></script>
 </body>
 </html>`;
 
@@ -817,6 +908,14 @@ const UI_SPACING_CSS = String.raw`
 }
 `;
 
+const DEMO_CSS = String.raw`
+.demo-banner{position:sticky;z-index:19;top:0;display:flex;align-items:center;justify-content:center;gap:10px;min-height:42px;padding:8px 18px;border-bottom:1px solid #cbd9ff;background:#edf3ff;color:#3d4f78;font-size:14px;line-height:1.45;text-align:center}
+.demo-banner strong{flex:none;padding:3px 7px;border-radius:5px;background:#4869b1;color:#fff;font-size:12px;letter-spacing:.08em}
+.demo-banner+ .mobile-header{top:42px}
+.demo-banner~.editor-view .editor-toolbar{top:42px}
+@media(max-width:760px){.demo-banner{position:relative;min-height:0;align-items:flex-start;justify-content:flex-start;padding:10px 12px;text-align:left}.demo-banner span{font-size:14px}.demo-banner+ .mobile-header{top:0}.demo-banner~.editor-view .editor-toolbar{top:54px}}
+`;
+
 const CLIENT_JS = String.raw`const state={user:null,role:null,current:null,dirty:false,saving:false,saveFailed:false,saveTimer:null,editRevision:0,view:'all',cursor:null,search:'',listQuery:'',listKind:'all',listSort:'updated_desc',listLayout:'list',listFilterTimer:null,expanded:new Set(),treeLoading:new Set(),membersCursor:null,invitesCursor:null,slashBlock:null,slashIndex:0,dragRow:null,contextRow:null,treeContextDoc:null,treeContextRow:null,globalSearchIndex:0,globalSearchTimer:null,globalSearchRequest:0,publication:null,inlineTarget:null,inlineRange:null,linkTarget:null,linkRange:null,urlPaste:null,urlPasteIndex:0,selectedBlocks:new Set(),undoStack:[],undoIndex:-1,historyTimer:null,restoringHistory:false,access:null,publicSignup:false,workspaceSettings:null,ipAllowlist:[],notionRepairAttempted:new Set()};
 const $=(id)=>document.getElementById(id);
 function loadingMarkup(kind,count=4){const hidden='<span class="sr-only">콘텐츠를 불러오는 중</span>';if(kind==='tree')return'<div class="skeleton-tree" role="status" aria-label="문서 트리 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='document')return'<div class="skeleton-document" role="status" aria-label="문서 내용 불러오는 중">'+hidden+Array.from({length:count},()=>'<span class="skeleton skeleton-line"></span>').join('')+'</div>';if(kind==='member')return'<div class="skeleton-stack" role="status" aria-label="멤버 목록 불러오는 중">'+hidden+Array.from({length:count},()=>'<div class="skeleton-member-row"><span class="skeleton skeleton-avatar"></span><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('')+'</div>';const rows=Array.from({length:count},()=>'<div class="skeleton-list-row"><span class="skeleton-lines"><i class="skeleton skeleton-line title"></i><i class="skeleton skeleton-line meta"></i></span><i class="skeleton skeleton-pill"></i></div>').join('');return'<div class="'+(kind==='search'?'global-search-skeleton':'skeleton-stack')+'" role="status" aria-label="목록 불러오는 중">'+hidden+rows+'</div>'}
@@ -874,7 +973,7 @@ $('invite-form').addEventListener('submit',async(event)=>{event.preventDefault()
 $('setup-form').addEventListener('submit',async(event)=>{event.preventDefault();const formEl=event.currentTarget;const form=new FormData(formEl);const password=String(form.get('password')||'');alertBox('setup-alert','');if(password!==String(form.get('password_confirmation')||'')){alertBox('setup-alert','비밀번호 확인이 일치하지 않습니다.');return}busy(formEl,true);try{const data=await api('/api/setup',{method:'POST',body:{username:form.get('username'),password,password_confirmation:form.get('password_confirmation')}});history.replaceState({},'','/');enterApp(data);toast('JoripNote 설치를 완료했습니다.')}catch(error){if(error.status===409){history.replaceState({},'','/');showAuth();toast('이미 설치가 완료된 공간입니다.')}else alertBox('setup-alert',error.message)}finally{busy(formEl,false)}});
 $('logout-button').addEventListener('click',async()=>{if(state.dirty&&!confirm('저장되지 않은 변경사항이 있습니다. 로그아웃할까요?'))return;await api('/api/logout',{method:'POST'}).catch(()=>{});history.replaceState({},'','/');showAuth()});
 async function auditLinksByAgent(){try{const data=await api('/api/import/notion-api/audit?links=1');const output=document.createElement('pre');output.id='agent-audit-output';output.style.cssText='white-space:pre-wrap;max-height:70vh;overflow:auto;padding:24px;margin:24px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;font:14px/1.5 ui-monospace,monospace';output.textContent=JSON.stringify(data,null,2);document.body.append(output)}catch(error){toast('링크 전수감사 실패: '+String(error?.message||'알 수 없는 오류'))}}
-async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}const params=new URLSearchParams(location.search),agentAction=params.get('agent_action');try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data);if(agentAction==='notion-import'&&canManage())setTimeout(importAllFromNotionApi,0);if(agentAction==='notion-import-source'&&canManage()){const sourceId=String(params.get('source')||'').replaceAll('-','').toLowerCase();if(/^[0-9a-f]{32}$/.test(sourceId))setTimeout(()=>importNotionApiSourceByAgent(sourceId),0)}if(agentAction==='notion-link-audit'&&canManage())setTimeout(auditLinksByAgent,0)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
+async function bootstrap(){const publicMatch=location.pathname.match(/^\/public\/([A-Za-z0-9_-]{8,80})$/);if(publicMatch){await openPublicDocument(publicMatch[1]);return}const params=new URLSearchParams(location.search),agentAction=params.get('agent_action');try{const setup=await api('/api/setup-status');state.publicSignup=!!setup.public_signup_enabled;state.demoMode=!!setup.demo_mode;const banner=$('demo-banner');if(banner)banner.hidden=!state.demoMode;if(!setup.installed){showSetup();return}if(location.pathname==='/setup')history.replaceState({},'','/');const data=await api('/api/me');enterApp(data);if(state.demoMode){const role=roleLabel[state.role]||state.role;$('profile-role').textContent=role+' · 데모';$('sidebar-role').textContent=role+' · 데모'}if(agentAction==='notion-import'&&canManage())setTimeout(importAllFromNotionApi,0);if(agentAction==='notion-import-source'&&canManage()){const sourceId=String(params.get('source')||'').replaceAll('-','').toLowerCase();if(/^[0-9a-f]{32}$/.test(sourceId))setTimeout(()=>importNotionApiSourceByAgent(sourceId),0)}if(agentAction==='notion-link-audit'&&canManage())setTimeout(auditLinksByAgent,0)}catch(error){if(error.status===401)showAuth();else{showAuth();alertBox('auth-alert',error.message)}}}
 function enterApp(data){state.user=data.user;state.role=data.membership.role;$('boot-view').hidden=true;$('setup-view').hidden=true;$('auth-view').hidden=true;$('public-view').hidden=true;$('app-view').hidden=false;$('profile-name').textContent=data.user.username;$('profile-avatar').textContent=data.user.username.slice(0,1).toUpperCase();$('profile-role').textContent=roleLabel[state.role];$('sidebar-role').textContent=roleLabel[state.role];$('new-root-document').hidden=!canEdit();$('list-new-document').hidden=!canEdit();$('duplicate-button').hidden=!canEdit();$('notion-import-button').hidden=!canEdit();$('notion-zip-import-button').hidden=!canManage();$('publish-button').hidden=!canManage();$('open-invite').hidden=!canManage();$('members-permission').hidden=canManage();$('new-template-button').hidden=!canEdit();applySpaceProfile(data.workspace);let collapsed=false;let documentWidth='default';try{collapsed=localStorage.getItem('qwerty_sidebar_collapsed')==='1';documentWidth=localStorage.getItem('joripnote_document_width')||'default';state.listLayout=['list','grid','preview'].includes(localStorage.getItem('joripnote_list_layout'))?localStorage.getItem('joripnote_list_layout'):'list'}catch{}setSidebarCollapsed(collapsed,false);setDocumentWidth(documentWidth,false);setListLayout(state.listLayout,false);setInviteRoleOptions();loadTree();refreshNotificationBadge();routeFromLocation()}
 function setInviteRoleOptions(){syncCreateDocumentButtons();const options=state.role==='owner'?[['admin','Admin'],['member','Member'],['viewer','Viewer']]:[['member','Member'],['viewer','Viewer']];$('invite-role').replaceChildren(...options.map(([value,label])=>{const el=document.createElement('option');el.value=value;el.textContent=label;return el}))}
 function setSidebar(open){$('sidebar').classList.toggle('open',open);$('sidebar-backdrop').hidden=!open}
@@ -1681,11 +1780,12 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   if (request.method === 'GET' && path === '/health') return json({ ok: true, service: 'joripnote' });
-  if (request.method === 'GET' && path === '/app.css') return asset(CSS + UI_POLISH_CSS + UI_SPACING_CSS, 'text/css; charset=utf-8');
+  if (request.method === 'GET' && path === '/app.css') return asset(CSS + UI_POLISH_CSS + UI_SPACING_CSS + DEMO_CSS, 'text/css; charset=utf-8');
   if (request.method === 'GET' && path === '/app.js') return asset(CLIENT_JS, 'text/javascript; charset=utf-8');
   if (request.method === 'GET' && /^\/api\/captcha\/[a-f0-9-]{36}\.svg$/.test(path)) return getCaptchaSvg(env, path.slice(13, -4));
   if (request.method === 'GET' && path === '/api/captcha') return createCaptcha(request, env);
-  if (request.method === 'GET' && path === '/api/setup-status') return setupStatus(env);
+  if (request.method === 'GET' && path === '/api/setup-status') return setupStatus(request, env);
+  if (request.method === 'POST' && path === DEMO_RESET_PATH) return resetDemoEndpoint(request, env);
   if (request.method === 'POST' && path === '/api/setup') {
     assertSameOrigin(request);
     return installAdmin(request, env);
@@ -1855,13 +1955,139 @@ async function bootstrapSignup(request, env) {
   throw new HttpError(403, '첫 관리자는 JoripNote 설치 화면에서만 만들 수 있습니다.');
 }
 
-async function setupStatus(env) {
+function isDemoRequest(request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === DEMO_HOSTNAME || hostname === DEMO_CRON_HOSTNAME;
+}
+
+async function setupStatus(request, env) {
+  if (isDemoRequest(request)) {
+    await ensureDemoData(env);
+    const token = await ensureDemoSession(request, env);
+    return json({ installed: true, public_signup_enabled: false, demo_mode: true }, 200, token ? { 'set-cookie': sessionCookie(token) } : {});
+  }
   const db = requireDb(env);
   const [row, signup] = await Promise.all([
     db.prepare('SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=?) AS installed').bind(PROJECT_ID).first(),
     db.prepare("SELECT value FROM app_settings WHERE key='public_signup_enabled'").first()
   ]);
   return json({ installed: Number(row && row.installed) === 1, public_signup_enabled: signup?.value === '1' });
+}
+
+async function ensureDemoData(env) {
+  const db = requireDb(env);
+  const [marker, member] = await Promise.all([
+    readAppSetting(db, DEMO_MODE_SETTING, '0'),
+    db.prepare('SELECT 1 AS yes FROM project_members WHERE project_id=? AND user_id=?').bind(PROJECT_ID, DEMO_USER_ID).first()
+  ]);
+  if (marker === '1' && member) return;
+  await resetDemoData(env);
+}
+
+async function ensureDemoSession(request, env) {
+  const db = requireDb(env);
+  const current = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE];
+  if (current) {
+    const existing = await db.prepare('SELECT 1 AS yes FROM sessions WHERE token_hash=? AND user_id=? AND expires_at>?')
+      .bind(await sha256Hex(current), DEMO_USER_ID, nowSeconds()).first();
+    if (existing) return null;
+  }
+  const token = randomString(43);
+  const now = nowSeconds();
+  await db.prepare('INSERT INTO sessions (token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)')
+    .bind(await sha256Hex(token), DEMO_USER_ID, now + SESSION_TTL_SECONDS, now).run();
+  return token;
+}
+
+async function resetDemoEndpoint(request, env) {
+  if (!isDemoRequest(request)) throw new HttpError(404, '요청한 기능을 찾을 수 없습니다.');
+  await resetDemoData(env);
+  const token = await ensureDemoSession(request, env);
+  return json({ ok: true, demo_mode: true, reset_at: new Date().toISOString() }, 200, token ? { 'set-cookie': sessionCookie(token) } : {});
+}
+
+async function resetDemoData(env) {
+  const db = requireDb(env);
+  const fileRows = await db.prepare('SELECT storage_key FROM file_uploads').all();
+  const existingDemoUser = await db.prepare('SELECT id FROM users WHERE id=?').bind(DEMO_USER_ID).first();
+  const demoUser = existingDemoUser ? null : await passwordUser(DEMO_USERNAME, randomString(48));
+  if (demoUser) demoUser.id = DEMO_USER_ID;
+  const now = nowSeconds();
+  const tableRows = await db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all();
+  const optionalCleanup = ['notion_import_staged_entries', 'notion_import_items', 'notion_imports', 'notion_people']
+    .filter((name) => (tableRows.results || []).some((row) => row.name === name))
+    .map((name) => db.prepare(`DELETE FROM ${name}`));
+  const statements = [
+    db.prepare('DELETE FROM document_grants'),
+    db.prepare('DELETE FROM document_favorites'),
+    db.prepare('DELETE FROM recent_documents'),
+    db.prepare('DELETE FROM document_access'),
+    db.prepare('DELETE FROM document_versions'),
+    db.prepare('DELETE FROM file_uploads'),
+    db.prepare('DELETE FROM document_publications'),
+    db.prepare('DELETE FROM document_comments'),
+    db.prepare('DELETE FROM notifications'),
+    db.prepare('DELETE FROM activity_events'),
+    ...optionalCleanup,
+    db.prepare('DELETE FROM documents'),
+    db.prepare('DELETE FROM project_invitations'),
+    db.prepare('DELETE FROM project_members'),
+    db.prepare('DELETE FROM sessions'),
+    db.prepare('DELETE FROM users WHERE id<>?').bind(DEMO_USER_ID),
+    db.prepare('DELETE FROM app_settings'),
+    db.prepare('DELETE FROM auth_rate_limits'),
+    db.prepare('DELETE FROM captcha_challenges'),
+    db.prepare('DELETE FROM workspace_templates'),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('installation_complete', '1', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind(DEMO_MODE_SETTING, '1', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_enabled', '0', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('public_signup_role', 'member', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist_enabled', '0', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('ip_allowlist', '', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('space_mode', 'team', now),
+    db.prepare('INSERT INTO app_settings (key,value,updated_at) VALUES (?,?,?)').bind('space_name', 'JoripNote', now)
+  ];
+  if (demoUser) statements.push(db.prepare(`INSERT INTO users
+    (id,username,password_hash,password_salt,password_iterations,realtime_key,created_at) VALUES (?,?,?,?,?,?,?)`)
+    .bind(demoUser.id, demoUser.username, demoUser.password_hash, demoUser.password_salt, demoUser.password_iterations, randomString(32), now));
+  statements.push(
+    db.prepare('INSERT INTO project_members (project_id,user_id,role,joined_at,updated_at) VALUES (?,?,?,?,?)').bind(PROJECT_ID, DEMO_USER_ID, 'owner', now, now),
+    ...BUILTIN_TEMPLATES.map(([id, name, description, iconValue, blocks]) => db.prepare(`INSERT INTO workspace_templates
+      (id,project_id,name,description,icon,blocks_json,created_by,is_builtin,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,NULL,1,?,?)`).bind(id, PROJECT_ID, name, description, iconValue, JSON.stringify(blocks), now, now)),
+    ...starterDocumentStatements(db, DEMO_USER_ID, now, 'https://' + DEMO_HOSTNAME)
+  );
+  await db.batch(statements);
+  if (env.STORAGE && typeof env.STORAGE.delete === 'function') {
+    for (const row of fileRows.results || []) {
+      try { await env.STORAGE.delete(row.storage_key); } catch (error) { console.error('demo_storage_cleanup_failed', error && error.message); }
+    }
+  }
+}
+
+function starterDocumentStatements(db, userId, now, origin) {
+  const statements = [];
+  STARTER_DOCUMENTS.forEach((document, documentIndex) => {
+    const timestamp = now - documentIndex;
+    statements.push(db.prepare(`INSERT INTO documents
+      (id,project_id,parent_document_id,title,title_search,status,version,active_snapshot_id,created_by,updated_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,'active',1,?,?,?,?,?)`).bind(document.id, PROJECT_ID, document.parentId, document.title, normalizeSearch(document.title), document.snapshotId, userId, userId, timestamp, timestamp));
+    document.blocks.forEach(([id, type, rawContent, checked = false, indentLevel = 0], position) => {
+      const content = String(rawContent).replaceAll('{origin}', origin);
+      statements.push(db.prepare(`INSERT INTO document_blocks
+        (id,document_id,snapshot_id,block_type,content,position,checked,indent_level,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(id, document.id, document.snapshotId, type, content, position, checked ? 1 : 0, indentLevel, timestamp, timestamp));
+    });
+    statements.push(db.prepare('INSERT INTO document_access (document_id,project_id,visibility,updated_by,updated_at) VALUES (?,?,?,?,?)').bind(document.id, PROJECT_ID, 'workspace', userId, timestamp));
+    statements.push(db.prepare('INSERT INTO document_versions (id,project_id,document_id,version,snapshot_id,title,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)').bind('ver_' + document.id, PROJECT_ID, document.id, 1, document.snapshotId, document.title, userId, timestamp));
+    if (document.favorite) statements.push(db.prepare('INSERT INTO document_favorites (project_id,user_id,document_id,created_at) VALUES (?,?,?,?)').bind(PROJECT_ID, userId, document.id, timestamp));
+    if (document.recent) statements.push(db.prepare('INSERT INTO recent_documents (project_id,user_id,document_id,opened_at) VALUES (?,?,?,?)').bind(PROJECT_ID, userId, document.id, timestamp));
+    if (document.comment) statements.push(db.prepare(`INSERT INTO document_comments
+      (id,project_id,document_id,block_id,body,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`).bind(document.comment.id, PROJECT_ID, document.id, document.comment.blockId, document.comment.body, userId, timestamp, timestamp));
+  });
+  statements.push(db.prepare('INSERT INTO activity_events (id,project_id,actor_id,document_id,kind,message,created_at) VALUES (?,?,?,?,?,?,?)')
+    .bind('act_starter_installed', PROJECT_ID, userId, 'doc_starter_welcome', 'workspace_installed', 'JoripNote 설치와 샘플 문서 준비를 완료했습니다.', now));
+  return statements;
 }
 
 async function installAdmin(request, env) {
