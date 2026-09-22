@@ -237,7 +237,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.doesNotMatch(html, /Notion ZIP 업로드/);
   assert.match(html, /textarea id="document-title"/);
   assert.match(html, /id="document-page-icon" class="document-page-icon"[^>]+hidden/);
-  assert.match(html, /app\.js\?v=20260922-joripnote-58/);
+  assert.match(html, /rel="preload" as="style"[^>]+data-deferred-font/);
+  assert.match(html, /app\.js\?v=20260922-joripnote-59/);
   assert.match(html, /id="tree-menu" class="block-menu tree-context-menu" role="menu" aria-label="문서 메뉴"/);
   assert.match(html, /class="workspace-header-actions"[\s\S]*class="icon-button header-notification"[\s\S]*id="notification-badge"/);
   const primarySidebarNav = html.match(/<nav class="main-nav sidebar-primary-nav" aria-label="공간 빠른 메뉴">([\s\S]*?)<\/nav>/)?.[1] || '';
@@ -263,6 +264,8 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.equal(appScriptResponse.headers.get('cache-control'), 'public, max-age=31536000, immutable');
   assert.doesNotThrow(() => new vm.Script(appScript));
   assert.match(appScript, /needsAutomaticNotionRepair/);
+  assert.match(appScript, /function prefetchDocument/);
+  assert.match(appScript, /state\.documentPrefetch\.set\(initialDoc\[1\],initialDocumentPrefetch\)/);
   assert.match(appScript, /importMissingNotionDatabase/);
   assert.match(appScript, /이전 Notion 문서 형식을 자동 교정했습니다/);
   assert.match(appScript, /pageLinkDocumentId/);
