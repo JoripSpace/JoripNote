@@ -2018,7 +2018,7 @@ async function resetDemoData(env) {
   if (demoUser) demoUser.id = DEMO_USER_ID;
   const now = nowSeconds();
   const tableRows = await db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all();
-  const optionalCleanup = ['notion_import_staged_entries', 'notion_import_items', 'notion_imports', 'notion_people']
+  const optionalCleanup = ['notion_api_objects', 'notion_api_snapshots', 'notion_import_staged_entries', 'notion_import_items', 'notion_imports', 'notion_people']
     .filter((name) => (tableRows.results || []).some((row) => row.name === name))
     .map((name) => db.prepare(`DELETE FROM ${name}`));
   const statements = [
@@ -2927,6 +2927,100 @@ async function notionApiRequest(env, path, options = {}, attempt = 0) {
   return data;
 }
 
+function notionApiObjectRecord(object, fallbackType, position, parentHint = {}) {
+  const sourceId = String(object?.id || '');
+  if (!sourceId) throw new HttpError(502, 'Notion 원본 객체에 ID가 없습니다.');
+  const objectType = String(object?.object || fallbackType || 'unknown');
+  const parent = object?.parent && typeof object.parent === 'object' ? object.parent : {};
+  const parentType = String(parent.type || parentHint.type || '') || null;
+  const parentValue = parentType ? parent[parentType] : null;
+  const parentSourceId = typeof parentValue === 'string' ? parentValue : (parentHint.id || null);
+  const parentObjectKey = parentHint.objectKey || null;
+  const normalizedPosition = Math.max(0, Number(position) || 0);
+  return {
+    object_key: 'nobj_' + randomString(24),
+    object_type: objectType,
+    source_id: sourceId,
+    parent_object_key: parentObjectKey,
+    parent_type: parentType,
+    parent_source_id: parentSourceId ? String(parentSourceId) : null,
+    position: normalizedPosition,
+    raw_json: JSON.stringify(object)
+  };
+}
+
+async function notionApiBlockObjects(env, pageId, pageObjectKey) {
+  const objects = [];
+  const parents = [{ id: pageId, type: 'page_id', objectKey: pageObjectKey, ancestors: new Set() }];
+  const warningCodes = new Set();
+  for (let parentIndex = 0; parentIndex < parents.length; parentIndex += 1) {
+    const parent = parents[parentIndex];
+    let cursor = null;
+    let position = 0;
+    const seenCursors = new Set();
+    do {
+      const query = new URLSearchParams({ page_size: '100' });
+      if (cursor) query.set('start_cursor', cursor);
+      const result = await notionApiRequest(env, '/blocks/' + normalizedNotionId(parent.id) + '/children?' + query.toString());
+      if (!Array.isArray(result.results)) throw new HttpError(502, 'Notion 블록 목록 응답 형식이 올바르지 않습니다.');
+      for (const block of result.results) {
+        const id = String(block?.id || '');
+        if (!id) throw new HttpError(502, 'Notion 블록에 ID가 없습니다.');
+        const record = notionApiObjectRecord(block, 'block', position++, parent);
+        objects.push(record);
+        if (block.has_children) {
+          if (parent.ancestors.has(id)) warningCodes.add('notion_block_cycle');
+          else parents.push({ id, type: 'block_id', objectKey: record.object_key, ancestors: new Set([...parent.ancestors, id]) });
+        }
+      }
+      const nextCursor = result.has_more ? String(result.next_cursor || '') : '';
+      if (result.has_more && (!nextCursor || seenCursors.has(nextCursor))) throw new HttpError(502, 'Notion 블록 페이지네이션 커서가 올바르지 않습니다.');
+      if (nextCursor) seenCursors.add(nextCursor);
+      cursor = nextCursor || null;
+    } while (cursor);
+  }
+  return { objects, complete: warningCodes.size === 0, warningCodes: [...warningCodes] };
+}
+
+async function saveNotionApiSnapshot(env, { documentId, sourceId, sourceType, objects, complete = true, warningCodes = [] }) {
+  const snapshotId = 'nsnap_' + randomString(24);
+  const createdAt = nowSeconds();
+  const previous = await env.DB.prepare('SELECT active_notion_snapshot_id FROM documents WHERE id=? AND project_id=?').bind(documentId, PROJECT_ID).first();
+  if (!previous) throw new HttpError(404, '원본을 연결할 문서를 찾을 수 없습니다.');
+  await env.DB.prepare(`INSERT INTO notion_api_snapshots
+    (id,project_id,document_id,source_id,source_type,status,complete,warning_codes_json,created_at) VALUES (?,?,?,?,?,'building',?,?,?)`)
+    .bind(snapshotId, PROJECT_ID, documentId, sourceId, sourceType, complete ? 1 : 0, JSON.stringify(warningCodes), createdAt).run();
+  try {
+    const rows = Array.isArray(objects) ? objects : [];
+    for (let offset = 0; offset < rows.length; offset += 100) {
+      const statements = rows.slice(offset, offset + 100).map(row => env.DB.prepare(`INSERT INTO notion_api_objects
+        (snapshot_id,object_key,object_type,source_id,parent_object_key,parent_type,parent_source_id,position,raw_json) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .bind(snapshotId, row.object_key, row.object_type, row.source_id, row.parent_object_key, row.parent_type, row.parent_source_id, row.position, row.raw_json));
+      await env.DB.batch(statements);
+    }
+    const activated = await env.DB.batch([
+      env.DB.prepare("UPDATE notion_api_snapshots SET status='superseded' WHERE document_id=? AND status='active'").bind(documentId),
+      env.DB.prepare("UPDATE notion_api_snapshots SET status='active' WHERE id=? AND status='building'").bind(snapshotId),
+      env.DB.prepare('UPDATE documents SET active_notion_snapshot_id=? WHERE id=? AND project_id=?').bind(snapshotId, documentId, PROJECT_ID)
+    ]);
+    if (!activated[1]?.meta || Number(activated[1].meta.changes) !== 1 || !activated[2]?.meta || Number(activated[2].meta.changes) !== 1) {
+      throw new HttpError(409, 'Notion 원본 스냅샷을 활성화하지 못했습니다.');
+    }
+    const stale = await env.DB.prepare(`SELECT id FROM notion_api_snapshots WHERE document_id=? AND id<>?
+      ORDER BY created_at DESC,id DESC LIMIT -1 OFFSET 99`).bind(documentId, snapshotId).all();
+    if ((stale.results || []).length) await env.DB.batch(stale.results.map(row => env.DB.prepare('DELETE FROM notion_api_snapshots WHERE id=?').bind(row.id)));
+    return snapshotId;
+  } catch (error) {
+    if (previous.active_notion_snapshot_id) {
+      await env.DB.prepare("UPDATE notion_api_snapshots SET status='active' WHERE id=?").bind(previous.active_notion_snapshot_id).run();
+    }
+    await env.DB.prepare('UPDATE documents SET active_notion_snapshot_id=? WHERE id=? AND project_id=? AND active_notion_snapshot_id=?')
+      .bind(previous.active_notion_snapshot_id || null, documentId, PROJECT_ID, snapshotId).run();
+    await env.DB.prepare('DELETE FROM notion_api_snapshots WHERE id=?').bind(snapshotId).run();
+    throw error;
+  }
+}
+
 function notionRichText(value) {
   return (Array.isArray(value) ? value : []).map(item => String(item?.plain_text ?? item?.text?.content ?? '')).join('');
 }
@@ -3053,17 +3147,24 @@ function normalizeNotionView(view, index, dataSourceId) {
   };
 }
 
-async function listNotionApiViews(env, dataSourceId) {
+async function listNotionApiViews(env, dataSourceId, { includeRaw = false, parentObjectKey = null } = {}) {
   const refs = [];
   let cursor = null;
+  const seenCursors = new Set();
   do {
     const query = new URLSearchParams({ data_source_id: dataSourceId });
     if (cursor) query.set('start_cursor', cursor);
     const page = await notionApiRequest(env, '/views?' + query.toString());
+    if (!Array.isArray(page.results)) throw new HttpError(502, 'Notion 보기 목록 응답 형식이 올바르지 않습니다.');
     refs.push(...(Array.isArray(page.results) ? page.results : []));
-    cursor = page.has_more ? page.next_cursor : null;
-  } while (cursor && refs.length < 100);
+    const nextCursor = page.has_more ? String(page.next_cursor || '') : '';
+    if (page.has_more && (!nextCursor || seenCursors.has(nextCursor))) throw new HttpError(502, 'Notion 보기 페이지네이션 커서가 올바르지 않습니다.');
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor || null;
+  } while (cursor);
   const views = [];
+  const rawObjects = [];
+  const warningCodes = new Set();
   for (let index = 0; index < refs.length; index += 1) {
     const ref = refs[index];
     let detail = ref;
@@ -3075,12 +3176,14 @@ async function listNotionApiViews(env, dataSourceId) {
         // for the fidelity audit and is rendered as a safe table fallback.
         const unsupported = error instanceof HttpError && error.status === 400 && /unsupported view type/i.test(String(error.message || ''));
         if (!(error instanceof HttpError) || (![403, 404].includes(error.status) && !unsupported)) throw error;
+        warningCodes.add('notion_view_detail_unavailable');
         detail = ref;
       }
     }
     views.push(normalizeNotionView({ ...ref, ...detail }, index, dataSourceId));
+    rawObjects.push(notionApiObjectRecord(detail, 'view', index, { type: 'data_source_id', id: dataSourceId, objectKey: parentObjectKey }));
   }
-  return views;
+  return includeRaw ? { views, objects: rawObjects, warningCodes: [...warningCodes] } : views;
 }
 
 function notionViewPropertyId(view, key) {
@@ -3337,7 +3440,9 @@ async function searchNotionApi(request, env, actor) {
     if (item.object === 'page' || item.object === 'data_source') items.push({ id: item.id, object: item.object });
     if (item.object === 'database') for (const source of item.data_sources || []) items.push({ id: source.id, object: 'data_source' });
   }
-  const existing = await env.DB.prepare("SELECT source_page_id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%' AND source_page_id IS NOT NULL").bind(PROJECT_ID).all();
+  const existing = await env.DB.prepare(`SELECT d.source_page_id FROM documents d
+    JOIN notion_api_snapshots s ON s.id=d.active_notion_snapshot_id AND s.document_id=d.id AND s.status='active'
+    WHERE d.project_id=? AND d.status='active' AND d.source_path LIKE 'notion-api/%' AND d.source_page_id IS NOT NULL`).bind(PROJECT_ID).all();
   const importedIds = new Set((existing.results || []).map(row => String(row.source_page_id)));
   for (const item of items) item.imported = importedIds.has(normalizedNotionId(item.id));
   return json({ items, next_cursor: data.has_more ? data.next_cursor : null });
@@ -3350,7 +3455,9 @@ async function missingLinkedNotionItems(env, actor) {
       JOIN documents d ON d.id=b.document_id AND d.active_snapshot_id=b.snapshot_id
       WHERE d.project_id=? AND d.status='active' AND b.block_type='page_link'
       ORDER BY d.updated_at DESC,b.position ASC LIMIT 10000`).bind(PROJECT_ID).all(),
-    env.DB.prepare("SELECT id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%'").bind(PROJECT_ID).all()
+    env.DB.prepare(`SELECT d.id FROM documents d
+      JOIN notion_api_snapshots s ON s.id=d.active_notion_snapshot_id AND s.document_id=d.id AND s.status='active'
+      WHERE d.project_id=? AND d.status='active' AND d.source_path LIKE 'notion-api/%'`).bind(PROJECT_ID).all()
   ]);
   const existingIds = new Set((existing.results || []).map(row => String(row.id)));
   const items = new Map();
@@ -3375,6 +3482,8 @@ async function importNotionApiPage(request, env, actor, rawPageId) {
   const pageId = normalizedNotionId(rawPageId);
   const peopleDirectory = await loadNotionPeopleDirectory(env);
   const page = await notionApiRequest(env, '/pages/' + pageId);
+  const pageObject = notionApiObjectRecord(page, 'page', 0);
+  const rawBlockTree = await notionApiBlockObjects(env, pageId, pageObject.object_key);
   const markdownResult = await notionApiRequest(env, '/pages/' + pageId + '/markdown');
   let markdown = String(markdownResult.markdown || '');
   markdown = await resolveNotionMarkdownPageMentions(env, markdown);
@@ -3388,7 +3497,11 @@ async function importNotionApiPage(request, env, actor, rawPageId) {
   blocks.push(...parsed.blocks);
   const parentSourceId = page.parent?.page_id || page.parent?.data_source_id || page.parent?.database_id || null;
   const documentId = await upsertNotionApiDocument(env, actor, { sourceId: pageId, parentSourceId, title: notionPageTitle(page), blocks, files: persisted.files, pageIcon: notionPageIconMeta(page.icon) });
-  return json({ document_id: documentId, truncated: !!markdownResult.truncated, unknown_blocks: markdownResult.unknown_block_ids || [] });
+  const sourceSnapshotId = await saveNotionApiSnapshot(env, {
+    documentId, sourceId: pageId, sourceType: 'page', objects: [pageObject, ...rawBlockTree.objects],
+    complete: rawBlockTree.complete, warningCodes: rawBlockTree.warningCodes
+  });
+  return json({ document_id: documentId, source_snapshot_id: sourceSnapshotId, source_objects: rawBlockTree.objects.length + 1, source_snapshot_complete: rawBlockTree.complete, truncated: !!markdownResult.truncated, unknown_blocks: markdownResult.unknown_block_ids || [] });
 }
 
 function notionIdFromUrl(value) {
@@ -3550,23 +3663,49 @@ async function importNotionApiDataSource(request, env, actor, rawSourceId) {
   const sourceId = normalizedNotionId(rawSourceId);
   const peopleDirectory = await loadNotionPeopleDirectory(env);
   const source = await notionApiRequest(env, '/data_sources/' + sourceId);
+  const sourceWarningCodes = new Set();
+  const databaseId = source.parent?.database_id;
+  let databaseRecord = null;
+  if (databaseId) {
+    try {
+      const database = await notionApiRequest(env, '/databases/' + normalizedNotionId(databaseId));
+      databaseRecord = notionApiObjectRecord(database, 'database', 0);
+    } catch (error) {
+      if (!(error instanceof HttpError) || ![403, 404].includes(error.status)) throw error;
+      sourceWarningCodes.add('notion_database_unavailable');
+    }
+  }
+  const sourceRecord = notionApiObjectRecord(source, 'data_source', 0, { objectKey: databaseRecord?.object_key || null });
   let sourceViews = [];
-  try { sourceViews = await listNotionApiViews(env, sourceId); } catch (error) {
+  let rawViewObjects = [];
+  try {
+    const viewResult = await listNotionApiViews(env, sourceId, { includeRaw: true, parentObjectKey: sourceRecord.object_key });
+    sourceViews = viewResult.views;
+    rawViewObjects = viewResult.objects;
+    for (const code of viewResult.warningCodes) sourceWarningCodes.add(code);
+  } catch (error) {
     if (!(error instanceof HttpError) || ![403, 404].includes(error.status)) throw error;
+    sourceWarningCodes.add('notion_views_unavailable');
   }
   const entries = Object.entries(source.properties || {});
   entries.sort((left, right) => Number(right[1]?.type === 'title') - Number(left[1]?.type === 'title'));
   const columns = entries.slice(0, DATABASE_MAX_COLUMNS).map(([name, property], index) => notionPropertyColumn(name, property, index));
   const pages = [];
   let cursor = null;
+  const seenPageCursors = new Set();
   do {
     const payload = { page_size: 100 };
     if (cursor) payload.start_cursor = cursor;
     const result = await notionApiRequest(env, '/data_sources/' + sourceId + '/query', { method: 'POST', body: JSON.stringify(payload) });
+    if (!Array.isArray(result.results)) throw new HttpError(502, 'Notion 데이터 행 응답 형식이 올바르지 않습니다.');
     pages.push(...(result.results || []));
-    cursor = result.has_more ? result.next_cursor : null;
-  } while (cursor && pages.length < 5000);
-  const allRows = pages.map(page => ({ id: 'row_' + normalizedNotionId(page.id), source_id: normalizedNotionId(page.id), cells: Object.fromEntries(columns.map(column => { const property = Object.values(page.properties || {}).find(item => item?.id === column.sourceId); const value = notionPropertyText(property, peopleDirectory); return [column.id, value.slice(0, 500)]; })) }));
+    const nextCursor = result.has_more ? String(result.next_cursor || '') : '';
+    if (result.has_more && (!nextCursor || seenPageCursors.has(nextCursor))) throw new HttpError(502, 'Notion 데이터 행 페이지네이션 커서가 올바르지 않습니다.');
+    if (nextCursor) seenPageCursors.add(nextCursor);
+    cursor = nextCursor || null;
+  } while (cursor);
+  const projectedPages = pages.slice(0, DATABASE_MAX_ROWS);
+  const allRows = projectedPages.map(page => ({ id: 'row_' + normalizedNotionId(page.id), source_id: normalizedNotionId(page.id), cells: Object.fromEntries(columns.map(column => { const property = Object.values(page.properties || {}).find(item => item?.id === column.sourceId); const value = notionPropertyText(property, peopleDirectory); return [column.id, value.slice(0, 500)]; })) }));
   const fallbackGroup = columns.find(column => /상태|status/i.test(column.name)) || columns.find(column => ['select', 'status'].includes(column.type)) || columns[0];
   const normalizedViews = sourceViews.length ? sourceViews.map(view => ({ ...view, groupBy: columns.find(column => column.sourceId === notionViewPropertyId(view, 'group_by'))?.id || fallbackGroup?.id || '', datePropertyId: columns.find(column => column.sourceId === (notionViewPropertyId(view, 'date_property_id') || notionViewPropertyId(view, 'date_property')))?.id || '' })) : [
     { id: 'view_table', name: '전체 보기', type: 'table', order: 0, is_default: true, filter: null, sorts: [], quick_filters: [], configuration: {} },
@@ -3584,11 +3723,20 @@ async function importNotionApiDataSource(request, env, actor, rawSourceId) {
   }
   if (chunk.length || !allRows.length) blocks.push({ type: 'database', content: JSON.stringify(makeModel(chunk)), checked: false });
   const parentSourceId = source.parent?.page_id || source.parent?.database_id || null;
-  const documentId = await upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title: notionRichText(source.title) || 'Notion 데이터베이스', blocks, database: true, pageIcon: notionPageIconMeta(source.icon) });
-  const existing = await env.DB.prepare("SELECT source_page_id FROM documents WHERE project_id=? AND status='active' AND source_path LIKE 'notion-api/%' AND source_page_id IS NOT NULL").bind(PROJECT_ID).all();
+  const sourceObjects = [...(databaseRecord ? [databaseRecord] : []), sourceRecord, ...rawViewObjects];
+  pages.forEach((page, index) => sourceObjects.push(notionApiObjectRecord(page, 'page', index, { type: 'data_source_id', id: sourceId, objectKey: sourceRecord.object_key })));
+  const existing = await env.DB.prepare(`SELECT d.source_page_id FROM documents d
+    JOIN notion_api_snapshots s ON s.id=d.active_notion_snapshot_id AND s.document_id=d.id AND s.status='active'
+    WHERE d.project_id=? AND d.status='active' AND d.source_path LIKE 'notion-api/%' AND d.source_page_id IS NOT NULL`).bind(PROJECT_ID).all();
   const importedIds = new Set((existing.results || []).map(row => String(row.source_page_id)));
   const pageIds = pages.map(page => page.id).filter(id => id && !importedIds.has(normalizedNotionId(id)));
-  return json({ document_id: documentId, rows: allRows.length, page_ids: pageIds });
+  const documentId = await upsertNotionApiDocument(env, actor, { sourceId, parentSourceId, title: notionRichText(source.title) || 'Notion 데이터베이스', blocks, database: true, pageIcon: notionPageIconMeta(source.icon) });
+  const sourceSnapshotId = await saveNotionApiSnapshot(env, {
+    documentId, sourceId, sourceType: 'data_source', objects: sourceObjects,
+    complete: sourceWarningCodes.size === 0,
+    warningCodes: [...sourceWarningCodes]
+  });
+  return json({ document_id: documentId, source_snapshot_id: sourceSnapshotId, source_objects: sourceObjects.length, source_snapshot_complete: sourceWarningCodes.size === 0, warning_codes: [...sourceWarningCodes], projection_truncated: pages.length > DATABASE_MAX_ROWS || entries.length > DATABASE_MAX_COLUMNS, rows: pages.length, page_ids: pageIds });
 }
 
 async function reconcileNotionApiParents(env, actor) {
@@ -4270,6 +4418,8 @@ async function resetNotionMigration(request, env, actor) {
     env.DB.prepare('DELETE FROM project_invitations WHERE project_id=?').bind(PROJECT_ID),
     env.DB.prepare('DELETE FROM notion_people WHERE project_id=?').bind(PROJECT_ID),
     env.DB.prepare('DELETE FROM notion_imports WHERE project_id=?').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM notion_api_objects WHERE snapshot_id IN (SELECT id FROM notion_api_snapshots WHERE project_id=?)').bind(PROJECT_ID),
+    env.DB.prepare('DELETE FROM notion_api_snapshots WHERE project_id=?').bind(PROJECT_ID),
     env.DB.prepare('DELETE FROM workspace_templates WHERE project_id=? AND is_builtin=0').bind(PROJECT_ID),
     env.DB.prepare('DELETE FROM documents WHERE project_id=?').bind(PROJECT_ID),
     env.DB.prepare('DELETE FROM project_members WHERE project_id=? AND user_id<>?').bind(PROJECT_ID, actor.id)

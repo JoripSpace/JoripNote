@@ -9,9 +9,10 @@
 
 ## 단계
 
-1. canonical snapshot과 registry를 병행 도입한다.
-2. 새 importer는 snapshot을 만들고 기존 API 저장 형식으로 내린다.
-3. paragraph/heading/list/todo부터 registry 렌더러로 교체한다.
-4. table/database view를 같은 data source projection으로 통합한다.
-5. selection, command, undo/redo를 연결한다.
-6. 남은 legacy 경로를 감사 보고서로 분류하고 제거 여부를 결정한다.
+1. Notion API 원본 객체와 부모·순서 관계를 별도 스냅샷으로 보존한다.
+2. canonical snapshot과 registry를 편집기용 투영과 병행한다.
+3. 새 importer는 원본 스냅샷을 만들고 기존 API 저장 형식으로 내린다.
+4. paragraph/heading/list/todo부터 registry 렌더러로 교체한다.
+5. table/database view를 같은 data source projection으로 통합한다.
+6. selection, command, undo/redo를 연결한다.
+7. 남은 legacy 경로를 감사 보고서로 분류하고 제거 여부를 결정한다.

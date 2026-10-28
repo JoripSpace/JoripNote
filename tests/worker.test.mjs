@@ -56,6 +56,7 @@ class D1Database {
     this.database.exec(readFileSync(new URL('../migrations/0012_heading_levels.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0013_notion_page_metadata.sql', import.meta.url), 'utf8'));
     this.database.exec(readFileSync(new URL('../migrations/0014_database_view_preferences.sql', import.meta.url), 'utf8'));
+    this.database.exec(readFileSync(new URL('../migrations/0015_notion_api_tree_snapshots.sql', import.meta.url), 'utf8'));
   }
   prepare(sql) {
     return new D1Statement(this.database, sql);
@@ -1054,12 +1055,31 @@ test('Notion API importer discovers accessible pages and stores page properties 
   const pageId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
   const aliasBlockId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
   const linkedPageId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const parentBlockId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  const nestedBlockId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  const secondBlockId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+  const mirrorParentBlockId = 'abababab-abab-abab-abab-abababababab';
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
     assert.equal(init.headers.authorization, 'Bearer ntn_test_secret');
     assert.equal(init.headers['notion-version'], '2026-03-11');
     if (url.endsWith('/v1/search')) return Response.json({ results: [{ object: 'page', id: pageId }], has_more: false, next_cursor: null });
+    if (url.includes('/v1/blocks/' + pageId.replaceAll('-', '') + '/children?')) return Response.json(url.includes('start_cursor=next')
+      ? { results: [
+        { object: 'block', id: secondBlockId, parent: { type: 'page_id', page_id: pageId }, has_children: false, type: 'unsupported', unsupported: { block_type: 'button' } },
+        { object: 'block', id: mirrorParentBlockId, parent: { type: 'page_id', page_id: pageId }, has_children: true, type: 'synced_block', synced_block: { synced_from: { block_id: parentBlockId } } }
+      ], has_more: false, next_cursor: null }
+      : { results: [{ object: 'block', id: parentBlockId, parent: { type: 'page_id', page_id: pageId }, has_children: true, type: 'toggle', toggle: { rich_text: [{ type: 'text', plain_text: '접기' }] } }], has_more: true, next_cursor: 'next' });
+    if (url.includes('/v1/blocks/' + parentBlockId.replaceAll('-', '') + '/children?')) return Response.json({
+      results: [{ object: 'block', id: nestedBlockId, parent: { type: 'block_id', block_id: parentBlockId }, has_children: false, type: 'paragraph', paragraph: { rich_text: [{ type: 'text', plain_text: '중첩 내용' }] } }],
+      has_more: false, next_cursor: null
+    });
+    if (url.includes('/v1/blocks/' + mirrorParentBlockId.replaceAll('-', '') + '/children?')) return Response.json({
+      results: [{ object: 'block', id: nestedBlockId, parent: { type: 'block_id', block_id: mirrorParentBlockId }, has_children: false, type: 'paragraph', paragraph: { rich_text: [{ type: 'text', plain_text: '중첩 내용' }] } }],
+      has_more: false, next_cursor: null
+    });
+    if (url.includes('/v1/blocks/' + linkedPageId.replaceAll('-', '') + '/children?')) return Response.json({ results: [], has_more: false, next_cursor: null });
     if (url.endsWith('/v1/pages/' + pageId.replaceAll('-', '') + '/markdown')) return Response.json({ markdown: '# API 본문\n문단\n<unknown url="https://app.notion.com/p/' + pageId.replaceAll('-', '') + '#' + aliasBlockId.replaceAll('-', '') + '" alt="alias"/>\n[블록 링크](https://www.notion.so/' + linkedPageId.replaceAll('-', '') + '#' + aliasBlockId.replaceAll('-', '') + ')', truncated: false, unknown_block_ids: [aliasBlockId] });
     if (url.endsWith('/v1/pages/' + linkedPageId.replaceAll('-', '') + '/markdown')) return Response.json({ markdown: '# 연결 문서\n본문', truncated: false, unknown_block_ids: [] });
     if (url.endsWith('/v1/blocks/' + aliasBlockId.replaceAll('-', ''))) return Response.json({ object: 'block', id: aliasBlockId, type: 'link_to_page', link_to_page: { type: 'page_id', page_id: linkedPageId } });
@@ -1081,12 +1101,17 @@ test('Notion API importer discovers accessible pages and stores page properties 
     assert.equal(imported.response.status, 200, JSON.stringify(imported.body));
     const rediscovered = await call(env, '/api/import/notion-api/search', { method: 'POST', headers: auth(cookie), body: { cursor: null } });
     assert.equal(rediscovered.body.items[0].imported, true);
+    const oldPage = env.DB.database.prepare('SELECT id,active_notion_snapshot_id FROM documents WHERE source_page_id=?').get(pageId.replaceAll('-', ''));
+    env.DB.database.prepare('UPDATE documents SET active_notion_snapshot_id=NULL WHERE id=?').run(oldPage.id);
+    const needsSnapshot = await call(env, '/api/import/notion-api/search', { method: 'POST', headers: auth(cookie), body: { cursor: null } });
+    assert.equal(needsSnapshot.body.items[0].imported, false);
+    env.DB.database.prepare('UPDATE documents SET active_notion_snapshot_id=? WHERE id=?').run(oldPage.active_notion_snapshot_id, oldPage.id);
     const linkedImport = await call(env, '/api/import/notion-api/pages/' + linkedPageId, { method: 'POST', headers: auth(cookie), body: {} });
     assert.equal(linkedImport.response.status, 200, JSON.stringify(linkedImport.body));
   } finally {
     globalThis.fetch = originalFetch;
   }
-  const document = env.DB.database.prepare("SELECT id,title,source_page_id,source_path,page_icon_emoji,page_icon_url FROM documents WHERE title='API 문서'").get();
+  const document = env.DB.database.prepare("SELECT id,title,source_page_id,source_path,page_icon_emoji,page_icon_url,active_notion_snapshot_id FROM documents WHERE title='API 문서'").get();
   assert.equal(document.source_page_id, pageId.replaceAll('-', ''));
   assert.match(document.source_path, /^notion-api\//);
   assert.equal(document.page_icon_emoji, '📆');
@@ -1097,11 +1122,34 @@ test('Notion API importer discovers accessible pages and stores page properties 
   assert.equal(blocks[1].content, '문단');
   assert.equal(blocks[2].block_type, 'page_link');
   assert.deepEqual(JSON.parse(blocks[2].content), { title: '연결 문서', url: 'https://www.notion.so/' + linkedPageId.replaceAll('-', ''), document_id: 'doc_notion_' + linkedPageId.replaceAll('-', '') });
+  const sourceSnapshot = env.DB.database.prepare('SELECT source_type,status,complete,warning_codes_json FROM notion_api_snapshots WHERE id=?').get(document.active_notion_snapshot_id);
+  assert.deepEqual({ ...sourceSnapshot }, { source_type: 'page', status: 'active', complete: 1, warning_codes_json: '[]' });
+  const sourceObjects = env.DB.database.prepare('SELECT object_key,object_type,source_id,parent_object_key,parent_type,parent_source_id,position,raw_json FROM notion_api_objects WHERE snapshot_id=?').all(document.active_notion_snapshot_id);
+  const sourceParent = sourceObjects.find(object => object.source_id === parentBlockId);
+  const sourceNested = sourceObjects.filter(object => object.source_id === nestedBlockId);
+  const sourceSecond = sourceObjects.find(object => object.source_id === secondBlockId);
+  const sourceMirrorParent = sourceObjects.find(object => object.source_id === mirrorParentBlockId);
+  assert.deepEqual([sourceParent.parent_type, sourceParent.parent_source_id, sourceParent.position], ['page_id', pageId, 0]);
+  assert.equal(sourceNested.length, 2);
+  const nestedParents = sourceNested.map(object => [object.parent_type, object.parent_source_id, object.position]).sort((left, right) => left[1].localeCompare(right[1]));
+  assert.deepEqual(nestedParents, [
+    ['block_id', mirrorParentBlockId, 0], ['block_id', parentBlockId, 0]
+  ]);
+  assert.notEqual(sourceNested[0].object_key, sourceNested[1].object_key);
+  const nestedParentKeys = sourceNested.map(object => [object.parent_source_id, object.parent_object_key]).sort((left, right) => left[0].localeCompare(right[0]));
+  assert.deepEqual(nestedParentKeys, [[mirrorParentBlockId, sourceMirrorParent.object_key], [parentBlockId, sourceParent.object_key]]);
+  assert.deepEqual([sourceSecond.parent_type, sourceSecond.parent_source_id, sourceSecond.position], ['page_id', pageId, 1]);
+  assert.equal(JSON.parse(sourceSecond.raw_json).unsupported.block_type, 'button');
   const loaded = await call(env, '/api/documents/' + document.id, { headers: auth(cookie) });
   const linkedBlock = loaded.body.document.blocks.find(block => {
     try { return JSON.parse(block.content || '').document_id === 'doc_notion_' + linkedPageId.replaceAll('-', ''); } catch { return false; }
   });
   assert.equal(linkedBlock.page_icon_emoji, '📄');
+  const linkedDocument = env.DB.database.prepare('SELECT id,active_notion_snapshot_id FROM documents WHERE source_page_id=?').get(linkedPageId.replaceAll('-', ''));
+  env.DB.database.prepare('UPDATE documents SET active_notion_snapshot_id=NULL WHERE id=?').run(linkedDocument.id);
+  const legacyLinked = await call(env, '/api/import/notion-api/linked-missing', { method: 'POST', headers: auth(cookie), body: {} });
+  assert.deepEqual(legacyLinked.body.items, [{ id: linkedPageId.replaceAll('-', ''), object: 'page', imported: false }]);
+  env.DB.database.prepare('UPDATE documents SET active_notion_snapshot_id=? WHERE id=?').run(linkedDocument.active_notion_snapshot_id, linkedDocument.id);
   const linked = await call(env, '/api/import/notion-api/linked-missing', { method: 'POST', headers: auth(cookie), body: {} });
   assert.equal(linked.response.status, 200, JSON.stringify(linked.body));
   assert.deepEqual(linked.body.items, []);
@@ -1112,15 +1160,17 @@ test('Notion API data source import returns row page ids for complete page-body 
   await addUser(env, { id: 'usr_owner0001', username: 'owner', role: 'owner' });
   const cookie = await login(env, 'owner');
   env.NOTION_API_TOKEN = 'ntn_test_secret';
+  const databaseId = '12121212-1212-1212-1212-121212121212';
   const sourceId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
   const rowId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async input => {
     const url = String(input);
     if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', ''))) return Response.json({
-      object: 'data_source', id: sourceId, title: [{ plain_text: '작업 목록' }], parent: { type: 'workspace', workspace: true },
+      object: 'data_source', id: sourceId, title: [{ plain_text: '작업 목록' }], parent: { type: 'database_id', database_id: databaseId },
       properties: { Name: { id: 'title', type: 'title', title: {} } }
     });
+    if (url.endsWith('/v1/databases/' + databaseId.replaceAll('-', ''))) return Response.json({ object: 'database', id: databaseId, data_sources: [{ id: sourceId }] });
     if (url.endsWith('/v1/data_sources/' + sourceId.replaceAll('-', '') + '/query')) return Response.json({
       results: [{ object: 'page', id: rowId, properties: { Name: { id: 'title', type: 'title', title: [{ plain_text: '행 페이지' }] } } }],
       has_more: false, next_cursor: null
@@ -1135,6 +1185,18 @@ test('Notion API data source import returns row page ids for complete page-body 
   } finally {
     globalThis.fetch = originalFetch;
   }
+  const document = env.DB.database.prepare('SELECT id,active_notion_snapshot_id FROM documents WHERE source_page_id=?').get(sourceId.replaceAll('-', ''));
+  const snapshot = env.DB.database.prepare('SELECT source_type,status,complete,warning_codes_json FROM notion_api_snapshots WHERE id=?').get(document.active_notion_snapshot_id);
+  assert.deepEqual({ ...snapshot }, { source_type: 'data_source', status: 'active', complete: 0, warning_codes_json: '["notion_views_unavailable"]' });
+  const sourceObjects = env.DB.database.prepare('SELECT object_key,object_type,source_id,parent_object_key,parent_type,parent_source_id,position,raw_json FROM notion_api_objects WHERE snapshot_id=?').all(document.active_notion_snapshot_id);
+  assert.ok(sourceObjects.some(object => object.object_type === 'data_source' && JSON.parse(object.raw_json).id === sourceId));
+  assert.ok(sourceObjects.some(object => object.object_type === 'database' && JSON.parse(object.raw_json).id === databaseId));
+  const rawRow = sourceObjects.find(object => object.source_id === rowId);
+  assert.deepEqual([rawRow.parent_type, rawRow.parent_source_id, rawRow.position], ['data_source_id', sourceId.replaceAll('-', ''), 0]);
+  const rawDatabase = sourceObjects.find(object => object.object_type === 'database');
+  const rawDataSource = sourceObjects.find(object => object.object_type === 'data_source');
+  assert.equal(rawDataSource.parent_object_key, rawDatabase.object_key);
+  assert.equal(rawRow.parent_object_key, rawDataSource.object_key);
 });
 
 test('Notion member sync preserves encrypted emails and enriches people properties', async () => {
@@ -1239,6 +1301,12 @@ test('Notion API data source import preserves paginated views, calendar ranges a
     const paginated = await call(env, '/api/import/notion-api/views?data_source_id=' + sourceId, { headers: { cookie } });
     assert.equal(paginated.response.status, 200, JSON.stringify(paginated.body));
     assert.equal(paginated.body.views.length, 2);
+    const document = env.DB.database.prepare('SELECT active_notion_snapshot_id FROM documents WHERE source_page_id=?').get(sourceId.replaceAll('-', ''));
+    const snapshot = env.DB.database.prepare('SELECT complete,warning_codes_json FROM notion_api_snapshots WHERE id=?').get(document.active_notion_snapshot_id);
+    assert.deepEqual({ ...snapshot }, { complete: 1, warning_codes_json: '[]' });
+    const rawViews = env.DB.database.prepare("SELECT source_id,position,raw_json FROM notion_api_objects WHERE snapshot_id=? AND object_type='view' ORDER BY position").all(document.active_notion_snapshot_id);
+    assert.deepEqual(rawViews.map(view => view.source_id), [viewCalendar, viewBoard]);
+    assert.deepEqual(rawViews.map(view => JSON.parse(view.raw_json).type), ['calendar', 'board']);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1274,6 +1342,9 @@ test('Notion API importer keeps data sources when an unsupported view detail ret
     assert.equal(model.version, 3);
     assert.equal(model.views[0].type, 'feed');
     assert.equal(model.rows[0].source_id, rowId.replaceAll('-', ''));
+    const document = env.DB.database.prepare('SELECT active_notion_snapshot_id FROM documents WHERE source_page_id=?').get(sourceId.replaceAll('-', ''));
+    const snapshot = env.DB.database.prepare('SELECT complete,warning_codes_json FROM notion_api_snapshots WHERE id=?').get(document.active_notion_snapshot_id);
+    assert.deepEqual({ ...snapshot }, { complete: 0, warning_codes_json: '["notion_view_detail_unavailable"]' });
   } finally {
     globalThis.fetch = originalFetch;
   }
