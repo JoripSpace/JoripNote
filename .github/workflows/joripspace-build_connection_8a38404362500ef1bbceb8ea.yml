@@ -63,7 +63,7 @@ jobs:
           (cd "$stage_dir" && find . -type f -exec zip -q "$archive_path" -- {} +)
           JORIPSPACE_ARCHIVE_PATH="$archive_path" node --input-type=module <<'JORIPSPACE_SCRIPT'
           async function inlineDeployMain() {
-            const { open: open2 } = await Promise.resolve().then(() => (init_promises2(), promises_exports));
+            const { open: open2 } = await import("node:fs/promises");
             const audience = "https://api.joripspace.com/v1/external-builds/github";
             const projectId = requiredEnv("JORIPSPACE_PROJECT_ID");
             const connectionId = String(process.env.JORIPSPACE_CONNECTION_ID || "").trim();
