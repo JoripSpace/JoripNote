@@ -298,6 +298,7 @@ test('app shell, editor capabilities and security headers are served', async () 
   assert.match(appScript, /state\.workspaceSettings\?\.space_mode==='personal'/);
   assert.match(appScript, /function setListLayout/);
   assert.match(appScript, /Promise\.allSettled\(\[api\('\/api\/setup-status'\),api\('\/api\/me'\)\]\)/);
+  assert.match(appScript, /const data=meResult\.status==='fulfilled'\?meResult\.value:setup\.demo_mode\?await api\('\/api\/me'\):null/);
   assert.match(appScript, /routeFromLocation\(\);setTimeout\(loadTree,0\);setTimeout\(refreshNotificationBadge,1200\)/);
   assert.match(appScript, /function listPreviewText/);
   assert.match(appScript, /params\.set\('kind',state\.listKind\)/);
