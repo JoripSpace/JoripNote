@@ -19,14 +19,14 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Preserve original source
         shell: bash
         run: |
           node --input-type=module <<'JORIPSPACE_SOURCE'
           async function snapshotGithubSource() {
-                const { execFileSync: execFileSync2, spawnSync: spawnSync2 } = await Promise.resolve().then(() => (init_child_process(), child_process_exports));
-                const { lstat: lstat2, mkdir: mkdir2, copyFile: copyFile2 } = await Promise.resolve().then(() => (init_promises2(), promises_exports));
+                const { execFileSync: execFileSync2, spawnSync: spawnSync2 } = await import("node:child_process");
+                const { lstat: lstat2, mkdir: mkdir2, copyFile: copyFile2 } = await import("node:fs/promises");
                 const { join } = await import("node:path");
                 const root = process.env.GITHUB_WORKSPACE;
                 const target = join(
@@ -211,7 +211,6 @@ jobs:
             function escapeWorkflowCommand(value) {
               return String(value || "").replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
             }
-            __name(escapeWorkflowCommand, "escapeWorkflowCommand");
             async function requestOidcToken() {
               const requestUrl = requiredEnv("ACTIONS_ID_TOKEN_REQUEST_URL");
               const requestToken = requiredEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN");
@@ -225,7 +224,6 @@ jobs:
               }
               return payload.value;
             }
-            __name(requestOidcToken, "requestOidcToken");
             async function api(path, options) {
               const url = path.startsWith("http") ? path : `${apiUrl}${path}`;
               const headers = new Headers({
@@ -249,7 +247,6 @@ jobs:
               }
               throw apiError(response.status, payload);
             }
-            __name(api, "api");
             function apiError(status, payload) {
               const error3 = new Error(payload?.error?.message || `JoripSpace request failed (${status}).`);
               error3.code = payload?.error?.code || "joripspace_request_failed";
@@ -257,7 +254,6 @@ jobs:
               console.error(`JORIPSPACE_DIAGNOSTIC ${diagnostic}`);
               return error3;
             }
-            __name(apiError, "apiError");
             function safeJson(value) {
               try {
                 return JSON.parse(value);
@@ -265,13 +261,11 @@ jobs:
                 return { error: { code: "invalid_response", message: value.slice(0, 500) } };
               }
             }
-            __name(safeJson, "safeJson");
             function requiredEnv(name) {
               const value = process.env[name];
               if (!value) throw new Error(`${name} is required.`);
               return value;
             }
-            __name(requiredEnv, "requiredEnv");
           }
           
           await inlineDeployMain();
