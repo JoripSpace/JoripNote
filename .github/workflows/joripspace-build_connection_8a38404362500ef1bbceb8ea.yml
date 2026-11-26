@@ -1,4 +1,4 @@
-# joripspace-workflow-version: 9
+# joripspace-workflow-version: 10
 name: JoripSpace Deploy "(build_connection_8a38404362500ef1bbceb8ea)"
 
 on:
@@ -132,13 +132,67 @@ jobs:
             exit 1
           fi
           cp -R "$RUNNER_TEMP/joripspace-source-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$stage_dir/.joripspace-source"
-          JORIPSPACE_STAGE_DIR="$stage_dir" node --input-type=module -e '
-            import { writeFile } from "node:fs/promises";
-            import { join } from "node:path";
-            const root = process.env.JORIPSPACE_STAGE_DIR;
-            const entrypoint = process.env.JORIPSPACE_ENTRYPOINT;
-            await writeFile(join(root, ".joripspace-deploy.json"), JSON.stringify({ entrypoint }) + "\n");
-          '
+          JORIPSPACE_STAGE_DIR="$stage_dir" node --input-type=module <<'JORIPSPACE_ARTIFACT'
+            async function prepareGithubArtifact() {
+                  const { readFile: readFile2, writeFile: writeFile2, stat: stat2, rm: rm2 } = await Promise.resolve().then(() => (init_promises2(), promises_exports));
+                  const { join } = await import("node:path");
+                  const stage = process.env.JORIPSPACE_STAGE_DIR;
+                  const workspace = process.env.GITHUB_WORKSPACE;
+                  let entrypoint = process.env.JORIPSPACE_ENTRYPOINT;
+                  async function read(name) {
+                    try {
+                      return await readFile2(join(workspace, name), "utf8");
+                    } catch (error3) {
+                      if (error3.code === "ENOENT") return "";
+                      throw error3;
+                    }
+                  }
+                  __name(read, "read");
+                  const explicit = await read(".joripspace-deploy.json");
+                  const config2 = explicit ? JSON.parse(explicit) : {};
+                  if (process.env.JORIPSPACE_ARTIFACT_PATH === ".joripspace-artifact") {
+                    if (config2.entrypoint) entrypoint = config2.entrypoint;
+                    else {
+                      const candidates = [];
+                      for (const name of ["dist/worker.js", "dist/index.js", "worker.bundle.js", ".open-next/worker.js"]) {
+                        try {
+                          if ((await stat2(join(stage, name))).isFile()) candidates.push(name);
+                        } catch (error3) {
+                          if (error3.code !== "ENOENT") throw error3;
+                        }
+                      }
+                      if (candidates.length > 1) throw new Error("Multiple build entrypoints found. Set entrypoint in .joripspace-deploy.json.");
+                      if (candidates.length) entrypoint = candidates[0];
+                    }
+                  }
+                  if (typeof entrypoint !== "string" || !entrypoint || entrypoint.startsWith("/") || entrypoint.includes("\\") || entrypoint.split("/").some((part) => !part || part === "." || part === "..")) {
+                    throw new Error("Invalid deployment entrypoint");
+                  }
+                  if (!(await stat2(join(stage, entrypoint))).isFile()) throw new Error("Build entrypoint does not exist");
+                  if (process.env.JORIPSPACE_ARTIFACT_PATH === ".joripspace-artifact" && entrypoint !== "worker.js") {
+                    const original = "worker.js";
+                    if (!original.startsWith("/") && !original.includes("\\") && original.split("/").every((part) => part && part !== "." && part !== "..")) {
+                      await rm2(join(stage, original), { force: true });
+                    }
+                  }
+                  let flags2 = config2.compatibility_flags;
+                  if (flags2 === void 0) {
+                    const wrangler = (await read("wrangler.jsonc") || await read("wrangler.json") || await read("wrangler.toml")).replace(
+                      /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g,
+                      (part) => /^(\/\/|\/\*|#)/.test(part) ? "" : part
+                    );
+                    const list = /["']?compatibility_flags["']?\s*[:=]\s*\[([^\]]*)\]/m.exec(wrangler);
+                    flags2 = list ? [...list[1].matchAll(/["']([^"']+)["']/g)].map((match2) => match2[1]) : [];
+                  }
+                  if (!Array.isArray(flags2) || flags2.some((flag) => flag !== "nodejs_compat")) throw new Error("Supported compatibility_flags: nodejs_compat");
+                  await writeFile2(join(stage, ".joripspace-deploy.json"), JSON.stringify({
+                    entrypoint,
+                    ...flags2.length ? { compatibility_flags: [...new Set(flags2)] } : {}
+                  }) + "\n");
+                }
+            
+            await prepareGithubArtifact();
+          JORIPSPACE_ARTIFACT
           (cd "$stage_dir" && find . -type f -exec zip -q "$archive_path" -- {} +)
           JORIPSPACE_ARCHIVE_PATH="$archive_path" node --input-type=module <<'JORIPSPACE_SCRIPT'
           async function inlineDeployMain() {
