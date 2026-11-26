@@ -1,4 +1,4 @@
-# joripspace-workflow-version: 10
+# joripspace-workflow-version: 11
 name: JoripSpace Deploy "(build_connection_8a38404362500ef1bbceb8ea)"
 
 on:
@@ -25,72 +25,81 @@ jobs:
         run: |
           node --input-type=module <<'JORIPSPACE_SOURCE'
           async function snapshotGithubSource() {
-                const { execFileSync: execFileSync2, spawnSync: spawnSync2 } = await import("node:child_process");
-                const { lstat: lstat2, mkdir: mkdir2, copyFile: copyFile2 } = await import("node:fs/promises");
-                const { join } = await import("node:path");
-                const root = process.env.GITHUB_WORKSPACE;
-                const target = join(
-                  process.env.RUNNER_TEMP,
-                  `joripspace-source-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`
-                );
-                const files = execFileSync2("git", ["ls-files", "--cached", "-z"], {
+            const { execFileSync, spawnSync } = await import('node:child_process');
+            const { lstat, mkdir, copyFile } = await import('node:fs/promises');
+            const { join } = await import('node:path');
+            const root = process.env.GITHUB_WORKSPACE;
+            const target = join(
+              process.env.RUNNER_TEMP,
+              `joripspace-source-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`
+            );
+            const files = execFileSync('git', ['ls-files', '--cached', '-z'], {
+              cwd: root,
+              encoding: 'utf8',
+              maxBuffer: 16 * 1024 * 1024,
+            })
+              .split('\0')
+              .filter(Boolean);
+            const excluded = new Set();
+            for (const rules of ['.ignore', '.joripspaceignore']) {
+              const result = spawnSync(
+                'git',
+                ['-c', `core.excludesFile=${join(root, rules)}`, 'check-ignore', '--no-index', '-z', '--stdin'],
+                {
                   cwd: root,
-                  encoding: "utf8",
-                  maxBuffer: 16 * 1024 * 1024
-                }).split("\0").filter(Boolean);
-                const excluded = /* @__PURE__ */ new Set();
-                for (const rules of [".ignore", ".joripspaceignore"]) {
-                  const result = spawnSync2(
-                    "git",
-                    ["-c", `core.excludesFile=${join(root, rules)}`, "check-ignore", "--no-index", "-z", "--stdin"],
-                    {
-                      cwd: root,
-                      input: files.join("\0") + "\0",
-                      encoding: "utf8",
-                      maxBuffer: 16 * 1024 * 1024
-                    }
-                  );
-                  if (result.error || ![0, 1].includes(result.status))
-                    throw new Error("Original source ignore check failed.");
-                  for (const file2 of result.stdout.split("\0").filter(Boolean)) excluded.add(file2);
+                  input: files.join('\0') + '\0',
+                  encoding: 'utf8',
+                  maxBuffer: 16 * 1024 * 1024,
                 }
-                await mkdir2(target);
-                for (const file2 of files) {
-                  const parts = file2.toLowerCase().split("/");
-                  const base = parts.at(-1);
-                  if (excluded.has(file2) || parts.some(
-                    (part) => [
-                      ".git",
-                      "node_modules",
-                      ".wrangler",
-                      ".cache",
-                      "coverage",
-                      "tmp",
-                      "temp",
-                      ".joripspace",
-                      ".joripspace-artifact",
-                      ".joripspace-source",
-                      ".agents",
-                      ".claude",
-                      ".codex",
-                      ".cursor",
-                      ".gemini",
-                      ".opencode"
-                    ].includes(part)
-                  ) || ["agents.md", "claude.md", ".ds_store", "thumbs.db", "desktop.ini"].includes(base) || base.startsWith(".env") || base.startsWith(".dev.vars") || /\.(?:log|tmp|temp|pem|key)$/i.test(base))
-                    continue;
-                  let source = root;
-                  for (const part of file2.split("/")) {
-                    if (!part || part === "." || part === "..") throw new Error("Unsafe original source path.");
-                    source = join(source, part);
-                    if ((await lstat2(source)).isSymbolicLink())
-                      throw new Error("Original source contains a symbolic link.");
-                  }
-                  if (!(await lstat2(source)).isFile()) throw new Error("Original source must be a regular file.");
-                  await mkdir2(join(target, ...file2.split("/").slice(0, -1)), { recursive: true });
-                  await copyFile2(source, join(target, file2));
-                }
+              );
+              if (result.error || ![0, 1].includes(result.status))
+                throw new Error('Original source ignore check failed.');
+              for (const file of result.stdout.split('\0').filter(Boolean)) excluded.add(file);
+            }
+            await mkdir(target);
+            for (const file of files) {
+              const parts = file.toLowerCase().split('/');
+              const base = parts.at(-1);
+              if (
+                excluded.has(file) ||
+                parts.some((part) =>
+                  [
+                    '.git',
+                    'node_modules',
+                    '.wrangler',
+                    '.cache',
+                    'coverage',
+                    'tmp',
+                    'temp',
+                    '.joripspace',
+                    '.joripspace-artifact',
+                    '.joripspace-source',
+                    '.agents',
+                    '.claude',
+                    '.codex',
+                    '.cursor',
+                    '.gemini',
+                    '.opencode',
+                  ].includes(part)
+                ) ||
+                ['agents.md', 'claude.md', '.ds_store', 'thumbs.db', 'desktop.ini'].includes(base) ||
+                base.startsWith('.env') ||
+                base.startsWith('.dev.vars') ||
+                /\.(?:log|tmp|temp|pem|key)$/i.test(base)
+              )
+                continue;
+              let source = root;
+              for (const part of file.split('/')) {
+                if (!part || part === '.' || part === '..') throw new Error('Unsafe original source path.');
+                source = join(source, part);
+                if ((await lstat(source)).isSymbolicLink())
+                  throw new Error('Original source contains a symbolic link.');
               }
+              if (!(await lstat(source)).isFile()) throw new Error('Original source must be a regular file.');
+              await mkdir(join(target, ...file.split('/').slice(0, -1)), { recursive: true });
+              await copyFile(source, join(target, file));
+            }
+          }
           
           await snapshotGithubSource();
           JORIPSPACE_SOURCE
@@ -134,185 +143,166 @@ jobs:
           cp -R "$RUNNER_TEMP/joripspace-source-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$stage_dir/.joripspace-source"
           JORIPSPACE_STAGE_DIR="$stage_dir" node --input-type=module <<'JORIPSPACE_ARTIFACT'
             async function prepareGithubArtifact() {
-                  const { readFile: readFile2, writeFile: writeFile2, stat: stat2, rm: rm2 } = await Promise.resolve().then(() => (init_promises2(), promises_exports));
-                  const { join } = await import("node:path");
-                  const stage = process.env.JORIPSPACE_STAGE_DIR;
-                  const workspace = process.env.GITHUB_WORKSPACE;
-                  let entrypoint = process.env.JORIPSPACE_ENTRYPOINT;
-                  async function read(name) {
-                    try {
-                      return await readFile2(join(workspace, name), "utf8");
-                    } catch (error3) {
-                      if (error3.code === "ENOENT") return "";
-                      throw error3;
-                    }
+              const { readFile, writeFile, stat, rm } = await import('node:fs/promises');
+              const { join } = await import('node:path');
+              const stage = process.env.JORIPSPACE_STAGE_DIR;
+              const workspace = process.env.GITHUB_WORKSPACE;
+              let entrypoint = process.env.JORIPSPACE_ENTRYPOINT;
+              async function read(name) {
+                try { return await readFile(join(workspace, name), 'utf8'); }
+                catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+              }
+              const explicit = await read('.joripspace-deploy.json');
+              const config = explicit ? JSON.parse(explicit) : {};
+              if (process.env.JORIPSPACE_ARTIFACT_PATH === '.joripspace-artifact') {
+                if (config.entrypoint) entrypoint = config.entrypoint;
+                else {
+                  const candidates = [];
+                  for (const name of ['dist/worker.js', 'dist/index.js', 'worker.bundle.js', '.open-next/worker.js']) {
+                    try { if ((await stat(join(stage, name))).isFile()) candidates.push(name); }
+                    catch (error) { if (error.code !== 'ENOENT') throw error; }
                   }
-                  __name(read, "read");
-                  const explicit = await read(".joripspace-deploy.json");
-                  const config2 = explicit ? JSON.parse(explicit) : {};
-                  if (process.env.JORIPSPACE_ARTIFACT_PATH === ".joripspace-artifact") {
-                    if (config2.entrypoint) entrypoint = config2.entrypoint;
-                    else {
-                      const candidates = [];
-                      for (const name of ["dist/worker.js", "dist/index.js", "worker.bundle.js", ".open-next/worker.js"]) {
-                        try {
-                          if ((await stat2(join(stage, name))).isFile()) candidates.push(name);
-                        } catch (error3) {
-                          if (error3.code !== "ENOENT") throw error3;
-                        }
-                      }
-                      if (candidates.length > 1) throw new Error("Multiple build entrypoints found. Set entrypoint in .joripspace-deploy.json.");
-                      if (candidates.length) entrypoint = candidates[0];
-                    }
-                  }
-                  if (typeof entrypoint !== "string" || !entrypoint || entrypoint.startsWith("/") || entrypoint.includes("\\") || entrypoint.split("/").some((part) => !part || part === "." || part === "..")) {
-                    throw new Error("Invalid deployment entrypoint");
-                  }
-                  if (!(await stat2(join(stage, entrypoint))).isFile()) throw new Error("Build entrypoint does not exist");
-                  if (process.env.JORIPSPACE_ARTIFACT_PATH === ".joripspace-artifact" && entrypoint !== "worker.js") {
-                    const original = "worker.js";
-                    if (!original.startsWith("/") && !original.includes("\\") && original.split("/").every((part) => part && part !== "." && part !== "..")) {
-                      await rm2(join(stage, original), { force: true });
-                    }
-                  }
-                  let flags2 = config2.compatibility_flags;
-                  if (flags2 === void 0) {
-                    const wrangler = (await read("wrangler.jsonc") || await read("wrangler.json") || await read("wrangler.toml")).replace(
-                      /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g,
-                      (part) => /^(\/\/|\/\*|#)/.test(part) ? "" : part
-                    );
-                    const list = /["']?compatibility_flags["']?\s*[:=]\s*\[([^\]]*)\]/m.exec(wrangler);
-                    flags2 = list ? [...list[1].matchAll(/["']([^"']+)["']/g)].map((match2) => match2[1]) : [];
-                  }
-                  if (!Array.isArray(flags2) || flags2.some((flag) => flag !== "nodejs_compat")) throw new Error("Supported compatibility_flags: nodejs_compat");
-                  await writeFile2(join(stage, ".joripspace-deploy.json"), JSON.stringify({
-                    entrypoint,
-                    ...flags2.length ? { compatibility_flags: [...new Set(flags2)] } : {}
-                  }) + "\n");
+                  if (candidates.length > 1) throw new Error('Multiple build entrypoints found. Set entrypoint in .joripspace-deploy.json.');
+                  if (candidates.length) entrypoint = candidates[0];
                 }
+              }
+              if (typeof entrypoint !== 'string' || !entrypoint || entrypoint.startsWith('/') || entrypoint.includes('\\') || entrypoint.split('/').some((part) => !part || part === '.' || part === '..')) {
+                throw new Error('Invalid deployment entrypoint');
+              }
+              if (!(await stat(join(stage, entrypoint))).isFile()) throw new Error('Build entrypoint does not exist');
+              if (process.env.JORIPSPACE_ARTIFACT_PATH === '.joripspace-artifact' && entrypoint !== 'worker.js') {
+                const original = 'worker.js';
+                if (!original.startsWith('/') && !original.includes('\\') && original.split('/').every((part) => part && part !== '.' && part !== '..')) {
+                  await rm(join(stage, original), { force: true });
+                }
+              }
+              let flags = config.compatibility_flags;
+              if (flags === undefined) {
+                const wrangler = (await read('wrangler.jsonc') || await read('wrangler.json') || await read('wrangler.toml'))
+                  .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g,
+                    (part) => /^(\/\/|\/\*|#)/.test(part) ? '' : part);
+                const list = /["']?compatibility_flags["']?\s*[:=]\s*\[([^\]]*)\]/m.exec(wrangler);
+                flags = list ? [...list[1].matchAll(/["']([^"']+)["']/g)].map((match) => match[1]) : [];
+              }
+              if (!Array.isArray(flags) || flags.some((flag) => flag !== 'nodejs_compat')) throw new Error('Supported compatibility_flags: nodejs_compat');
+              await writeFile(join(stage, '.joripspace-deploy.json'), JSON.stringify({ entrypoint,
+                ...(flags.length ? { compatibility_flags: [...new Set(flags)] } : {}) }) + '\n');
+            }
             
             await prepareGithubArtifact();
           JORIPSPACE_ARTIFACT
           (cd "$stage_dir" && find . -type f -exec zip -q "$archive_path" -- {} +)
           JORIPSPACE_ARCHIVE_PATH="$archive_path" node --input-type=module <<'JORIPSPACE_SCRIPT'
           async function inlineDeployMain() {
-            const { open: open2 } = await import("node:fs/promises");
-            const audience = "https://api.joripspace.com/v1/external-builds/github";
-            const projectId = requiredEnv("JORIPSPACE_PROJECT_ID");
-            const connectionId = String(process.env.JORIPSPACE_CONNECTION_ID || "").trim();
-            const archivePath = requiredEnv("JORIPSPACE_ARCHIVE_PATH");
-            const apiUrl = requiredEnv("JORIPSPACE_API_URL").replace(/\/+$/, "");
+            const { open } = await import('node:fs/promises');
+            const audience = 'https://api.joripspace.com/v1/external-builds/github';
+            const projectId = requiredEnv('JORIPSPACE_PROJECT_ID');
+            const connectionId = String(process.env.JORIPSPACE_CONNECTION_ID || '').trim();
+            const archivePath = requiredEnv('JORIPSPACE_ARCHIVE_PATH');
+            const apiUrl = requiredEnv('JORIPSPACE_API_URL').replace(/\/+$/, '');
             const oidcToken = await requestOidcToken();
-            const create2 = await api(`/v1/projects/${encodeURIComponent(projectId)}/checkpoint-uploads`, {
-              method: "POST",
+            const create = await api(`/v1/projects/${encodeURIComponent(projectId)}/checkpoint-uploads`, {
+              method: 'POST',
               token: oidcToken,
-              json: { source_type: "deployment" }
+              json: { source_type: 'deployment' },
             });
-            const file2 = await open2(archivePath, "r");
+            const file = await open(archivePath, 'r');
             try {
-              const chunkSize = Number(create2.chunk_size || 8 * 1024 * 1024);
+              const chunkSize = Number(create.chunk_size || 8 * 1024 * 1024);
               const buffer = Buffer.alloc(chunkSize);
               let partNumber = 1;
               let position = 0;
               while (true) {
-                const { bytesRead } = await file2.read(buffer, 0, buffer.length, position);
+                const { bytesRead } = await file.read(buffer, 0, buffer.length, position);
                 if (bytesRead === 0) break;
-                const partPath = String(create2.upload_part_url_template).replace("{part_number}", String(partNumber));
+                const partPath = String(create.upload_part_url_template).replace('{part_number}', String(partNumber));
                 await api(partPath, {
-                  method: "PUT",
+                  method: 'PUT',
                   token: oidcToken,
                   body: buffer.subarray(0, bytesRead),
-                  contentType: "application/octet-stream"
+                  contentType: 'application/octet-stream',
                 });
                 position += bytesRead;
                 partNumber += 1;
               }
-              if (position === 0) throw new Error("Build artifact ZIP is empty.");
+              if (position === 0) throw new Error('Build artifact ZIP is empty.');
             } finally {
-              await file2.close();
+              await file.close();
             }
-            await api(create2.complete_url, { method: "POST", token: oidcToken, json: {} });
-            const deployPath = `/v1/projects/${encodeURIComponent(projectId)}/checkpoints/${encodeURIComponent(create2.checkpoint_id)}/deploy`;
+            await api(create.complete_url, { method: 'POST', token: oidcToken, json: {} });
+            const deployPath = `/v1/projects/${encodeURIComponent(projectId)}/checkpoints/${encodeURIComponent(create.checkpoint_id)}/deploy`;
             for (let attempt = 1; attempt <= 150; attempt += 1) {
               const deployToken = await requestOidcToken();
               const result = await api(deployPath, {
-                method: "POST",
+                method: 'POST',
                 token: deployToken,
                 json: {},
-                allowedStatuses: [404, 409]
+                allowedStatuses: [404, 409],
               });
               if (!result.__retry) {
-                for (const warning of result.warnings || []) {
-                  process.stdout.write(
-                    `::warning title=JoripSpace security::${escapeWorkflowCommand(warning.message)}
-          `
-                  );
-                }
                 process.stdout.write(
-                  `JoripSpace deployment succeeded: ${result.url || result.default_url || result.deployment_id || projectId}
-          `
+                  `JoripSpace deployment succeeded: ${result.url || result.default_url || result.deployment_id || projectId}\n`
                 );
                 return;
               }
-              if (!["checkpoint_not_found", "checkpoint_not_ready", "external_build_deploy_busy"].includes(
-                result.error?.code
-              )) {
+              if (
+                !['checkpoint_not_found', 'checkpoint_not_ready', 'external_build_deploy_busy'].includes(
+                  result.error?.code
+                )
+              ) {
                 throw apiError(result.__status, result);
               }
-              await new Promise((resolve) => setTimeout(resolve, 2e3));
+              await new Promise((resolve) => setTimeout(resolve, 2000));
             }
-            throw new Error("JoripSpace artifact processing did not finish within 5 minutes.");
-            function escapeWorkflowCommand(value) {
-              return String(value || "").replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
-            }
+            throw new Error('JoripSpace artifact processing did not finish within 5 minutes.');
+          
             async function requestOidcToken() {
-              const requestUrl = requiredEnv("ACTIONS_ID_TOKEN_REQUEST_URL");
-              const requestToken = requiredEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN");
-              const separator = requestUrl.includes("?") ? "&" : "?";
+              const requestUrl = requiredEnv('ACTIONS_ID_TOKEN_REQUEST_URL');
+              const requestToken = requiredEnv('ACTIONS_ID_TOKEN_REQUEST_TOKEN');
+              const separator = requestUrl.includes('?') ? '&' : '?';
               const response = await fetch(`${requestUrl}${separator}audience=${encodeURIComponent(audience)}`, {
-                headers: { Authorization: `Bearer ${requestToken}` }
+                headers: { Authorization: `Bearer ${requestToken}` },
               });
               const payload = await response.json().catch(() => ({}));
-              if (!response.ok || typeof payload.value !== "string") {
+              if (!response.ok || typeof payload.value !== 'string') {
                 throw new Error(`GitHub OIDC token request failed (${response.status}).`);
               }
               return payload.value;
             }
+          
             async function api(path, options) {
-              const url = path.startsWith("http") ? path : `${apiUrl}${path}`;
-              const headers = new Headers({
-                Authorization: `Bearer ${options.token}`,
-                Accept: "application/json"
-              });
-              if (connectionId) headers.set("X-JoripSpace-Connection-ID", connectionId);
+              const url = path.startsWith('http') ? path : `${apiUrl}${path}`;
+              const headers = new Headers({ Authorization: `Bearer ${options.token}`, Accept: 'application/json' });
+              if (connectionId) headers.set('X-JoripSpace-Connection-ID', connectionId);
               let body = options.body;
-              if (options.json !== void 0) {
-                headers.set("Content-Type", "application/json");
+              if (options.json !== undefined) {
+                headers.set('Content-Type', 'application/json');
                 body = JSON.stringify(options.json);
-              } else if (options.contentType) {
-                headers.set("Content-Type", options.contentType);
-              }
+              } else if (options.contentType) headers.set('Content-Type', options.contentType);
               const response = await fetch(url, { method: options.method, headers, body });
-              const text3 = await response.text();
-              const payload = text3 ? safeJson(text3) : {};
+              const text = await response.text();
+              const payload = text ? safeJson(text) : {};
               if (response.ok) return payload;
               if ((options.allowedStatuses || []).includes(response.status)) {
                 return { ...payload, __retry: true, __status: response.status };
               }
               throw apiError(response.status, payload);
             }
+          
             function apiError(status, payload) {
-              const error3 = new Error(payload?.error?.message || `JoripSpace request failed (${status}).`);
-              error3.code = payload?.error?.code || "joripspace_request_failed";
-              const diagnostic = JSON.stringify({ http_status: status, code: error3.code, message: error3.message, details: payload?.error?.details || null }).replace(/((?:authorization|[\w-]*(?:key|token|secret|password|credential)[\w-]*)["']?\s*[:=]\s*["']?)[^"'\s,}]+/gi, "$1[REDACTED]").replace(/Bearer\s+[^\s"']+/gi, "Bearer [REDACTED]").slice(0, 16e3);
+              const error = new Error(payload?.error?.message || `JoripSpace request failed (${status}).`);
+              error.code = payload?.error?.code || 'joripspace_request_failed';
+              const diagnostic = JSON.stringify({ http_status: status, code: error.code, message: error.message, details: payload?.error?.details || null })
+                .replace(/((?:authorization|[\w-]*(?:key|token|secret|password|credential)[\w-]*)["']?\s*[:=]\s*["']?)[^"'\s,}]+/gi, '$1[REDACTED]')
+                .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]').slice(0, 16000);
               console.error(`JORIPSPACE_DIAGNOSTIC ${diagnostic}`);
-              return error3;
+              return error;
             }
             function safeJson(value) {
               try {
                 return JSON.parse(value);
               } catch {
-                return { error: { code: "invalid_response", message: value.slice(0, 500) } };
+                return { error: { code: 'invalid_response', message: value.slice(0, 500) } };
               }
             }
             function requiredEnv(name) {
